@@ -12,7 +12,15 @@
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     },
+    "./analysis": {
+      "types": "./dist/analysis/index.d.ts",
+      "default": "./dist/analysis/index.js"
+    },
     "./report": {
+      "types": "./dist/report/index.d.ts",
+      "default": "./dist/report/index.js"
+    },
+    "./report/types": {
       "types": "./dist/report/types.d.ts",
       "default": "./dist/report/types.js"
     }
@@ -33,8 +41,8 @@
   },
   "homepage": "https://github.com/arkerone/lanterna#readme",
   "scripts": {
-    "build": "tsc && node scripts/copy-assets.js",
-    "test": "npm run build && tsc -p tsconfig.test.json && node scripts/copy-assets.js --dest=dist-test/src && node --test dist-test/test/**/*.test.js",
+    "build": "node scripts/generate-version.js && tsc && node scripts/copy-assets.js",
+    "test": "rm -rf dist dist-test && node scripts/generate-version.js && npm run build && tsc -p tsconfig.test.json && node scripts/copy-assets.js --dest=dist-test/src && node --test dist-test/test/**/*.test.js",
     "dev": "tsc --watch"
   },
   "engines": {
@@ -50,7 +58,14 @@
   ],
   "license": "MIT",
   "devDependencies": {
+    "@types/chrome-remote-interface": "^0.33.0",
     "@types/node": "^22.0.0",
     "typescript": "^5.6.0"
+  },
+  "dependencies": {
+    "chrome-remote-interface": "^0.34.0",
+    "commander": "^14.0.3",
+    "pino": "^9.9.0",
+    "zod": "^4.3.6"
   }
 }

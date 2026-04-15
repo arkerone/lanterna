@@ -33,7 +33,7 @@ Supported today:
 
 - CLI command: `lanterna run`
 - CLI command: `lanterna attach`
-- collector modes: `spawn`, `attach`
+- capture modes: `spawn`, `attach`
 - JSON output to stdout or file
 - enriched findings for sync crypto, blocking I/O, excessive GC, event-loop stalls, repeated deopts, and module loading on the hot path
 - optional `--deep` mode for deopt tracing
@@ -130,7 +130,7 @@ At a high level:
 3. The preload hook starts publishing timed heartbeat events and GC events over a dedicated control channel.
 4. Lanterna starts the V8 sampling CPU profiler, then releases the process with `Runtime.runIfWaitingForDebugger`.
 5. When the requested duration expires, or when the child finishes, Lanterna stops profiling, reads the final event-loop summary, and normalizes the capture into a raw session.
-6. The enricher classifies frames, aggregates hotspots, computes hot stacks, correlates user-code hotspots with GC and event-loop stall windows, runs detectors, and emits the final JSON report.
+6. The analysis pipeline classifies frames, aggregates hotspots, computes hot stacks, correlates user-code hotspots with GC and event-loop stall windows, runs detectors, and emits the final JSON report.
 
 The detailed architecture and degradation modes are documented in [docs/how-lanterna-works.md](docs/how-lanterna-works.md).
 
@@ -253,23 +253,53 @@ Read [docs/how-lanterna-works.md](docs/how-lanterna-works.md) for the exact inte
 
 ## Programmatic Surface
 
-Lanterna is primarily a CLI today, but the package exports the enrichment surface and report types:
+Lanterna is still CLI-first, but it now exposes a cleaner programmatic split:
 
 ```ts
-import { enrich, type LanternaReport } from 'lanterna';
+import {
+  analyzeCapture,
+  runProfile,
+  attachProfile,
+  serializeReport,
+  type LanternaReport,
+} from 'lanterna';
+import {
+  createAnalysisPipeline,
+  defineSectionAnalyzer,
+  defineFindingAnalyzer,
+} from 'lanterna/analysis';
 import type { Finding, Hotspot } from 'lanterna/report';
 ```
 
-What is public today:
+Recommended public entrypoints:
 
-- `enrich(...)` from the package root
-- report-related TypeScript types from `lanterna` and `lanterna/report`
+- `runProfile(...)`: spawn a Node process, capture it, analyze it, return a `LanternaReport`
+- `attachProfile(...)`: attach to an existing Node inspector target and return a `LanternaReport`
+- `analyzeCapture(...)`: turn a `RawCapture` into analysis output
+- `serializeReport(...)`: validate and serialize a final `LanternaReport`
+- `lanterna/analysis`: analysis pipeline and analyzer registration helpers
+- `lanterna/report`: report types and report assembly/serialization helpers
 
-What is not public today:
+Not public:
 
-- spawn collector internals
-- attach collector internals
+- spawn capture internals
+- attach capture internals
 - in-process capture mode
+
+## Internal Structure
+
+The source tree is organized by responsibility rather than by layered architecture:
+
+- `src/cli`: argument parsing, command dispatch, report output
+- `src/profile.ts`: top-level orchestration for `runProfile` and `attachProfile`
+- `src/capture`: raw capture session lifecycle and capture types
+- `src/inspector`: CDP client, runtime metadata access, inspector discovery
+- `src/runtime-signals`: preload/runtime hook and timed signal readers
+- `src/analysis/core`: analysis pipeline orchestration, context, analyzer contracts
+- `src/analysis/model`: frame classification, hotspot aggregation, timed correlations, summaries
+- `src/analysis/detectors`: built-in findings and detector helpers
+- `src/report`: report types, meta assembly, schema validation, serialization
+- `src/shared`: small cross-cutting utilities and constants
 
 ## Documentation
 

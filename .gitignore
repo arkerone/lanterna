@@ -4,3 +4,4 @@ dist-test/
 *.log
 *.cpuprofile
 .DS_Store
+src/report/version.generated.ts

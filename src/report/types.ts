@@ -14,13 +14,15 @@ export type FindingSeverity = 'info' | 'warning' | 'critical';
 export type MeasurementBasis = 'none' | 'heartbeats' | 'histogram' | 'both';
 export type MeasurementConfidence = 'none' | 'low' | 'high';
 
-export type FindingCategory =
+export type BuiltinFindingCategory =
   | 'blocking-io'
   | 'sync-crypto'
   | 'deopt-loop'
   | 'require-in-hot-path'
   | 'excessive-gc'
   | 'event-loop-stall';
+
+export type FindingCategory = BuiltinFindingCategory | (string & {});
 
 export interface ReportMeta {
   nodeVersion: string;
@@ -143,24 +145,113 @@ export interface DeoptEntry {
   explanation: string;
 }
 
-export interface FindingEvidence {
+export interface HotspotAttributionEvidence {
+  hotspotId: string;
+  function: string;
+  file: string;
+  line: number;
+  samplePct: number;
+  supportPct: number;
+  confidence: 'low' | 'high';
+}
+
+export interface StallCorrelation {
+  overlapPct: number;
+  samplePct: number;
+}
+
+export interface AttributionEvidence {
+  attributionBasis: 'sample-path' | 'builtin-only';
+  attributionConfidence: HotspotAttributionEvidence['confidence'] | 'low';
+  userAttribution?: HotspotAttributionEvidence;
+}
+
+export interface BlockingIoEvidenceExtra extends AttributionEvidence {
+  api: string;
+  callee: string;
+  eventLoopCorrelation?: StallCorrelation;
+}
+
+export interface SyncCryptoEvidenceExtra extends AttributionEvidence {
+  callee: string;
+  calleeTotalPct: number;
+  eventLoopCorrelation?: StallCorrelation;
+}
+
+export interface DeoptLoopEvidenceExtra {
+  reason: string;
+  bailoutType: string;
+  count: number;
+}
+
+export interface ExcessiveGcEvidenceExtra {
+  gcRatio: number;
+  longestPauseMs: number;
+  timedGcEventCount: number;
+  ratioConfidence: 'high' | 'medium';
+  counts: GcReport['count'];
+  candidateHotspots: CorrelatedHotspot[];
+}
+
+export interface EventLoopStallEvidenceExtra {
+  p99LagMs: number;
+  maxLagMs: number;
+  measurementBasis: MeasurementBasis;
+  confidence: MeasurementConfidence;
+  histogram?: EventLoopReport['histogram'];
+  stallIntervals: EventLoopReport['stallIntervals'];
+  candidateHotspots: CorrelatedHotspot[];
+}
+
+export interface BuiltinFindingEvidenceExtraMap {
+  'blocking-io': BlockingIoEvidenceExtra;
+  'sync-crypto': SyncCryptoEvidenceExtra;
+  'deopt-loop': DeoptLoopEvidenceExtra;
+  'require-in-hot-path': undefined;
+  'excessive-gc': ExcessiveGcEvidenceExtra;
+  'event-loop-stall': EventLoopStallEvidenceExtra;
+}
+
+export type BuiltinFindingEvidenceExtra =
+  Exclude<BuiltinFindingEvidenceExtraMap[BuiltinFindingCategory], undefined>;
+
+export type FindingEvidenceExtra =
+  | BuiltinFindingEvidenceExtra
+  | Record<string, unknown>;
+
+export interface FindingEvidence<TExtra = FindingEvidenceExtra> {
   file: string;
   line: number;
   function: string;
   selfPct: number;
-  extra?: Record<string, unknown>;
+  extra?: TExtra;
 }
 
-export interface Finding {
+export interface BaseFinding<TCategory extends FindingCategory = FindingCategory, TExtra = FindingEvidenceExtra> {
   id: string;
   severity: FindingSeverity;
-  category: FindingCategory;
+  category: TCategory;
   title: string;
-  evidence: FindingEvidence;
+  evidence: FindingEvidence<TExtra>;
   why: string;
   suggestion: string;
   references: string[];
 }
+
+export type BuiltinFinding<C extends BuiltinFindingCategory = BuiltinFindingCategory> =
+  BaseFinding<C, BuiltinFindingEvidenceExtraMap[C]>;
+
+export type ExtensionFinding = BaseFinding<string, Record<string, unknown> | undefined>;
+
+export type Finding = BuiltinFinding | ExtensionFinding;
+
+export function defineBuiltinFinding<C extends BuiltinFindingCategory>(
+  finding: BuiltinFinding<C>,
+): BuiltinFinding<C> {
+  return finding;
+}
+
+export type ExtensionEntry = unknown;
 
 export interface LanternaReport {
   meta: ReportMeta;
@@ -171,4 +262,5 @@ export interface LanternaReport {
   eventLoop: EventLoopReport;
   deopts: DeoptEntry[];
   findings: Finding[];
+  extensions?: Record<string, ExtensionEntry>;
 }

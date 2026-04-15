@@ -1,7 +1,8 @@
 #!/usr/bin/env node
-import { main } from '../dist/cli.js';
+import { main } from '../dist/cli/main.js';
+import { logger } from '../dist/shared/logger.js';
 
 main(process.argv.slice(2)).catch((err) => {
   process.exitCode = 1;
-  process.stderr.write(`lanterna: ${err.stack || err.message || err}\n`);
+  logger.error({ err }, 'lanterna failed');
 });

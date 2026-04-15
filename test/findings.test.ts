@@ -1,54 +1,23 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
-import { dirname, resolve } from 'node:path';
-import type { RawCapture, RawCpuProfile } from '../src/collector/source.js';
-import { enrich } from '../src/enricher/index.js';
+import type { RawCapture, RawCpuProfile } from '../src/capture/core/types.js';
+import { analyzeCapture } from '../src/analysis/index.js';
+import { buildLanternaReport } from '../src/report/index.js';
 import type { LanternaReport } from '../src/report/types.js';
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const profilesDir = resolve(__dirname, 'fixtures-profiles');
-const CWD = '/app';
-
-function loadProfile(name: string): RawCpuProfile {
-  return JSON.parse(
-    readFileSync(resolve(profilesDir, `${name}.cpuprofile.json`), 'utf8'),
-  ) as RawCpuProfile;
-}
-
-function makeRaw(cpuProfile: RawCpuProfile, overrides: Partial<RawCapture> = {}): RawCapture {
-  return {
-    target: {
-      pid: 99999,
-      nodeVersion: 'v24.0.0',
-      v8Version: '12.0.0',
-      platform: 'linux',
-      arch: 'x64',
-      cwd: CWD,
-    },
-    startedAtEpoch: Date.now(),
-    durationMs: 5000,
-    cpuProfile,
-    gcEvents: [],
-    eventLoopSamples: [],
-    eventLoopResolutionMs: 20,
-    eventLoopAvailable: false,
-    captureIntegrity: {
-      controlChannel: true,
-      eventLoopTimed: false,
-      gcTimed: false,
-      cpuSamplesTimed: true,
-    },
-    deopts: [],
-    ...overrides,
-  };
-}
+import { LANTERNA_VERSION } from '../src/report/version.generated.js';
+import { CWD, loadProfile, makeRaw } from './helpers.js';
 
 function makeReport(profileName: string, overrides: Partial<RawCapture> = {}): LanternaReport {
   const profile = loadProfile(profileName);
   const raw = makeRaw(profile, overrides);
-  return enrich(raw, { sampleIntervalMicros: 1000, deep: false, command: ['node', 'app.js'] });
+  return createReport(raw, { sampleIntervalMicros: 1000, deep: false, command: ['node', 'app.js'] });
+}
+
+function createReport(
+  raw: RawCapture,
+  options: { sampleIntervalMicros: number; deep: boolean; command: string[] },
+): LanternaReport {
+  return buildLanternaReport(raw, analyzeCapture(raw, options), options);
 }
 
 describe('findings – sync-crypto-on-hot-path', () => {
@@ -125,7 +94,7 @@ describe('findings – excessive-gc confidence gating', () => {
     timeDeltas: [],
   };
 
-  const report = enrich(
+  const report = createReport(
     makeRaw(shortGcHeavyProfile, {
       durationMs: 50,
       captureIntegrity: {
@@ -227,7 +196,7 @@ describe('findings – blocking-io', () => {
   };
 
   const raw = makeRaw(profile);
-  const report = enrich(raw, { sampleIntervalMicros: 1000, deep: false, command: ['node', 'app.js'] });
+  const report = createReport(raw, { sampleIntervalMicros: 1000, deep: false, command: ['node', 'app.js'] });
 
   it('detects blocking-io finding', () => {
     const f = report.findings.find((f) => f.id.startsWith('blocking-io'));
@@ -243,7 +212,7 @@ describe('findings – blocking-io', () => {
 });
 
 describe('findings – deopt-loop', () => {
-  const report = enrich(
+  const report = createReport(
     makeRaw({
       nodes: [
         {
@@ -285,7 +254,7 @@ describe('findings – deopt-loop', () => {
     const heavyDeopts = [
       { function: 'hotFn', file: `${CWD}/src/hot.js`, line: 5, reason: 'type mismatch', bailoutType: 'soft', count: 21 },
     ];
-    const heavyReport = enrich(
+    const heavyReport = createReport(
       makeRaw({
         nodes: [
           {
@@ -313,7 +282,7 @@ describe('findings – deopt-loop', () => {
   });
 
   it('does not emit deopt-loop without --deep mode', () => {
-    const noDeepReport = enrich(
+    const noDeepReport = createReport(
       makeRaw({
         nodes: [
           {
@@ -364,7 +333,7 @@ describe('findings – require-in-hot-path', () => {
     timeDeltas: [],
   };
 
-  const report = enrich(
+  const report = createReport(
     makeRaw(profile),
     { sampleIntervalMicros: 1000, deep: false, command: ['node', 'app.js'] },
   );
@@ -409,7 +378,7 @@ describe('findings – no false positives on clean profile', () => {
   };
 
   const raw = makeRaw(profile);
-  const report = enrich(raw, { sampleIntervalMicros: 1000, deep: false, command: ['node', 'fib.js'] });
+  const report = createReport(raw, { sampleIntervalMicros: 1000, deep: false, command: ['node', 'fib.js'] });
 
   it('does not emit false positive findings', () => {
     const bad = report.findings.filter((f) =>
@@ -427,6 +396,7 @@ describe('report structure – meta is complete', () => {
     assert.ok(report.meta.durationMs > 0);
     assert.ok(report.meta.totalSamples > 0);
     assert.ok(report.meta.cwd === CWD);
+    assert.equal(report.meta.lanternaVersion, LANTERNA_VERSION);
     assert.equal(report.meta.mode, 'spawn');
     assert.equal(report.meta.captureIntegrity.controlChannel, true);
   });

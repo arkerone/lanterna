@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseAttachArgs } from '../src/cli.js';
+import { parseAttachArgs } from '../src/cli/parse.js';
 
 describe('cli parsing', () => {
   it('rejects attach with both pid and inspect-url', () => {

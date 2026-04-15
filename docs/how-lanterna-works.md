@@ -125,7 +125,7 @@ Important differences from spawn mode:
 
 ## Enrichment Pipeline
 
-The enricher transforms `RawCapture` into `LanternaReport`.
+The analysis pipeline transforms `RawCapture` into `LanternaReport`.
 
 ### Frame classification
 
@@ -266,7 +266,7 @@ Without `--deep`, deopt tracing is intentionally absent. `deopts[]` will be empt
 
 Lanterna does not currently:
 
-- expose a public capture API for embedding the collector in another tool
+- expose a public capture API for embedding Lanterna capture in another tool
 - generate flamegraphs as its primary output
 - infer source-level fixes by itself; it emits evidence and suggestions, but the actual remediation still belongs to the user or an agent consuming the report
 

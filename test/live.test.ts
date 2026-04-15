@@ -64,6 +64,21 @@ async function expectInspectorFailure(args: string[]): Promise<void> {
   }
 }
 
+async function pidAttachSupportedInEnvironment(): Promise<boolean> {
+  if (process.platform === 'win32') {
+    return false;
+  }
+
+  try {
+    const response = await fetch('http://127.0.0.1:9229/json/list');
+    if (!response.ok) return true;
+    const targets = await response.json() as Array<{ webSocketDebuggerUrl?: string }>;
+    return targets.length === 0;
+  } catch {
+    return true;
+  }
+}
+
 async function spawnFixture(args: string[]): Promise<ChildProcess> {
   const child = spawn('node', args, {
     cwd: repoRoot,
@@ -228,7 +243,7 @@ describe('live profiling', () => {
   });
 
   it('attaches to an existing pid via SIGUSR1', async () => {
-    if (process.platform === 'win32' || !await inspectorSupported()) {
+    if (!await inspectorSupported() || !await pidAttachSupportedInEnvironment()) {
       return;
     }
 
