@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFile } from 'node:child_process';
+import { execFile, spawn, type ChildProcess } from 'node:child_process';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
@@ -64,6 +64,79 @@ async function expectInspectorFailure(args: string[]): Promise<void> {
   }
 }
 
+async function spawnFixture(args: string[]): Promise<ChildProcess> {
+  const child = spawn('node', args, {
+    cwd: repoRoot,
+    stdio: ['ignore', 'ignore', 'pipe'],
+  });
+  child.stderr?.setEncoding('utf8');
+  return child;
+}
+
+async function waitForInspectorUrl(child: ChildProcess, timeoutMs = 5_000): Promise<string> {
+  const stderr = child.stderr;
+  assert.ok(stderr, 'expected child stderr pipe');
+
+  return await new Promise<string>((resolveUrl, reject) => {
+    let settled = false;
+    let buffer = '';
+    const timeout = setTimeout(() => {
+      rejectOnce(new Error(`timed out waiting for inspector URL. stderr=${buffer}`));
+    }, timeoutMs);
+
+    const cleanup = () => {
+      clearTimeout(timeout);
+      stderr.off('data', onData);
+      child.off('exit', onExit);
+      child.off('error', onError);
+    };
+
+    const rejectOnce = (err: Error) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(err);
+    };
+
+    const resolveOnce = (url: string) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolveUrl(url);
+    };
+
+    const onData = (chunk: string | Buffer) => {
+      buffer += chunk.toString();
+      const match = buffer.match(/Debugger listening on (ws:\/\/[^\s]+)/);
+      if (match?.[1]) resolveOnce(match[1]);
+    };
+
+    const onExit = (code: number | null, signal: NodeJS.Signals | null) => {
+      rejectOnce(new Error(`fixture exited before inspector was ready (code=${code}, signal=${signal})`));
+    };
+
+    const onError = (err: Error) => rejectOnce(err);
+
+    stderr.on('data', onData);
+    child.on('exit', onExit);
+    child.on('error', onError);
+  });
+}
+
+async function terminateChild(child: ChildProcess): Promise<void> {
+  if (child.exitCode !== null) return;
+  child.kill('SIGTERM');
+  await new Promise<void>((resolve) => {
+    const timeout = setTimeout(() => {
+      if (child.exitCode === null) child.kill('SIGKILL');
+    }, 1_000);
+    child.once('exit', () => {
+      clearTimeout(timeout);
+      resolve();
+    });
+  });
+}
+
 describe('live profiling', () => {
   it('supports the no-duration path on a short-lived process', async () => {
     if (!await inspectorSupported()) {
@@ -125,5 +198,57 @@ describe('live profiling', () => {
       || report.eventLoop.measurementBasis === 'histogram'
       || report.eventLoop.measurementBasis === 'both',
     );
+  });
+
+  it('attaches to an existing inspector URL', async () => {
+    if (!await inspectorSupported()) {
+      return;
+    }
+
+    const child = await spawnFixture(['--inspect=0', resolve(fixturesDir, 'event-loop-stall-app.mjs')]);
+    const wsUrl = await waitForInspectorUrl(child);
+
+    try {
+      const { stdout } = await execFileAsync(
+        'node',
+        [binPath, 'attach', '--inspect-url', wsUrl, '--duration', '1200ms', '--pretty'],
+        { cwd: repoRoot, timeout: 10_000, maxBuffer: 1024 * 1024 * 4 },
+      );
+
+      const report = JSON.parse(stdout);
+      assert.equal(report.meta.mode, 'attach');
+      assert.equal(report.meta.captureIntegrity.controlChannel, false);
+      assert.equal(report.meta.pid, child.pid);
+      assert.equal(report.meta.command.length, 0);
+      assert.equal(report.eventLoop.available, true);
+      assert.ok(report.eventLoop.stallIntervals.length > 0);
+    } finally {
+      await terminateChild(child);
+    }
+  });
+
+  it('attaches to an existing pid via SIGUSR1', async () => {
+    if (process.platform === 'win32' || !await inspectorSupported()) {
+      return;
+    }
+
+    const child = await spawnFixture([resolve(fixturesDir, 'event-loop-stall-app.mjs')]);
+
+    try {
+      const { stdout } = await execFileAsync(
+        'node',
+        [binPath, 'attach', '--pid', String(child.pid), '--duration', '1200ms', '--pretty'],
+        { cwd: repoRoot, timeout: 10_000, maxBuffer: 1024 * 1024 * 4 },
+      );
+
+      const report = JSON.parse(stdout);
+      assert.equal(report.meta.mode, 'attach');
+      assert.equal(report.meta.pid, child.pid);
+      assert.equal(report.meta.captureIntegrity.controlChannel, false);
+      assert.equal(report.eventLoop.available, true);
+      assert.ok(report.eventLoop.stallIntervals.length > 0);
+    } finally {
+      await terminateChild(child);
+    }
   });
 });

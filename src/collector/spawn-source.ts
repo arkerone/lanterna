@@ -5,7 +5,7 @@ import { connectCdp, type CdpClient } from './cdp-client.js';
 import {
   type ProfileSource,
   type SourceHandle,
-  type StartOptions,
+  type SpawnStartOptions,
   type TargetInfo,
   type RawCapture,
   type RawGcEvent,
@@ -17,11 +17,21 @@ import {
 import { startCpuMeasure, stopCpuMeasure } from './measures/cpu.js';
 import { readEventLoopSamples } from './measures/event-loop.js';
 import { parseDeoptsFromStderr } from './measures/deopts.js';
+import {
+  fetchTargetInfo,
+  hasTimedCpuSamples,
+  isUsableEventLoopSummary,
+  markCaptureStart,
+  mergeTimedSamples,
+  normalizeTimedEvents,
+  readRuntimeClockNow,
+  summarizeEventLoop,
+} from './capture-utils.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-export class SpawnSource implements ProfileSource {
-  async start(options: StartOptions): Promise<SourceHandle> {
+export class SpawnSource implements ProfileSource<SpawnStartOptions> {
+  async start(options: SpawnStartOptions): Promise<SourceHandle> {
     const [cmd, ...args] = options.command;
     if (!cmd) throw new Error('command is empty');
 
@@ -119,7 +129,7 @@ export class SpawnSource implements ProfileSource {
 
     const cdp = await connectCdp(wsUrl);
 
-    const target = await fetchTargetInfo(cdp, child.pid ?? -1);
+    const target = await fetchTargetInfo(cdp);
 
     const markRuntimeComplete = () => {
       if (!runtimeCompletionArmed || appCompleted) return;
@@ -133,7 +143,7 @@ export class SpawnSource implements ProfileSource {
     const startedAtHr = performance.now();
 
     await markCaptureStart(cdp);
-    const childCaptureStartMs = await readChildClockNow(cdp);
+    const childCaptureStartMs = await readRuntimeClockNow(cdp);
     await startCpuMeasure(cdp, options.sampleIntervalMicros);
     await cdp.send('Runtime.runIfWaitingForDebugger');
     runtimeCompletionArmed = true;
@@ -179,11 +189,7 @@ export class SpawnSource implements ProfileSource {
         throw new Error(`failed to stop CPU profile: ${(err as Error).message}`);
       }
 
-      captureIntegrity.cpuSamplesTimed = Boolean(
-        cpuProfile.samples?.length
-        && cpuProfile.timeDeltas?.length
-        && cpuProfile.samples.length === cpuProfile.timeDeltas.length,
-      );
+      captureIntegrity.cpuSamplesTimed = hasTimedCpuSamples(cpuProfile);
 
       eventLoopHistogram = isUsableEventLoopSummary(
         eventLoopRead.summary,
@@ -279,80 +285,6 @@ function attachControlChannel(
       }
     }
   });
-}
-
-async function markCaptureStart(cdp: CdpClient): Promise<void> {
-  await cdp.send('Runtime.evaluate', {
-    expression: `globalThis.__LANTERNA_EVENT_LOOP__?.markCaptureStart?.()`,
-    returnByValue: true,
-  });
-}
-
-async function readChildClockNow(cdp: CdpClient): Promise<number> {
-  const res = await cdp.send<{ result: { value?: number } }>('Runtime.evaluate', {
-    expression: 'performance.now()',
-    returnByValue: true,
-  });
-  return res.result?.value ?? 0;
-}
-
-function summarizeEventLoop(samples: EventLoopSample[]): EventLoopHistogram | undefined {
-  if (samples.length === 0) return undefined;
-  const values = samples.map((s) => s.lagMs).sort((a, b) => a - b);
-  const maxMs = values[values.length - 1] ?? 0;
-  const meanMs = values.reduce((sum, v) => sum + v, 0) / values.length;
-  return {
-    maxMs,
-    meanMs,
-    p50Ms: percentile(values, 0.5),
-    p99Ms: percentile(values, 0.99),
-  };
-}
-
-function mergeTimedSamples(
-  controlSamples: EventLoopSample[],
-  runtimeSamples: EventLoopSample[],
-): EventLoopSample[] {
-  const merged = new Map<string, EventLoopSample>();
-  for (const sample of [...controlSamples, ...runtimeSamples]) {
-    const key = `${sample.atMs.toFixed(3)}:${sample.lagMs.toFixed(3)}`;
-    merged.set(key, sample);
-  }
-  return Array.from(merged.values());
-}
-
-function isUsableEventLoopSummary(
-  summary: Awaited<ReturnType<typeof readEventLoopSamples>>['summary'],
-  resolutionMs: number,
-): summary is NonNullable<Awaited<ReturnType<typeof readEventLoopSamples>>['summary']> {
-  if (!summary || summary.count <= 0) return false;
-  if (!Number.isFinite(summary.maxMs)
-    || !Number.isFinite(summary.meanMs)
-    || !Number.isFinite(summary.p50Ms)
-    || !Number.isFinite(summary.p99Ms)) {
-    return false;
-  }
-  const minimumExpectedLagMs = Math.max(1, resolutionMs / 10);
-  return summary.maxMs >= minimumExpectedLagMs
-    || summary.p99Ms >= minimumExpectedLagMs
-    || summary.p50Ms >= minimumExpectedLagMs;
-}
-
-function percentile(sortedValues: number[], q: number): number {
-  if (sortedValues.length === 0) return 0;
-  const idx = Math.min(sortedValues.length - 1, Math.max(0, Math.ceil(sortedValues.length * q) - 1));
-  return sortedValues[idx] ?? 0;
-}
-
-function normalizeTimedEvents<T extends { atMs: number }>(
-  events: T[],
-  startMs: number,
-  durationMs: number,
-): T[] {
-  return events
-    .map((event) => ({ ...event, atMs: Math.max(0, event.atMs - startMs) }))
-    .filter((event) => event.atMs <= durationMs + 1000)
-    .sort((a, b) => a.atMs - b.atMs);
 }
 
 function waitForInspectorUrl(child: ChildProcess, buffer: string[]): Promise<string> {
@@ -467,22 +399,4 @@ function terminateChild(child: ChildProcess): void {
   setTimeout(() => {
     if (child.exitCode === null && !child.killed) child.kill('SIGKILL');
   }, 250).unref();
-}
-
-async function fetchTargetInfo(cdp: CdpClient, pid: number): Promise<TargetInfo> {
-  await cdp.send('Runtime.enable');
-  const exprs = `JSON.stringify({
-    nodeVersion: process.version,
-    v8Version: process.versions.v8,
-    platform: process.platform,
-    arch: process.arch,
-    cwd: process.cwd()
-  })`;
-  const res = await cdp.send<{ result: { value?: string } }>('Runtime.evaluate', {
-    expression: exprs,
-    returnByValue: true,
-  });
-  const value = res.result?.value ?? '{}';
-  const parsed = JSON.parse(value) as Omit<TargetInfo, 'pid'>;
-  return { pid, ...parsed };
 }

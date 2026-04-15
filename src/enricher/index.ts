@@ -28,6 +28,7 @@ export interface EnrichOptions {
   sampleIntervalMicros: number;
   deep: boolean;
   command: string[];
+  mode?: LanternaReport['meta']['mode'];
 }
 
 export function enrich(raw: RawCapture, opts: EnrichOptions): LanternaReport {
@@ -66,7 +67,7 @@ export function enrich(raw: RawCapture, opts: EnrichOptions): LanternaReport {
       cwd: raw.target.cwd,
       command: opts.command,
       lanternaVersion: readVersion(),
-      mode: 'spawn',
+      mode: opts.mode ?? 'spawn',
       deep: opts.deep,
       captureIntegrity: raw.captureIntegrity,
     },

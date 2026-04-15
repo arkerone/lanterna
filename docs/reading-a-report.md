@@ -31,15 +31,16 @@ Key fields:
 
 - `durationMs`: wall-clock duration of the capture
 - `sampleIntervalMicros`: V8 CPU sampling interval
-- `command`: the executed command
-- `mode`: currently always `spawn`
+- `command`: the executed command, or `[]` in attach mode
+- `mode`: either `spawn` or `attach`
 - `deep`: whether deopt tracing was enabled
 - `captureIntegrity`: quality indicators for timed signals
 
 How to use it:
 
 - If `durationMs` is very short, treat ratios and rankings as less stable.
-- If `captureIntegrity.controlChannel` is false, event-loop and GC timing likely degraded.
+- If `captureIntegrity.controlChannel` is false in `spawn` mode, event-loop and GC timing likely degraded.
+- In `attach` mode, `captureIntegrity.controlChannel` is expected to be false because there is no FD 3 control channel.
 - If `deep` is false, ignore `deopts[]` entirely.
 
 ## `summary`: Where CPU Time Went

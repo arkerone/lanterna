@@ -25,21 +25,21 @@ Use Lanterna when you want to answer questions such as:
 - Did GC pauses or event-loop stalls line up with specific user-code hotspots?
 - Can I hand the result to an AI agent and get concrete optimisation work back?
 
-Lanterna is currently focused on profiling a Node.js program that it starts itself.
+Lanterna profiles Node.js processes either by starting them itself or by attaching to an already-running process over the Node inspector.
 
 ## Current Scope
 
 Supported today:
 
 - CLI command: `lanterna run`
-- collector mode: `spawn`
+- CLI command: `lanterna attach`
+- collector modes: `spawn`, `attach`
 - JSON output to stdout or file
 - enriched findings for sync crypto, blocking I/O, excessive GC, event-loop stalls, repeated deopts, and module loading on the hot path
 - optional `--deep` mode for deopt tracing
 
 Not implemented yet:
 
-- attach to an existing PID
 - in-process/programmatic capture API
 
 The README and docs below describe the current implementation, not planned v2 modes.
@@ -68,14 +68,22 @@ lanterna run --duration 10s --pretty -- node server.js
 
 # Include V8 deoptimisation tracing
 lanterna run --duration 30s --deep -- node app.js
+
+# Attach to a long-running Node process by pid
+lanterna attach --pid 4242 --duration 15s --output report.json
+
+# Attach directly to an existing inspector WebSocket
+lanterna attach --inspect-url ws://127.0.0.1:9229/<uuid> --duration 15s --pretty
 ```
 
 `--duration` accepts `ms`, `s`, or `m`. If omitted, Lanterna profiles until the child process exits.
+For `attach`, `--duration` is required because Lanterna does not control the lifetime of the target process.
 
 ## CLI Reference
 
 ```text
 lanterna run [options] -- <command> [args...]
+lanterna attach [options]
 
 Options:
   --duration <ms|s|m>     Profile duration. Omit to run until the child exits.
@@ -83,6 +91,8 @@ Options:
   --pretty                Pretty-print JSON with 2-space indentation
   --deep                  Enable --trace-deopt in the child process
   --sample-interval <us>  V8 sampling interval in microseconds (default: 1000)
+  --pid <pid>             Attach to an existing Node.js pid
+  --inspect-url <url>     Attach to an existing inspector WebSocket URL
   -h, --help              Show help
 ```
 
@@ -91,6 +101,25 @@ Important behavior:
 - The `--` separator is required before the target command.
 - `--deep` gives more signal for deopts, but it also makes the child process noisier because V8 deopt traces go to `stderr`.
 - `--sample-interval` must be at least `50`.
+- `lanterna attach` requires exactly one of `--pid` or `--inspect-url`.
+- `lanterna attach` requires `--duration`.
+- `lanterna attach` does not support `--deep`; attach mode cannot enable V8 deopt tracing on a process that is already running.
+
+## What Happens During `lanterna attach`
+
+At a high level:
+
+1. Lanterna either signals the target pid with `SIGUSR1` and discovers the inspector on `127.0.0.1:9229`, or connects directly to the provided WebSocket URL.
+2. It connects over the Chrome DevTools Protocol and reads target metadata such as Node version, V8 version, cwd, and pid.
+3. It injects a lightweight runtime hook that starts event-loop heartbeats and GC tracking inside the existing process.
+4. Lanterna starts the V8 sampling CPU profiler and waits for the requested duration.
+5. At stop time, it reads timed runtime signals from the injected globals, stops the profiler, normalizes the capture, and emits the final enriched report.
+
+Attach mode is intentionally conservative:
+
+- `meta.command` is `[]` because Lanterna did not launch the process itself.
+- `meta.captureIntegrity.controlChannel` is `false` by design because attach mode does not have the spawn-mode FD 3 control pipe.
+- `deopts[]` remains empty because attach mode does not enable `--trace-deopt` on the target.
 
 ## What Happens During `lanterna run`
 
@@ -212,8 +241,9 @@ Lanterna does more than dump a raw `.cpuprofile`, but the output still needs to 
 
 Current limitations:
 
-- Only spawn-mode collection is implemented.
 - The target must run under Node with inspector support.
+- `attach --pid` is POSIX-oriented because it relies on `SIGUSR1`; on Windows, use `--inspect-url`.
+- `attach --pid` expects the inspector to become reachable on `127.0.0.1:9229`. If the target already uses a different inspector port, attach with `--inspect-url` instead.
 - Event-loop lag is best when both timed heartbeats and the event-loop histogram are available. If either is missing, Lanterna degrades the signal and reports that fact.
 - A hotspot in `node_modules` or `node:builtin` is often a symptom. The real action item may be in the user-code caller that triggered it.
 - `--deep` is required for deopt findings; without it, `deopts[]` is empty by design.
@@ -238,7 +268,7 @@ What is public today:
 What is not public today:
 
 - spawn collector internals
-- attach mode
+- attach collector internals
 - in-process capture mode
 
 ## Documentation

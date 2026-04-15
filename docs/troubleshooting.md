@@ -27,6 +27,25 @@ Common problems and how to resolve them.
 
 ---
 
+## Attach by pid times out
+
+**Symptom:** `lanterna attach --pid <pid>` exits with `timed out waiting for inspector on pid ...`
+
+**Causes and fixes:**
+
+1. **The target is not a Node.js process.** `SIGUSR1` will not open a Node inspector on non-Node runtimes.
+
+2. **Port `9229` is already occupied.** `attach --pid` expects the inspector to become reachable on `127.0.0.1:9229`. If another process already owns that port, connect with `--inspect-url` instead.
+
+3. **The environment disables `SIGUSR1`-based inspector startup.** Some process supervisors or hardened environments may block this path. Start the target with `--inspect` yourself and use:
+   ```bash
+   lanterna attach --inspect-url ws://127.0.0.1:9229/<uuid> --duration 15s
+   ```
+
+4. **You are on Windows.** `attach --pid` is POSIX-oriented. On Windows, use `--inspect-url`.
+
+---
+
 ## Empty report — findings array is `[]`
 
 **Symptom:** The report has no findings, or `hotspots` is an empty array.
@@ -76,6 +95,7 @@ Common problems and how to resolve them.
 **What to do:**
 
 - A fully degraded capture (`controlChannel: false`) can happen if the child process closes FD 3 early. Some process managers (pm2, Docker entrypoints) may close extra file descriptors. Try running the process directly.
+- In attach mode, `controlChannel: false` is expected because the target was not spawned with Lanterna's FD 3 pipe. Judge attach-mode quality primarily from `eventLoopTimed`, `gcTimed`, and `cpuSamplesTimed`.
 - `eventLoopTimed: false` with `gcTimed: false` is normal for very short processes (< 200ms). The measurements simply did not have time to land.
 - Always read `captureIntegrity` before drawing conclusions from correlation evidence.
 
@@ -102,3 +122,9 @@ Common problems and how to resolve them.
 ```bash
 lanterna run --deep --duration 30s -- node app.js 2>/dev/null
 ```
+
+---
+
+## Attach mode has no deopts
+
+**Expected behavior.** `lanterna attach` does not support `--deep`, so `deopts[]` stays empty and no `deopt-loop:*` finding will be emitted. If you need deopt tracing, use `lanterna run --deep -- ...` so Lanterna can start the process with `--trace-deopt`.

@@ -1,6 +1,6 @@
 # How Lanterna Works
 
-This document explains the runtime flow behind `lanterna run`, the shape of the data pipeline, and the cases where Lanterna can only provide a partial signal.
+This document explains the runtime flow behind `lanterna run` and `lanterna attach`, the shape of the data pipeline, and the cases where Lanterna can only provide a partial signal.
 
 ## Mental Model
 
@@ -9,9 +9,14 @@ Lanterna has two major phases:
 1. capture raw profiling and timing data from a Node.js child process
 2. enrich that capture into a `LanternaReport`
 
-The capture phase is currently implemented only in spawn mode. Lanterna starts the process itself, enables the inspector, injects a preload hook, and stops the capture when the child exits or the requested duration expires.
+The capture phase is implemented in two modes:
+
+1. `spawn`: Lanterna starts the process itself, enables the inspector, injects a preload hook, and stops the capture when the child exits or the requested duration expires
+2. `attach`: Lanterna connects to an already-running Node.js process over the inspector, injects a runtime hook over CDP, and stops the capture after the requested duration or when the target exits first
 
 ## Runtime Flow
+
+The two modes share the same enrichment pipeline. They differ only in how the raw capture is collected.
 
 ### 1. Spawn and prepare the target
 
@@ -92,6 +97,31 @@ During shutdown it:
 - gives the process a short chance to exit cleanly, then escalates to `SIGTERM` and `SIGKILL` if needed
 
 The final output of this phase is a `RawCapture`.
+
+### Attach mode
+
+`lanterna attach` delegates to `AttachSource`.
+
+Attach mode has two entry points:
+
+- `--pid <pid>`: Lanterna sends `SIGUSR1` to the target process, then polls `127.0.0.1:9229` for the inspector endpoint
+- `--inspect-url <ws://...>`: Lanterna connects directly to an already-known inspector WebSocket
+
+Once connected, attach mode:
+
+1. reads target metadata over CDP
+2. injects a small runtime hook that publishes event-loop heartbeats and GC events through globals
+3. marks capture start in that injected hook
+4. starts the V8 sampling profiler
+5. waits for the requested duration
+6. reads runtime timing data back from the globals, stops the profiler, and closes the CDP session
+
+Important differences from spawn mode:
+
+- there is no paused startup phase and no `Runtime.runIfWaitingForDebugger`
+- there is no FD 3 control channel, so `captureIntegrity.controlChannel` is always `false`
+- attach mode cannot enable `--trace-deopt`, so `deopts[]` is empty by design
+- `meta.command` is empty because Lanterna did not launch the process itself
 
 ## Enrichment Pipeline
 
@@ -236,7 +266,6 @@ Without `--deep`, deopt tracing is intentionally absent. `deopts[]` will be empt
 
 Lanterna does not currently:
 
-- attach to an already-running process
 - expose a public capture API for embedding the collector in another tool
 - generate flamegraphs as its primary output
 - infer source-level fixes by itself; it emits evidence and suggestions, but the actual remediation still belongs to the user or an agent consuming the report

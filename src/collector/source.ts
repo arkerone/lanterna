@@ -1,7 +1,13 @@
-export interface StartOptions {
+export interface SpawnStartOptions {
   command: string[];
   sampleIntervalMicros: number;
   deep: boolean;
+}
+
+export interface AttachStartOptions {
+  pid?: number;
+  inspectUrl?: string;
+  sampleIntervalMicros: number;
 }
 
 export interface TargetInfo {
@@ -88,6 +94,6 @@ export interface SourceHandle {
   stop(): Promise<RawCapture>;
 }
 
-export interface ProfileSource {
-  start(options: StartOptions): Promise<SourceHandle>;
+export interface ProfileSource<TOptions> {
+  start(options: TOptions): Promise<SourceHandle>;
 }

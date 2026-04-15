@@ -5,10 +5,12 @@ type Pending = {
 };
 
 type EventHandler = (params: unknown) => void;
+type CloseHandler = () => void;
 
 export interface CdpClient {
   send<T = unknown>(method: string, params?: Record<string, unknown>): Promise<T>;
   on(event: string, handler: EventHandler): () => void;
+  onClose(handler: CloseHandler): () => void;
   close(): Promise<void>;
   readonly closed: boolean;
 }
@@ -34,6 +36,7 @@ export async function connectCdp(url: string): Promise<CdpClient> {
   let nextId = 1;
   const pending = new Map<number, Pending>();
   const handlers = new Map<string, Set<EventHandler>>();
+  const closeHandlers = new Set<CloseHandler>();
   let closed = false;
 
   ws.addEventListener('message', (ev: MessageEvent) => {
@@ -66,6 +69,13 @@ export async function connectCdp(url: string): Promise<CdpClient> {
     closed = true;
     for (const p of pending.values()) p.reject(new Error('CDP connection closed'));
     pending.clear();
+    for (const handler of closeHandlers) {
+      try {
+        handler();
+      } catch {
+        // Ignore close handler failures.
+      }
+    }
   });
 
   ws.addEventListener('error', () => {
@@ -92,6 +102,10 @@ export async function connectCdp(url: string): Promise<CdpClient> {
       }
       set.add(handler);
       return () => set!.delete(handler);
+    },
+    onClose(handler: CloseHandler): () => void {
+      closeHandlers.add(handler);
+      return () => closeHandlers.delete(handler);
     },
     async close(): Promise<void> {
       if (closed) return;
