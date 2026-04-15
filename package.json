@@ -46,7 +46,7 @@
     "dev": "tsc --watch"
   },
   "engines": {
-    "node": ">=20.0.0"
+    "node": "^24.0.0"
   },
   "keywords": [
     "profiler",
@@ -59,13 +59,13 @@
   "license": "MIT",
   "devDependencies": {
     "@types/chrome-remote-interface": "^0.33.0",
-    "@types/node": "^22.0.0",
-    "typescript": "^5.6.0"
+    "@types/node": "^24.12.2",
+    "typescript": "^6.0.2"
   },
   "dependencies": {
     "chrome-remote-interface": "^0.34.0",
     "commander": "^14.0.3",
-    "pino": "^9.9.0",
+    "pino": "^10.3.1",
     "zod": "^4.3.6"
   }
 }
