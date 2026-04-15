@@ -1,0 +1,56 @@
+{
+  "name": "lanterna",
+  "version": "0.1.0",
+  "description": "Agent-first Node.js CPU profiler — structured, semantically enriched JSON output for AI consumption",
+  "type": "module",
+  "bin": {
+    "lanterna": "./bin/lanterna.js"
+  },
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./report": {
+      "types": "./dist/report/types.d.ts",
+      "default": "./dist/report/types.js"
+    }
+  },
+  "files": [
+    "README.md",
+    "assets",
+    "bin",
+    "dist",
+    "skills"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/arkerone/lanterna"
+  },
+  "bugs": {
+    "url": "https://github.com/arkerone/lanterna/issues"
+  },
+  "homepage": "https://github.com/arkerone/lanterna#readme",
+  "scripts": {
+    "build": "tsc && node scripts/copy-assets.js",
+    "test": "npm run build && tsc -p tsconfig.test.json && node scripts/copy-assets.js --dest=dist-test/src && node --test dist-test/test/**/*.test.js",
+    "dev": "tsc --watch"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "keywords": [
+    "profiler",
+    "cpu",
+    "nodejs",
+    "v8",
+    "ai-agent",
+    "llm"
+  ],
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.6.0"
+  }
+}
