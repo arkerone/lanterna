@@ -1,10 +1,8 @@
 # Reading a Lanterna Report
 
-Lanterna emits a structured `LanternaReport` JSON object. This document explains how to read it in the right order, what each section means, and how to avoid common misinterpretations.
+Lanterna emits a structured `LanternaReport`. Read it in this order.
 
 ## Read It In This Order
-
-For a first pass, use this sequence:
 
 1. `meta`
 2. `summary`
@@ -14,18 +12,7 @@ For a first pass, use this sequence:
 6. `hotStacks`
 7. `deopts`
 
-That order gives you context before detail.
-
 ## `meta`: What Was Captured
-
-`meta` answers basic questions about the session:
-
-- which Node/V8 runtime was profiled
-- which command was run
-- how long the session lasted
-- which sample interval was used
-- whether `--deep` was enabled
-- whether the capture paths worked as expected
 
 Key fields:
 
@@ -36,7 +23,7 @@ Key fields:
 - `deep`: whether deopt tracing was enabled
 - `captureIntegrity`: quality indicators for timed signals
 
-How to use it:
+Use it to sanity-check the capture:
 
 - If `durationMs` is very short, treat ratios and rankings as less stable.
 - If `captureIntegrity.controlChannel` is false in `spawn` mode, event-loop and GC timing likely degraded.
@@ -44,8 +31,6 @@ How to use it:
 - If `deep` is false, ignore `deopts[]` entirely.
 
 ## `summary`: Where CPU Time Went
-
-`summary` is the fastest way to understand the overall shape of the run.
 
 Important fields:
 
@@ -59,7 +44,7 @@ Important fields:
 - `topCategory`: dominant non-idle category
 - `dominantBlockingKind`: coarse summary derived from emitted findings
 
-Interpretation patterns:
+Common patterns:
 
 - High `userCodeRatio`: your own code is where CPU is spent; hotspots are likely actionable directly.
 - High `builtinRatio`: often a sync builtin such as crypto, fs, child process, or compression.
@@ -68,8 +53,6 @@ Interpretation patterns:
 - High `idleRatio`: the run may not represent the real hot path because the process was mostly waiting.
 
 ## `findings`: The Action Queue
-
-`findings[]` is the main entry point when you want actionable output.
 
 Each finding contains:
 
@@ -82,7 +65,7 @@ Each finding contains:
 - `suggestion`
 - `references`
 
-Read `findings[]` as prioritized hypotheses backed by the capture, not as generic lint rules.
+Read `findings[]` as prioritized hypotheses backed by the capture.
 
 ### Evidence Attribution
 
@@ -92,14 +75,9 @@ The most useful part is usually `evidence`:
 - `selfPct`: CPU weight attributed to that evidence
 - `extra`: detector-specific metadata
 
-For some detectors, `evidence.file` and `evidence.function` may point to a user caller rather than the builtin callee. That is intentional.
+For some detectors, `evidence.file` and `evidence.function` point to a user caller rather than the builtin callee. That is intentional.
 
-Example:
-
-- the hottest builtin may be `pbkdf2Sync`
-- the actionable evidence may be your `hashPassword` function that called it
-
-### Current Detector Meanings
+### Detector Meanings
 
 #### `sync-crypto-on-hot-path`
 
@@ -199,8 +177,6 @@ Typical next step:
 
 ## `hotspots`: Where CPU Is Actually Spent
 
-`hotspots[]` aggregates functions by `(file, function, line)`.
-
 Each hotspot includes:
 
 - `selfMs` and `selfPct`: direct time in that function
@@ -215,11 +191,6 @@ How to read it:
 - Use `selfPct` to find the hottest direct leaves.
 - Use `totalPct` to find broad expensive paths where work may happen in descendants or native code.
 - Use `callers[]` when a builtin or dependency is hot; the caller is often the real source fix.
-
-Common pattern:
-
-- `pbkdf2Sync` may have low user visibility as a builtin frame
-- its caller in user code is where you change behavior
 
 ## `eventLoop`: Latency Signal
 

@@ -6,8 +6,7 @@
 
 > Agent-first Node.js CPU profiler. Lanterna runs your program, captures a V8 CPU profile plus timed runtime signals, and emits a structured JSON report that humans and agents can act on directly.
 
-Lanterna is built for cases where a flamegraph is not enough or not the right interface.
-Instead of producing a visualization for manual analysis, it produces an enriched `LanternaReport` with:
+Lanterna emits an enriched `LanternaReport` with:
 
 - categorized hotspots
 - hot call stacks
@@ -17,7 +16,7 @@ Instead of producing a visualization for manual analysis, it produces an enriche
 
 ## What Lanterna Is For
 
-Use Lanterna when you want to answer questions such as:
+Use Lanterna when you need answers to questions such as:
 
 - Which function is actually consuming CPU in this Node.js process?
 - Is the bottleneck in my code, a dependency, a Node builtin, native code, or GC?
@@ -25,11 +24,12 @@ Use Lanterna when you want to answer questions such as:
 - Did GC pauses or event-loop stalls line up with specific user-code hotspots?
 - Can I hand the result to an AI agent and get concrete optimisation work back?
 
-Lanterna profiles Node.js processes either by starting them itself or by attaching to an already-running process over the Node inspector.
+Lanterna works in two modes:
 
-## Current Scope
+- `run`: start the target process and profile it
+- `attach`: connect to an existing Node.js process over the inspector
 
-Supported today:
+## Scope
 
 - CLI command: `lanterna run`
 - CLI command: `lanterna attach`
@@ -38,11 +38,9 @@ Supported today:
 - enriched findings for sync crypto, blocking I/O, CPU-bound user hotspots, JSON-on-hot-path, dependency hotspots, excessive GC, event-loop stalls, repeated deopts, and module loading on the hot path
 - optional `--deep` mode for deopt tracing
 
-Not implemented yet:
+Not included:
 
 - in-process/programmatic capture API
-
-The README and docs below describe the current implementation, not planned v2 modes.
 
 ## Requirements
 
@@ -76,8 +74,7 @@ lanterna attach --pid 4242 --duration 15s --output report.json
 lanterna attach --inspect-url ws://127.0.0.1:9229/<uuid> --duration 15s --pretty
 ```
 
-`--duration` accepts `ms`, `s`, or `m`. If omitted, Lanterna profiles until the child process exits.
-For `attach`, `--duration` is required because Lanterna does not control the lifetime of the target process.
+`--duration` accepts `ms`, `s`, or `m`. If omitted, Lanterna profiles until the child process exits. In `attach` mode, `--duration` is required.
 
 ## CLI Reference
 
@@ -96,7 +93,7 @@ Options:
   -h, --help              Show help
 ```
 
-Important behavior:
+Notes:
 
 - The `--` separator is required before the target command.
 - `--deep` gives more signal for deopts, but it also makes the child process noisier because V8 deopt traces go to `stderr`.
@@ -105,9 +102,7 @@ Important behavior:
 - `lanterna attach` requires `--duration`.
 - `lanterna attach` does not support `--deep`; attach mode cannot enable V8 deopt tracing on a process that is already running.
 
-## What Happens During `lanterna attach`
-
-At a high level:
+## `lanterna attach`
 
 1. Lanterna either signals the target pid with `SIGUSR1` and discovers the inspector on `127.0.0.1:9229`, or connects directly to the provided WebSocket URL.
 2. It connects over the Chrome DevTools Protocol and reads target metadata such as Node version, V8 version, cwd, and pid.
@@ -115,15 +110,13 @@ At a high level:
 4. Lanterna starts the V8 sampling CPU profiler and waits for the requested duration.
 5. At stop time, it reads timed runtime signals from the injected globals, stops the profiler, normalizes the capture, and emits the final enriched report.
 
-Attach mode is intentionally conservative:
+Behavior:
 
 - `meta.command` is `[]` because Lanterna did not launch the process itself.
 - `meta.captureIntegrity.controlChannel` is `false` by design because attach mode does not have the spawn-mode FD 3 control pipe.
 - `deopts[]` remains empty because attach mode does not enable `--trace-deopt` on the target.
 
-## What Happens During `lanterna run`
-
-At a high level:
+## `lanterna run`
 
 1. Lanterna spawns your command with `NODE_OPTIONS` extended to include `--inspect-brk=0` and a preload hook.
 2. It waits for the inspector WebSocket, connects over the Chrome DevTools Protocol, and reads target metadata such as Node version, V8 version, cwd, and pid.
@@ -134,7 +127,7 @@ At a high level:
 
 The detailed architecture and degradation modes are documented in [docs/how-lanterna-works.md](docs/how-lanterna-works.md).
 
-## What You Get Back
+## Report Shape
 
 Lanterna outputs a `LanternaReport` JSON object with these top-level sections:
 
@@ -147,7 +140,7 @@ Lanterna outputs a `LanternaReport` JSON object with these top-level sections:
 - `deopts`: grouped V8 deoptimisation events when `--deep` is enabled
 - `findings`: actionable detector output sorted by severity and attributed CPU weight
 
-Example shape:
+Example:
 
 ```json
 {
@@ -183,27 +176,25 @@ Example shape:
 
 For a field-by-field interpretation guide, see [docs/reading-a-report.md](docs/reading-a-report.md).
 
-## How To Read the Report Quickly
-
-Start with:
+## Reading Order
 
 1. `summary.topCategory` and the ratio fields to understand where the process spends on-CPU time.
 2. `findings[]` for the highest-priority actionable signals.
 3. `hotspots[0..N]` to see where CPU is spent directly and transitively.
 4. `eventLoop` and `gc` to understand latency and memory-pressure side effects.
 
-Useful heuristics:
+Heuristics:
 
 - High `builtinRatio` plus a `sync-crypto` or `blocking-io` finding usually means user code is calling a synchronous builtin on the hot path.
 - High `idleRatio` usually means the process was not under enough load to make the profile representative.
 - `eventLoop.available = true` is not enough on its own; also read `measurementBasis` and `confidence`.
 - If `captureIntegrity.*` flags are degraded, treat correlation signals more cautiously.
 
-## Findings Lanterna Emits Today
+## Findings
 
-Lanterna currently ships these detectors:
+Lanterna emits these built-in detectors:
 
-| Finding id | Category | Current trigger |
+| Finding id | Category | Trigger |
 | --- | --- | --- |
 | `sync-crypto-on-hot-path` | `sync-crypto` | `pbkdf2Sync`, `scryptSync`, or `randomBytesSync` with `totalPct >= 1` |
 | `blocking-io:<api>` | `blocking-io` | sync fs, child_process, or zlib APIs with meaningful `selfPct` or `totalPct` |
@@ -215,7 +206,7 @@ Lanterna currently ships these detectors:
 | `deopt-loop:<function>` | `deopt-loop` | same deoptimised function seen at least 5 times in `--deep` mode |
 | `require-in-hot-path` | `require-in-hot-path` | module loading functions sampled on the hot path |
 
-The exact evidence payload varies by detector. In particular, sync crypto, blocking I/O, JSON, dependency, GC, event-loop, and require findings may include correlated user-call-site attribution in `evidence.extra`.
+The exact `evidence.extra` payload varies by detector. Sync crypto, blocking I/O, JSON, dependency, GC, event-loop, and require findings may attribute the action to a user call-site rather than the builtin callee.
 
 ## Quick jq Recipes
 

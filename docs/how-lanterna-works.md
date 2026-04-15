@@ -1,6 +1,6 @@
 # How Lanterna Works
 
-This document explains the runtime flow behind `lanterna run` and `lanterna attach`, the shape of the data pipeline, and the cases where Lanterna can only provide a partial signal.
+This document covers capture flow, enrichment, and degraded-signal cases.
 
 ## Mental Model
 
@@ -16,7 +16,7 @@ The capture phase is implemented in two modes:
 
 ## Runtime Flow
 
-The two modes share the same enrichment pipeline. They differ only in how the raw capture is collected.
+The two modes share the same enrichment pipeline. They differ only in how `RawCapture` is collected.
 
 ### 1. Spawn and prepare the target
 
@@ -50,16 +50,16 @@ If the inspector never becomes available, the run fails fast. Lanterna does not 
 
 ### 3. Preload hook responsibilities
 
-The preload hook does not capture CPU samples. That still comes from V8's CPU profiler through CDP.
+The preload hook does not capture CPU samples. CPU still comes from V8's profiler over CDP.
 
-Its job is to publish runtime timing signals that are difficult to infer from the raw CPU profile alone:
+Its job is to publish runtime timing signals that are hard to infer from the raw CPU profile alone:
 
 - event-loop heartbeat samples roughly every 20ms
 - event-loop histogram summary via `monitorEventLoopDelay`
 - GC pause events via `PerformanceObserver`
 - lifecycle events such as hook readiness and app completion
 
-These events are emitted over the control FD as JSON lines. The parent process treats this channel as best effort:
+These events are emitted over the control FD as JSON lines. The parent treats this channel as best effort:
 
 - malformed events are ignored
 - if the channel is partially unavailable, Lanterna still tries to produce a report
@@ -140,7 +140,7 @@ Each frame is classified into one of these categories:
 - `idle`
 - `unknown`
 
-This matters because the summary ratios and several findings depend on the distinction between user code and everything else.
+This classification feeds summary ratios and several findings.
 
 Examples:
 
@@ -163,15 +163,13 @@ Each hotspot includes:
 - top callees
 - optimization state
 
-This is the main bridge between raw V8 data and actionable analysis.
-
 ### Hot stacks
 
 Lanterna also keeps the most frequent complete sampled stacks. Hot stacks are useful when a single hotspot is ambiguous and you need to see the surrounding call path.
 
 ### Timed correlation
 
-The raw CPU profile says where CPU time went, but not always when latency symptoms occurred. Lanterna uses timed runtime signals to add that missing dimension.
+The raw CPU profile says where CPU time went, but not always when latency symptoms occurred. Timed runtime signals add that missing dimension.
 
 It builds time windows for:
 
@@ -183,13 +181,13 @@ Then it correlates sampled user-code hotspots with those windows. That is how th
 - this user function overlapped most measured stall windows
 - this hotspot is a likely contributor to GC pressure
 
-Correlation is intentionally conservative. If no single user frame dominates the measured windows strongly enough, Lanterna reports ranked candidates instead of over-claiming certainty.
+Correlation is conservative. If no single user frame dominates the measured windows strongly enough, Lanterna reports ranked candidates instead of over-claiming certainty.
 
 ### Findings
 
 Findings are detectors running on the enriched report, not on the raw capture.
 
-Current detectors cover:
+Built-in detectors cover:
 
 - synchronous crypto on the hot path
 - blocking sync I/O on the hot path
