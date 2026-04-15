@@ -1,6 +1,6 @@
 ---
 name: lanterna-profile
-description: Profile the CPU of a Node.js program with Lanterna and produce actionable AI-ready performance analysis. Use this skill when the user wants to profile a Node.js application, identify CPU bottlenecks, debug slow endpoints, understand GC pressure, or get concrete optimisation suggestions backed by profiling data.
+description: Use when profiling a Node.js program with Lanterna to investigate CPU bottlenecks, event-loop stalls, GC pressure, slow endpoints, hot paths, or deoptimisation signals.
 triggers:
   - "profile"
   - "cpu profiling"
@@ -8,137 +8,183 @@ triggers:
   - "find bottleneck"
   - "performance issue"
   - "what is blocking the event loop"
-  - "GC pressure"
+  - "gc pressure"
   - "high latency"
+  - "deopt"
   - "lanterna"
 ---
 
-# Skill: lanterna-profile
+# lanterna-profile
 
-You are a Node.js performance expert. You have access to **Lanterna**, an agent-first CPU profiler that produces structured, semantically enriched JSON — not flamegraphs. Your job is to profile the user's application, interpret the report, and produce concrete, code-level optimisation recommendations.
+## Overview
 
-## References
+Use this skill to run Lanterna against a Node.js process, inspect the JSON report, and turn the result into concrete code-level recommendations.
 
-Read these before interpreting any report:
-- `references/report-schema.md` — complete JSON field reference
-- `references/common-pitfalls.md` — Node.js anti-patterns, V8 deopt reasons, fix patterns
+Core rule: do not guess. Read the report first, then read the implicated source files before proposing changes.
 
----
+## When to Use
+
+Use when:
+- The user wants CPU profiling on a Node.js app or script
+- A route, worker, or command is slow under load
+- The user suspects blocking sync work, GC pressure, or event-loop stalls
+- The user wants actionable fixes from a Lanterna JSON report
+
+Do not use when:
+- The problem is primarily memory growth or heap leaks without a CPU symptom
+- The user already has a different profiler workflow they explicitly want to keep
+- There is no runnable command and no existing report to inspect
+
+## Quick Reference
+
+- Default duration: `15s` with load, `5s` without load
+- Prefer `--deep` when deopts or type instability are plausible
+- For HTTP servers, profile with load rather than idle traffic
+- If `summary.idleRatio > 0.8`, the run is mostly idle and should usually be repeated with load
+- If `eventLoop.available` is `false`, avoid strong latency attribution
+- If `meta.captureIntegrity.*` contains `false`, call out degraded signal quality
+
+## Stop and Ask First
+
+Do not improvise when core inputs are missing.
+
+Stop and ask the user when:
+- There is no runnable command and no existing Lanterna report
+- The app needs credentials, fixtures, or a startup sequence you do not know
+- The target is an HTTP service but the relevant route or traffic shape is unclear
+- The user asks for code changes but you have not read the implicated source file yet
 
 ## Workflow
 
-### Step 1 — Understand the target
+### 1. Confirm the profiling target
 
-Ask (if not already clear):
-- What is the command to start the application? (e.g. `node server.js`, `npm start`)
-- Is there an existing load generator running, or should you just profile cold? For HTTP servers, offer to run `autocannon` in parallel.
-- How long should the profile run? Default: **15 seconds** with load, **5 seconds** without.
+Collect the minimum information needed:
+- Start command for the target program
+- Whether there is already traffic or load
+- Whether the user wants a quick run or deeper analysis
 
-### Step 2 — Profile with Lanterna
+If the target is an HTTP server and no load generator is active, offer to run one in parallel. Do not assume `autocannon` is installed until you verify it or install it intentionally.
 
-Run the profiler using the Bash tool:
+### 2. Run Lanterna with environment-aware commands
 
-```bash
-# Basic profile (15s)
-node /path/to/lanterna/bin/lanterna.js run --duration 15s --output /tmp/lanterna-report.json -- <command>
+Prefer a local checkout or installed `lanterna` binary over hardcoded paths.
 
-# With deeper deopt tracing (recommended when you suspect type instability)
-node /path/to/lanterna/bin/lanterna.js run --duration 15s --deep --output /tmp/lanterna-report.json -- <command>
-
-# For HTTP servers: run load in parallel
-node /path/to/lanterna/bin/lanterna.js run --duration 15s --output /tmp/lanterna-report.json -- node server.js &
-sleep 2 && npx autocannon -c 50 -d 12 http://localhost:3000
-```
-
-If Lanterna is installed globally: `lanterna run ...`
-
-### Step 3 — Read the report
+Examples:
 
 ```bash
-cat /tmp/lanterna-report.json | jq '{ summary, findings: .findings | length, topHotspot: .hotspots[0] }'
+# Local checkout
+node ./bin/lanterna.js run --duration 15s --output /tmp/lanterna-report.json -- node server.js
+
+# Installed binary
+lanterna run --duration 15s --output /tmp/lanterna-report.json -- npm start
+
+# Deeper run when deopts are relevant
+node ./bin/lanterna.js run --deep --duration 15s --output /tmp/lanterna-report.json -- node server.js
 ```
 
-Then read the full report:
+For HTTP servers, pair the profile with real traffic. Use a verified command rather than a fixed `sleep` recipe. If you need load, start the app, wait until it is reachable, then run the load generator during most of the capture window.
+
+### 3. Read the report in two passes
+
+First pass: get a compact summary.
+
 ```bash
-cat /tmp/lanterna-report.json
+jq '{meta, summary, topHotspot: .hotspots[0], findingsCount: (.findings | length)}' /tmp/lanterna-report.json
 ```
 
-### Step 4 — Interpret and report
+Second pass: inspect only the sections you need:
+- `findings[]` for priority issues
+- `hotspots[]` for raw hot code
+- `eventLoop` for lag signal
+- `gc` for pause pressure
+- `deopts[]` when `meta.deep` is `true`
 
-Produce a structured analysis:
+Read `references/report-schema.md` when a field is unclear. Read `references/common-pitfalls.md` when turning a finding into a fix.
 
-#### 4a — Executive summary
-State in 2–3 sentences: what was the profiling session, how long, what was the top CPU consumer, and the overall health signal (`summary.topCategory`, `summary.onCpuRatio`).
+### 4. Decide whether the run is usable
 
-#### 4b — Findings (priority order)
-For each finding in `findings[]` (already sorted by severity × selfPct):
-1. **Title**: `[SEVERITY] <finding.title>`
-2. **Location**: `<evidence.file>:<evidence.line>` in `<evidence.function>` — `<evidence.selfPct>%` self CPU
-3. **Why**: Paste `finding.why` or enrich with context from the codebase
-4. **Fix**: Concrete patch or code snippet based on `finding.suggestion` + `references/common-pitfalls.md`
+Before writing conclusions, check whether the run should be treated as degraded or repeated.
 
-If `findings[]` is empty, state it clearly and explain what the profile shows instead (dependency hotspot, normal workload, etc.).
+Usually rerun instead of over-interpreting when:
+- `summary.idleRatio > 0.8`
+- `meta.totalSamples` is very low for the requested duration
+- `eventLoop.available` is `false` and the user asked specifically about latency or stalls
+- `meta.captureIntegrity.*` contains `false` for the signals you need
+- The hottest frames are startup-only work and the user asked about steady-state throughput
 
-#### 4c — Top hotspots (non-finding)
-List the top 5 hotspots from `hotspots[]` even if they didn't trigger a finding. Flag if any user-code function has `selfPct > 10%` without a finding — the detector may not cover it.
+### 5. Interpret before prescribing
 
-#### 4d — GC and event loop
-- If `gc.longestPauseMs > 50` or `gc.totalPauseMs / meta.durationMs > 0.05`: flag GC
-- If `eventLoop.available && eventLoop.maxLagMs > 50`: flag potential latency impact
-- When `eventLoop.correlatedHotspots[]` is present, prefer those candidates over generic “top hotspot” guesses
-- When `meta.captureIntegrity.*` is false, call out the degraded signal explicitly
+Produce the analysis in this order:
 
-#### 4e — Deopts (if `--deep` was used)
-List deoptimised functions with count ≥ 3, explain the reason using `references/common-pitfalls.md`.
+1. Executive summary
+State the command, duration, top CPU consumer, and the overall signal from `summary.topCategory` and `summary.onCpuRatio`.
 
-### Step 5 — Propose patches
+2. Findings
+For each entry in `findings[]`, include:
+- Title with severity
+- Location from `evidence.file:evidence.line`
+- Why it matters in this run
+- Concrete fix direction
 
-For each critical/warning finding, write the actual code change:
-- Read the relevant source file first (use the `file` path from the evidence)
-- Show the before/after diff
-- Prefer async variants, worker threads (piscina), LRU caches, or structural fixes
-- Do not guess at code you haven't read
+3. Top hotspots
+List the top user-relevant hotspots even if there is no finding. If a user-code hotspot has high `selfPct` without a finding, note that detector coverage may not explain everything.
 
----
+4. GC and event loop
+- Flag GC when pauses or ratios are materially high
+- Flag event-loop impact only when `eventLoop.available` is true
+- Prefer `eventLoop.correlatedHotspots[]` over generic hotspot guesses
+- If capture integrity is degraded, say so explicitly
 
-## Output format
+5. Deopts
+When `meta.deep` is true, surface repeated deopts and explain them using `references/common-pitfalls.md`
 
-```
+### 6. Read code before proposing patches
+
+Before suggesting edits:
+- Open the exact file named in `evidence.file`
+- Read the relevant function around the cited line
+- Trace callers when the hotspot is in `node_modules` or a builtin
+
+Only then propose a patch. Prefer:
+- async APIs over sync APIs on request paths
+- worker threads or a pool for CPU-bound work
+- bounded caches over unbounded maps
+- structural fixes over micro-optimisations
+
+## Output Format
+
+Use this structure:
+
+```md
 ## Lanterna Profile — <command> (<durationMs>ms)
 
 ### Summary
-<onCpuRatio>% on-CPU | top category: <topCategory> | <totalSamples> samples @ <sampleIntervalMicros>µs
+<onCpuRatio>% on-CPU | top category: <topCategory> | <totalSamples> samples @ <sampleIntervalMicros>us
 
-### Findings (<N> total)
-
-#### [CRITICAL] Synchronous crypto on hot path (pbkdf2Sync) — 42.3% self CPU
-**Location**: src/auth/password.js:87 in `hashPassword`
-**Why**: pbkdf2Sync blocks the event loop for the entire hash computation duration. At 42% of CPU, every request is delayed by this call.
-**Fix**:
-```diff
-- const hash = crypto.pbkdf2Sync(pw, salt, 100_000, 64, 'sha512');
-+ const hash = await crypto.pbkdf2(pw, salt, 100_000, 64, 'sha512');
-```
-Or with piscina for high throughput: [code snippet]
+### Findings
+#### [CRITICAL] <title>
+**Location**: <file>:<line> in `<function>`
+**Why**: <why this matters here>
+**Fix**: <concrete remediation>
 
 ### Top Hotspots
-1. `pbkdf2Sync` (node:crypto) — 42.3% self
-2. `hashPassword` (src/auth/password.js:87) — 10.1% self
-...
+1. `<function>` — <selfPct>% self
 
 ### GC
-Total pause: 120ms | longest: 45ms | scavenge: 8×, markSweep: 1×
+<relevant summary or "no material GC concern detected">
 
 ### Event Loop
-Max lag: 430ms ⚠️  | p99: 430ms
+<relevant summary or "event-loop signal unavailable/degraded">
 ```
 
----
+If `findings[]` is empty, say that clearly and explain what the hotspots suggest instead.
 
-## Important notes
+## Common Mistakes
 
-- **Never suggest changes without reading the file first.** Use Read or Bash to inspect the actual code at the location indicated by `evidence.file:evidence.line`.
-- **Calibrate severity to context**: a `selfPct` of 3% on a toy app is different from a production server at capacity.
-- **Hotspots in `node_modules`** are often symptoms, not causes: look at who calls them (the `callers[]` field).
-- **If `eventLoop.available = false`**: Lanterna did not obtain a usable event-loop signal for that run. Inform the user that event-loop lag data is unavailable or degraded, and prefer hotspot/findings analysis over latency attribution.
-- **If `summary.idleRatio > 0.8`**: the profile captured mostly idle time. The application wasn't under load. Suggest rerunning with a load generator.
+- Recommending code changes from `finding.suggestion` without reading the actual file first
+- Treating a mostly idle profile as representative production data
+- Blaming `node_modules` hotspots without checking their callers
+- Claiming event-loop causality when `eventLoop.available` is false
+- Treating one hot function as the root cause when the caller chain shows otherwise
+- Assuming load tooling or binary paths instead of verifying the environment
+- Patching a dependency or Node builtin directly instead of identifying the user-code caller that drives it
