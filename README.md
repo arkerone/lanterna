@@ -35,7 +35,7 @@ Supported today:
 - CLI command: `lanterna attach`
 - capture modes: `spawn`, `attach`
 - JSON output to stdout or file
-- enriched findings for sync crypto, blocking I/O, excessive GC, event-loop stalls, repeated deopts, and module loading on the hot path
+- enriched findings for sync crypto, blocking I/O, CPU-bound user hotspots, JSON-on-hot-path, dependency hotspots, excessive GC, event-loop stalls, repeated deopts, and module loading on the hot path
 - optional `--deep` mode for deopt tracing
 
 Not implemented yet:
@@ -207,12 +207,15 @@ Lanterna currently ships these detectors:
 | --- | --- | --- |
 | `sync-crypto-on-hot-path` | `sync-crypto` | `pbkdf2Sync`, `scryptSync`, or `randomBytesSync` with `totalPct >= 1` |
 | `blocking-io:<api>` | `blocking-io` | sync fs, child_process, or zlib APIs with meaningful `selfPct` or `totalPct` |
+| `cpu-bound-user-hotspot:<hotspot>` | `cpu-bound-user-hotspot` | dominant user-code hotspot with no more specific detector match |
+| `json-on-hot-path:<api>` | `json-on-hot-path` | `JSON.parse` or `JSON.stringify` consuming meaningful CPU on the hot path |
+| `node-modules-hotspot:<package>` | `node-modules-hotspot` | a dependency frame dominates a meaningful share of CPU time |
 | `excessive-gc` | `excessive-gc` | `gcRatio > 10%` or `longestPauseMs > 100ms` |
 | `event-loop-stall` | `event-loop-stall` | `p99LagMs >= 100` or `maxLagMs >= 200` |
 | `deopt-loop:<function>` | `deopt-loop` | same deoptimised function seen at least 5 times in `--deep` mode |
 | `require-in-hot-path` | `require-in-hot-path` | module loading functions sampled on the hot path |
 
-The exact evidence payload varies by detector. In particular, sync crypto, blocking I/O, GC, and event-loop findings may include correlated user-call-site attribution in `evidence.extra`.
+The exact evidence payload varies by detector. In particular, sync crypto, blocking I/O, JSON, dependency, GC, event-loop, and require findings may include correlated user-call-site attribution in `evidence.extra`.
 
 ## Quick jq Recipes
 

@@ -83,6 +83,10 @@ const deoptLoopExtraSchema = z.object({
   count: z.number().int().nonnegative(),
 });
 
+const requireInHotPathExtraSchema = attributionEvidenceSchema.extend({
+  callee: z.string().min(1),
+});
+
 const excessiveGcExtraSchema = z.object({
   gcRatio: z.number().finite(),
   longestPauseMs: z.number().finite(),
@@ -102,12 +106,37 @@ const eventLoopStallExtraSchema = z.object({
   candidateHotspots: z.array(correlatedHotspotSchema),
 });
 
+const cpuBoundUserHotspotExtraSchema = z.object({
+  totalPct: z.number().finite(),
+  selfPct: z.number().finite(),
+  eventLoopCorrelation: stallCorrelationSchema.optional(),
+});
+
+const jsonHotPathExtraSchema = attributionEvidenceSchema.extend({
+  callee: z.string().min(1),
+  calleeTotalPct: z.number().finite(),
+  eventLoopCorrelation: stallCorrelationSchema.optional(),
+});
+
+const nodeModulesHotspotExtraSchema = attributionEvidenceSchema.extend({
+  package: z.string().min(1).optional(),
+  callee: z.string().min(1),
+  calleeFile: z.string().min(1),
+  calleeLine: z.number().int(),
+  calleeTotalPct: z.number().finite(),
+  eventLoopCorrelation: stallCorrelationSchema.optional(),
+});
+
 const builtinFindingExtraSchema = z.union([
   blockingIoExtraSchema,
   syncCryptoExtraSchema,
   deoptLoopExtraSchema,
+  requireInHotPathExtraSchema,
   excessiveGcExtraSchema,
   eventLoopStallExtraSchema,
+  cpuBoundUserHotspotExtraSchema,
+  jsonHotPathExtraSchema,
+  nodeModulesHotspotExtraSchema,
 ]);
 
 const genericFindingExtraSchema = z.record(z.string(), z.unknown());
@@ -137,20 +166,13 @@ const findingSchema = z.object({
     'blocking-io': blockingIoExtraSchema,
     'sync-crypto': syncCryptoExtraSchema,
     'deopt-loop': deoptLoopExtraSchema,
+    'require-in-hot-path': requireInHotPathExtraSchema,
     'excessive-gc': excessiveGcExtraSchema,
     'event-loop-stall': eventLoopStallExtraSchema,
+    'cpu-bound-user-hotspot': cpuBoundUserHotspotExtraSchema,
+    'json-on-hot-path': jsonHotPathExtraSchema,
+    'node-modules-hotspot': nodeModulesHotspotExtraSchema,
   } as const;
-
-  if (category === 'require-in-hot-path') {
-    if (extra !== undefined) {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['evidence', 'extra'],
-        message: 'require-in-hot-path findings must not include evidence.extra',
-      });
-    }
-    return;
-  }
 
   const extraSchema = schemaByCategory[category as keyof typeof schemaByCategory];
   if (!extraSchema) {

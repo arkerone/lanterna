@@ -9,7 +9,7 @@ import { defineBuiltinFinding } from '../../report/types.js';
 import type { Detector, FindingContext } from './types.js';
 import {
   buildAttributionEvidence,
-  buildBlockingFinding,
+  buildAttributedFinding,
   findStallCorrelation,
   resolveAttribution,
 } from './shared.js';
@@ -54,7 +54,7 @@ function buildFinding(
     ...buildAttributionEvidence(attribution, caller),
     eventLoopCorrelation: findStallCorrelation(caller, report),
   };
-  return defineBuiltinFinding(buildBlockingFinding({
+  return defineBuiltinFinding(buildAttributedFinding({
     id: 'sync-crypto-on-hot-path',
     category: 'sync-crypto',
     severity: hotspot.totalPct > DETECTOR_THRESHOLDS.syncCrypto.criticalPct ? 'critical' : 'warning',

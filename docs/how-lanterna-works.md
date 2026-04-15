@@ -193,6 +193,9 @@ Current detectors cover:
 
 - synchronous crypto on the hot path
 - blocking sync I/O on the hot path
+- CPU-bound user-code hotspots
+- repeated JSON parse/stringify on the hot path
+- dependency hotspots in `node_modules`
 - excessive GC
 - event-loop stalls
 - repeated deoptimisation loops

@@ -10,5 +10,6 @@ export interface FindingContext {
 
 export interface Detector {
   id: string;
+  order?: number;
   detect(report: AnalysisSnapshot, context: FindingContext): Finding[];
 }

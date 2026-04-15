@@ -20,7 +20,10 @@ export type BuiltinFindingCategory =
   | 'deopt-loop'
   | 'require-in-hot-path'
   | 'excessive-gc'
-  | 'event-loop-stall';
+  | 'event-loop-stall'
+  | 'cpu-bound-user-hotspot'
+  | 'json-on-hot-path'
+  | 'node-modules-hotspot';
 
 export type FindingCategory = BuiltinFindingCategory | (string & {});
 
@@ -184,6 +187,10 @@ export interface DeoptLoopEvidenceExtra {
   count: number;
 }
 
+export interface RequireInHotPathEvidenceExtra extends AttributionEvidence {
+  callee: string;
+}
+
 export interface ExcessiveGcEvidenceExtra {
   gcRatio: number;
   longestPauseMs: number;
@@ -203,13 +210,37 @@ export interface EventLoopStallEvidenceExtra {
   candidateHotspots: CorrelatedHotspot[];
 }
 
+export interface CpuBoundUserHotspotEvidenceExtra {
+  totalPct: number;
+  selfPct: number;
+  eventLoopCorrelation?: StallCorrelation;
+}
+
+export interface JsonHotPathEvidenceExtra extends AttributionEvidence {
+  callee: string;
+  calleeTotalPct: number;
+  eventLoopCorrelation?: StallCorrelation;
+}
+
+export interface NodeModulesHotspotEvidenceExtra extends AttributionEvidence {
+  package?: string;
+  callee: string;
+  calleeFile: string;
+  calleeLine: number;
+  calleeTotalPct: number;
+  eventLoopCorrelation?: StallCorrelation;
+}
+
 export interface BuiltinFindingEvidenceExtraMap {
   'blocking-io': BlockingIoEvidenceExtra;
   'sync-crypto': SyncCryptoEvidenceExtra;
   'deopt-loop': DeoptLoopEvidenceExtra;
-  'require-in-hot-path': undefined;
+  'require-in-hot-path': RequireInHotPathEvidenceExtra;
   'excessive-gc': ExcessiveGcEvidenceExtra;
   'event-loop-stall': EventLoopStallEvidenceExtra;
+  'cpu-bound-user-hotspot': CpuBoundUserHotspotEvidenceExtra;
+  'json-on-hot-path': JsonHotPathEvidenceExtra;
+  'node-modules-hotspot': NodeModulesHotspotEvidenceExtra;
 }
 
 export type BuiltinFindingEvidenceExtra =

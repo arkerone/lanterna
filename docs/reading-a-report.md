@@ -153,11 +153,45 @@ Typical next step:
 
 - stabilize shapes and types, then reprofile
 
+#### `cpu-bound-user-hotspot:<hotspot>`
+
+Interpretation:
+
+- a user-code function is dominating on-CPU time on the main thread
+- no more specific built-in detector explained that cost well enough
+
+Typical next step:
+
+- inspect the function body for algorithmic cost, repeated work, or a missing offload to worker threads
+
+#### `json-on-hot-path:<api>`
+
+Interpretation:
+
+- `JSON.parse` or `JSON.stringify` is a meaningful part of the request path
+- the actionable evidence usually points to the user caller, not the builtin frame
+
+Typical next step:
+
+- reduce repeated parse/stringify work, cache stable payloads, or stream large payloads
+
+#### `node-modules-hotspot:<package>`
+
+Interpretation:
+
+- a dependency dominates a meaningful share of CPU time
+- the user caller still matters because your code controls when and how often the dependency runs
+
+Typical next step:
+
+- inspect the caller path, reduce input size or call frequency, and decide whether the dependency usage or the dependency itself needs replacing
+
 #### `require-in-hot-path`
 
 Interpretation:
 
 - module loading is happening during active work rather than once at startup
+- the actionable evidence may point at the user caller while `evidence.extra.callee` keeps the module-loader frame
 
 Typical next step:
 
@@ -284,7 +318,7 @@ How to use it:
 
 ### Mistake: assuming no findings means no problem
 
-Lanterna only detects specific patterns. A clean `findings[]` can still hide a genuine user-code hotspot that no detector matches.
+Lanterna covers common CPU and event-loop patterns, but it is still heuristic. A clean `findings[]` lowers the odds of the usual issues; it does not prove the profile is healthy.
 
 ### Mistake: blaming `node_modules` immediately
 

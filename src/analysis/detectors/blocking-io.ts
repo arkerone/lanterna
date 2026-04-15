@@ -9,7 +9,7 @@ import { defineBuiltinFinding } from '../../report/types.js';
 import type { Detector, FindingContext } from './types.js';
 import {
   buildAttributionEvidence,
-  buildBlockingFinding,
+  buildAttributedFinding,
   findStallCorrelation,
   resolveAttribution,
 } from './shared.js';
@@ -61,7 +61,7 @@ function buildFinding(
     ...buildAttributionEvidence(attribution, caller),
     eventLoopCorrelation: findStallCorrelation(caller, report),
   };
-  return defineBuiltinFinding(buildBlockingFinding({
+  return defineBuiltinFinding(buildAttributedFinding({
     id: `blocking-io:${api}`,
     category: 'blocking-io',
     severity: Math.max(hotspot.selfPct, hotspot.totalPct) > DETECTOR_THRESHOLDS.blockingIo.criticalPct ? 'critical' : 'warning',

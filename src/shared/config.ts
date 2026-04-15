@@ -36,6 +36,22 @@ export interface EventLoopThresholds {
 export interface DetectorThresholds {
   readonly blockingIo: BlockingThresholds;
   readonly syncCrypto: BlockingThresholds;
+  readonly cpuBoundUserHotspot: {
+    readonly minSelfPct: number;
+    readonly minTotalPct: number;
+    readonly warningTotalPct: number;
+    readonly criticalTotalPct: number;
+    readonly strongCorrelationOverlapPct: number;
+  };
+  readonly jsonHotPath: {
+    readonly minTotalPct: number;
+    readonly criticalPct: number;
+  };
+  readonly nodeModulesHotspot: {
+    readonly minSelfPct: number;
+    readonly minTotalPct: number;
+    readonly criticalTotalPct: number;
+  };
   readonly requireInHotPath: {
     readonly minSelfPct: number;
     readonly minTotalPct: number;
@@ -52,6 +68,22 @@ export interface DetectorThresholds {
 export const DETECTOR_THRESHOLDS: DetectorThresholds = {
   blockingIo: { minSelfPct: 0.5, minTotalPct: 1, criticalPct: 10 },
   syncCrypto: { minSelfPct: 0, minTotalPct: 1, criticalPct: 10 },
+  cpuBoundUserHotspot: {
+    minSelfPct: 10,
+    minTotalPct: 20,
+    warningTotalPct: 20,
+    criticalTotalPct: 40,
+    strongCorrelationOverlapPct: 50,
+  },
+  jsonHotPath: {
+    minTotalPct: 3,
+    criticalPct: 12,
+  },
+  nodeModulesHotspot: {
+    minSelfPct: 3,
+    minTotalPct: 15,
+    criticalTotalPct: 35,
+  },
   requireInHotPath: { minSelfPct: 0.5, minTotalPct: 1, warningSelfPct: 3 },
   deoptLoop: { minCount: 5, criticalCount: 20 },
   excessiveGc: {

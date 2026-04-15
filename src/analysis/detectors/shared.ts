@@ -3,8 +3,11 @@ import type {
   BaseFinding,
   BlockingIoEvidenceExtra,
   BuiltinFindingCategory,
+  JsonHotPathEvidenceExtra,
+  NodeModulesHotspotEvidenceExtra,
   Hotspot,
   LanternaReport,
+  RequireInHotPathEvidenceExtra,
   StallCorrelation,
   SyncCryptoEvidenceExtra,
 } from '../../report/types.js';
@@ -58,10 +61,18 @@ export function resolveEvidenceField<K extends 'file' | 'line' | 'function'>(
   return (caller?.[field] ?? hotspot[field]) as Hotspot[K];
 }
 
-type BlockingFindingExtra = BlockingIoEvidenceExtra | SyncCryptoEvidenceExtra;
+type AttributedFindingExtra =
+  | BlockingIoEvidenceExtra
+  | SyncCryptoEvidenceExtra
+  | JsonHotPathEvidenceExtra
+  | NodeModulesHotspotEvidenceExtra
+  | RequireInHotPathEvidenceExtra;
 
-export function buildBlockingFinding<
-  C extends Extract<BuiltinFindingCategory, 'blocking-io' | 'sync-crypto'>,
+export function buildAttributedFinding<
+  C extends Extract<
+    BuiltinFindingCategory,
+    'blocking-io' | 'sync-crypto' | 'json-on-hot-path' | 'node-modules-hotspot' | 'require-in-hot-path'
+  >,
 >(
   options: {
     id: string;
@@ -74,9 +85,20 @@ export function buildBlockingFinding<
     why: string;
     suggestion: string;
     references: string[];
-    extra: BlockingFindingExtra;
+    extra: AttributedFindingExtra;
   },
-): BaseFinding<C, C extends 'blocking-io' ? BlockingIoEvidenceExtra : SyncCryptoEvidenceExtra> {
+): BaseFinding<
+  C,
+  C extends 'blocking-io'
+    ? BlockingIoEvidenceExtra
+    : C extends 'sync-crypto'
+      ? SyncCryptoEvidenceExtra
+      : C extends 'json-on-hot-path'
+        ? JsonHotPathEvidenceExtra
+        : C extends 'node-modules-hotspot'
+          ? NodeModulesHotspotEvidenceExtra
+          : RequireInHotPathEvidenceExtra
+> {
   const {
     id,
     category,
@@ -101,7 +123,16 @@ export function buildBlockingFinding<
       line: resolveEvidenceField(caller, hotspot, 'line'),
       function: resolveEvidenceField(caller, hotspot, 'function'),
       selfPct,
-      extra: extra as C extends 'blocking-io' ? BlockingIoEvidenceExtra : SyncCryptoEvidenceExtra,
+      extra: extra as
+        C extends 'blocking-io'
+          ? BlockingIoEvidenceExtra
+          : C extends 'sync-crypto'
+            ? SyncCryptoEvidenceExtra
+            : C extends 'json-on-hot-path'
+              ? JsonHotPathEvidenceExtra
+              : C extends 'node-modules-hotspot'
+                ? NodeModulesHotspotEvidenceExtra
+                : RequireInHotPathEvidenceExtra,
     },
     why,
     suggestion,

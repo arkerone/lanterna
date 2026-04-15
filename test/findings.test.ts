@@ -345,12 +345,155 @@ describe('findings – require-in-hot-path', () => {
 
   it('require-in-hot-path evidence points to the Module._load frame', () => {
     const f = report.findings.find((f) => f.id === 'require-in-hot-path')!;
-    assert.match(f.evidence.function, /_load/);
+    assert.match(f.evidence.function, /handleRequest/);
+  });
+
+  it('require-in-hot-path keeps the builtin callee in evidence.extra', () => {
+    const f = report.findings.find((f) => f.id === 'require-in-hot-path')!;
+    assert.match(String((f.evidence.extra as Record<string, unknown>)?.callee), /_load/);
   });
 
   it('require-in-hot-path is at least info severity', () => {
     const f = report.findings.find((f) => f.id === 'require-in-hot-path')!;
     assert.ok(f.severity === 'info' || f.severity === 'warning' || f.severity === 'critical');
+  });
+});
+
+describe('findings – json-on-hot-path', () => {
+  const profile: RawCpuProfile = {
+    nodes: [
+      {
+        id: 1,
+        callFrame: { functionName: '(root)', scriptId: '0', url: '', lineNumber: -1, columnNumber: -1 },
+        hitCount: 0,
+        children: [2],
+      },
+      {
+        id: 2,
+        callFrame: { functionName: 'serializeResponse', scriptId: '1', url: `file://${CWD}/src/http.js`, lineNumber: 12, columnNumber: 0 },
+        hitCount: 15,
+        children: [3],
+      },
+      {
+        id: 3,
+        callFrame: { functionName: 'JSON.stringify', scriptId: '0', url: 'node:internal/json', lineNumber: 0, columnNumber: 0 },
+        hitCount: 85,
+        children: [],
+      },
+    ],
+    startTime: 1000000,
+    endTime: 2000000,
+    samples: Array(85).fill(3).concat(Array(15).fill(2)),
+    timeDeltas: [],
+  };
+
+  const report = createReport(
+    makeRaw(profile),
+    { sampleIntervalMicros: 1000, deep: false, command: ['node', 'app.js'] },
+  );
+
+  it('detects json-on-hot-path', () => {
+    const f = report.findings.find((f) => f.id.startsWith('json-on-hot-path:'));
+    assert.ok(f, `Expected json-on-hot-path finding. findings = ${JSON.stringify(report.findings.map((f) => f.id))}`);
+  });
+
+  it('attributes json-on-hot-path to the user caller', () => {
+    const f = report.findings.find((f) => f.id.startsWith('json-on-hot-path:'))!;
+    assert.match(f.evidence.function, /serializeResponse/);
+    assert.match(String((f.evidence.extra as Record<string, unknown>)?.callee), /JSON\.stringify/);
+  });
+});
+
+describe('findings – node-modules-hotspot', () => {
+  const profile: RawCpuProfile = {
+    nodes: [
+      {
+        id: 1,
+        callFrame: { functionName: '(root)', scriptId: '0', url: '', lineNumber: -1, columnNumber: -1 },
+        hitCount: 0,
+        children: [2],
+      },
+      {
+        id: 2,
+        callFrame: { functionName: 'renderPage', scriptId: '1', url: `file://${CWD}/src/server.js`, lineNumber: 3, columnNumber: 0 },
+        hitCount: 15,
+        children: [3],
+      },
+      {
+        id: 3,
+        callFrame: {
+          functionName: 'compile',
+          scriptId: '2',
+          url: `file://${CWD}/node_modules/markdown-it/index.js`,
+          lineNumber: 41,
+          columnNumber: 0,
+        },
+        hitCount: 85,
+        children: [],
+      },
+    ],
+    startTime: 1000000,
+    endTime: 2000000,
+    samples: Array(85).fill(3).concat(Array(15).fill(2)),
+    timeDeltas: [],
+  };
+
+  const report = createReport(
+    makeRaw(profile),
+    { sampleIntervalMicros: 1000, deep: false, command: ['node', 'app.js'] },
+  );
+
+  it('detects node-modules-hotspot', () => {
+    const f = report.findings.find((f) => f.id.startsWith('node-modules-hotspot:'));
+    assert.ok(f, `Expected node-modules-hotspot finding. findings = ${JSON.stringify(report.findings.map((f) => f.id))}`);
+  });
+
+  it('reports the dependency package and user caller', () => {
+    const f = report.findings.find((f) => f.id.startsWith('node-modules-hotspot:'))!;
+    assert.match(f.evidence.function, /renderPage/);
+    assert.equal((f.evidence.extra as Record<string, unknown>)?.package, 'markdown-it');
+  });
+});
+
+describe('findings – cpu-bound-user-hotspot', () => {
+  const profile: RawCpuProfile = {
+    nodes: [
+      {
+        id: 1,
+        callFrame: { functionName: '(root)', scriptId: '0', url: '', lineNumber: -1, columnNumber: -1 },
+        hitCount: 0,
+        children: [2],
+      },
+      {
+        id: 2,
+        callFrame: { functionName: 'computeRanking', scriptId: '1', url: `file://${CWD}/src/ranking.js`, lineNumber: 27, columnNumber: 0 },
+        hitCount: 100,
+        children: [],
+      },
+    ],
+    startTime: 1000000,
+    endTime: 2000000,
+    samples: Array(100).fill(2),
+    timeDeltas: [],
+  };
+
+  const report = createReport(
+    makeRaw(profile),
+    { sampleIntervalMicros: 1000, deep: false, command: ['node', 'app.js'] },
+  );
+
+  it('detects a dominant user-code hotspot', () => {
+    const f = report.findings.find((f) => f.id.startsWith('cpu-bound-user-hotspot:'));
+    assert.ok(f, `Expected cpu-bound-user-hotspot finding. findings = ${JSON.stringify(report.findings.map((f) => f.id))}`);
+    assert.match(f.evidence.function, /computeRanking/);
+  });
+});
+
+describe('findings – cpu-bound-user-hotspot suppression', () => {
+  const report = makeReport('sync-crypto');
+
+  it('does not emit cpu-bound-user-hotspot when a more specific detector explains the work', () => {
+    assert.equal(report.findings.some((f) => f.id.startsWith('cpu-bound-user-hotspot:')), false);
   });
 });
 
@@ -362,18 +505,24 @@ describe('findings – no false positives on clean profile', () => {
         id: 1,
         callFrame: { functionName: '(root)', scriptId: '0', url: '', lineNumber: -1, columnNumber: -1 },
         hitCount: 0,
-        children: [2],
+        children: [2, 3],
       },
       {
         id: 2,
         callFrame: { functionName: 'computeFibonacci', scriptId: '1', url: `file://${CWD}/src/fib.js`, lineNumber: 5, columnNumber: 0 },
-        hitCount: 100,
+        hitCount: 4,
+        children: [],
+      },
+      {
+        id: 3,
+        callFrame: { functionName: '(idle)', scriptId: '0', url: '', lineNumber: -1, columnNumber: -1 },
+        hitCount: 96,
         children: [],
       },
     ],
     startTime: 1000000,
     endTime: 2000000,
-    samples: Array(100).fill(2),
+    samples: Array(4).fill(2).concat(Array(96).fill(3)),
     timeDeltas: [],
   };
 
