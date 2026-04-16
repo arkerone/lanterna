@@ -116,12 +116,15 @@ function detectOptState(functionName: string): OptimizationState {
   return 'unknown';
 }
 
-export function aggregateHotspots(
+export function buildHotspotAnalysis(
   profile: RawCpuProfile,
   tree: EnrichedTree,
   topN = 25,
 ): HotspotAnalysis {
-  // Aggregate by (file, function, line) across all node ids that share a call frame.
+  // ── Phase 1: Build aggregate map ──────────────────────────────────────────
+  // Group all tree nodes by their logical call frame (file + function + line).
+  // Multiple node IDs can share the same frame when the function appears at
+  // different depths in the call tree; we merge them into a single aggregate.
   const hotspotAggregatesByKey = new Map<string, HotspotAggregate>();
   const aggregateKeyByNodeId = new Map<number, string>();
 
@@ -153,6 +156,10 @@ export function aggregateHotspots(
     aggregate.sourceNodeIds.add(node.id);
   }
 
+  // ── Phase 2: Walk sample paths ────────────────────────────────────────────
+  // For each leaf sample, walk the call path upward to build caller/callee
+  // relationships and track which user-code ancestor is nearest to each
+  // non-user frame (used later for attribution scoring).
   const totalSamples = Math.max(1, tree.totalSamples);
   const sampleLeafIds = profile.samples ?? [];
   if (sampleLeafIds.length > 0) {
@@ -209,6 +216,11 @@ export function aggregateHotspots(
     aggregate.totalSamples = aggregateTotalSamples;
   }
 
+  // ── Phase 3: Materialize aggregates into Hotspot objects ─────────────────
+  // Convert each aggregate into a public Hotspot. For non-user frames, find
+  // the top user-code ancestor by sample count and record it as the
+  // attribution (confidence is 'high' when that ancestor appears on ≥80% of
+  // the frame's call paths).
   const fullHotspots: Hotspot[] = [];
   const hotspotById = new Map<string, Hotspot>();
   const userAttributionById = new Map<string, HotspotAttribution>();

@@ -1,6 +1,6 @@
 import type { RawCapture } from '../../capture/core/types.js';
 import { buildTimedSamples } from '../model/correlations.js';
-import { aggregateHotspots, enrichCpuTree } from '../model/hotspots.js';
+import { buildHotspotAnalysis, enrichCpuTree } from '../model/hotspots.js';
 import type { AnalysisContext, AnalysisOptions } from './types.js';
 
 export function createAnalysisContext(
@@ -8,7 +8,7 @@ export function createAnalysisContext(
   options: AnalysisOptions,
 ): AnalysisContext {
   let cachedTree: ReturnType<typeof enrichCpuTree> | undefined;
-  let cachedHotspotAnalysis: ReturnType<typeof aggregateHotspots> | undefined;
+  let cachedHotspotAnalysis: ReturnType<typeof buildHotspotAnalysis> | undefined;
   let cachedTimedSamples: ReturnType<typeof buildTimedSamples> | undefined;
 
   return {
@@ -23,7 +23,7 @@ export function createAnalysisContext(
       return cachedTree;
     },
     getHotspotAnalysis() {
-      cachedHotspotAnalysis ??= aggregateHotspots(rawCapture.cpuProfile, this.getTree());
+      cachedHotspotAnalysis ??= buildHotspotAnalysis(rawCapture.cpuProfile, this.getTree());
       return cachedHotspotAnalysis;
     },
     getTimedSamples() {

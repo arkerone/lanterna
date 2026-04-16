@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { enrichCpuTree, aggregateHotspots } from '../src/analysis/model/hotspots.js';
+import { enrichCpuTree, buildHotspotAnalysis } from '../src/analysis/model/hotspots.js';
 import { classifyFrame } from '../src/analysis/model/classify.js';
 import { CWD, loadProfile } from './helpers.js';
 
@@ -80,10 +80,10 @@ describe('enrichCpuTree', () => {
   });
 });
 
-describe('aggregateHotspots', () => {
+describe('buildHotspotAnalysis', () => {
   it('surfaces the synchronous crypto call as the dominant hotspot with caller attribution', () => {
     const tree = enrichCpuTree(loadProfile('sync-crypto'), CWD, 1000);
-    const hotspots = aggregateHotspots(loadProfile('sync-crypto'), tree).publicHotspots;
+    const hotspots = buildHotspotAnalysis(loadProfile('sync-crypto'), tree).publicHotspots;
     const topHotspot = hotspots[0];
 
     expect(hotspots.length).toBeGreaterThan(0);
