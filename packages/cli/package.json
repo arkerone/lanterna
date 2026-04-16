@@ -30,5 +30,11 @@
   },
   "engines": {
     "node": ">=22.0.0"
-  }
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/arkerone/lanterna.git",
+    "directory": "packages/cli"
+  },
+  "license": "MIT"
 }
