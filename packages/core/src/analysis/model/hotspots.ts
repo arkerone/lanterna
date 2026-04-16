@@ -247,8 +247,9 @@ export function buildHotspotAnalysis(
     hotspotById.set(hotspot.id, hotspot);
 
     const totalPathSamples = Math.max(1, aggregate.pathSamples || aggregate.totalSamples);
-    const topUserAttributionEntry = Array.from(aggregate.userAncestorSamples.entries())
-      .sort((left, right) => right[1] - left[1])[0];
+    const topUserAttributionEntry = Array.from(aggregate.userAncestorSamples.entries()).sort(
+      (left, right) => right[1] - left[1],
+    )[0];
     if (!topUserAttributionEntry) continue;
     const [userAggregateKey, attributedSampleCount] = topUserAttributionEntry;
     const userHotspotAggregate = hotspotAggregatesByKey.get(userAggregateKey);

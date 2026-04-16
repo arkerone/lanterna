@@ -6,9 +6,6 @@
     "composite": true,
     "tsBuildInfoFile": "./dist/.tsbuildinfo"
   },
-  "references": [
-    { "path": "../core" },
-    { "path": "../detectors" }
-  ],
+  "references": [{ "path": "../core" }, { "path": "../detectors" }],
   "include": ["src/**/*"]
 }

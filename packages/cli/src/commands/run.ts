@@ -1,8 +1,8 @@
+import { type LanternaDetectorPlugin, runProfile } from '@lanterna/detectors';
 import { startActivityIndicator } from '../activity-indicator.js';
-import { runProfile, type LanternaDetectorPlugin } from '@lanterna/detectors';
-import type { RunProfileOptions } from '../parse.js';
-import { writeReportOutput } from '../output.js';
 import { loadLanternaConfig } from '../config.js';
+import { writeReportOutput } from '../output.js';
+import type { RunProfileOptions } from '../parse.js';
 import { loadPlugins } from '../plugins.js';
 
 export async function runCommand(options: RunProfileOptions): Promise<void> {

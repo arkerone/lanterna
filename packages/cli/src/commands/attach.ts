@@ -1,16 +1,17 @@
+import { attachProfile, type LanternaDetectorPlugin } from '@lanterna/detectors';
 import { startActivityIndicator } from '../activity-indicator.js';
 import { resolveAttachTarget } from '../attach-target.js';
-import { attachProfile, type LanternaDetectorPlugin } from '@lanterna/detectors';
-import type { AttachProfileOptions } from '../parse.js';
-import { writeReportOutput } from '../output.js';
 import { loadLanternaConfig } from '../config.js';
+import { writeReportOutput } from '../output.js';
+import type { AttachProfileOptions } from '../parse.js';
 import { loadPlugins } from '../plugins.js';
 
 export async function attachCommand(options: AttachProfileOptions): Promise<void> {
   const resolvedOptions = await resolveAttachTarget(options);
-  const targetLabel = resolvedOptions.inspectUrl !== undefined
-    ? 'the provided inspector endpoint'
-    : `pid ${resolvedOptions.pid ?? 'unknown'}`;
+  const targetLabel =
+    resolvedOptions.inspectUrl !== undefined
+      ? 'the provided inspector endpoint'
+      : `pid ${resolvedOptions.pid ?? 'unknown'}`;
   const indicator = startActivityIndicator(`Preparing attach workflow for ${targetLabel}...`, {
     keepHistory: true,
   });

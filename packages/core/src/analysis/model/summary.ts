@@ -1,5 +1,5 @@
-import type { EnrichedTree } from './hotspots.js';
 import type { FrameCategory, LanternaReport, ReportSummary } from '../../report/types.js';
+import type { EnrichedTree } from './hotspots.js';
 
 export function buildSummary(tree: EnrichedTree): ReportSummary {
   const totals = createFrameCategoryTotals();
@@ -51,9 +51,7 @@ function createFrameCategoryTotals(): Record<FrameCategory, number> {
   };
 }
 
-function findTopOnCpuCategory(
-  totals: Record<FrameCategory, number>,
-): FrameCategory {
+function findTopOnCpuCategory(totals: Record<FrameCategory, number>): FrameCategory {
   const onCpuCategories: FrameCategory[] = ['user', 'node_modules', 'node:builtin', 'native', 'gc'];
   let topCategory: FrameCategory = 'user';
   let topValue = -1;

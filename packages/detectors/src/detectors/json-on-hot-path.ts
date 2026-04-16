@@ -1,14 +1,19 @@
-import type { BuiltinFinding, Finding, Hotspot, JsonHotPathEvidenceExtra, LanternaReport } from '@lanterna/core';
-import { defineBuiltinFinding } from '@lanterna/core';
-import type { Detector, FindingContext } from './types.js';
+import type {
+  BuiltinFinding,
+  Finding,
+  Hotspot,
+  JsonHotPathEvidenceExtra,
+  LanternaReport,
+} from '@lanterna/core';
+import { defineBuiltinFinding, stripOptPrefix } from '@lanterna/core';
+import { DETECTOR_THRESHOLDS, JSON_FUNCTION_PATTERNS } from '../config.js';
 import {
-  buildAttributionEvidence,
   buildAttributedFinding,
+  buildAttributionEvidence,
   findStallCorrelation,
   resolveAttribution,
 } from './shared.js';
-import { stripOptPrefix } from '@lanterna/core';
-import { JSON_FUNCTION_PATTERNS, DETECTOR_THRESHOLDS } from '../config.js';
+import type { Detector, FindingContext } from './types.js';
 
 export const jsonOnHotPathDetector: Detector = {
   id: 'json-on-hot-path',
@@ -18,7 +23,9 @@ export const jsonOnHotPathDetector: Detector = {
     const findings: Finding[] = [];
     for (const hotspot of context.fullHotspots) {
       const normalizedFunctionName = stripOptPrefix(hotspot.function);
-      const patternMatch = JSON_FUNCTION_PATTERNS.find((pattern) => pattern.re.test(normalizedFunctionName));
+      const patternMatch = JSON_FUNCTION_PATTERNS.find((pattern) =>
+        pattern.re.test(normalizedFunctionName),
+      );
       if (!patternMatch) continue;
       if (hotspot.category !== 'node:builtin' && hotspot.category !== 'native') continue;
       if (hotspot.totalPct < thresholds.minTotalPct) continue;
@@ -41,20 +48,23 @@ function buildFinding(
     ...buildAttributionEvidence(attribution, caller),
     eventLoopCorrelation: findStallCorrelation(caller, report),
   };
-  return defineBuiltinFinding(buildAttributedFinding({
-    id: `json-on-hot-path:${api}`,
-    category: 'json-on-hot-path',
-    severity: hotspot.totalPct >= DETECTOR_THRESHOLDS.jsonHotPath.criticalPct ? 'critical' : 'warning',
-    title: `${api} on hot path`,
-    hotspot,
-    caller,
-    selfPct: hotspot.totalPct,
-    extra: evidenceExtra,
-    why: `\`${api}\` is consuming a meaningful share of on-CPU time on the main thread. Repeated JSON parse/stringify work is both CPU-heavy and allocation-heavy, so it often amplifies event-loop latency and GC pressure.`,
-    suggestion: `Avoid repeated \`${api}\` work per request. Parse once at the edge, serialize once at the boundary, cache stable payloads, and prefer streaming JSON for large bodies instead of building huge objects/strings in memory.`,
-    references: [
-      'https://nodejs.org/en/docs/guides/dont-block-the-event-loop',
-      'https://nodejs.org/api/stream.html',
-    ],
-  }));
+  return defineBuiltinFinding(
+    buildAttributedFinding({
+      id: `json-on-hot-path:${api}`,
+      category: 'json-on-hot-path',
+      severity:
+        hotspot.totalPct >= DETECTOR_THRESHOLDS.jsonHotPath.criticalPct ? 'critical' : 'warning',
+      title: `${api} on hot path`,
+      hotspot,
+      caller,
+      selfPct: hotspot.totalPct,
+      extra: evidenceExtra,
+      why: `\`${api}\` is consuming a meaningful share of on-CPU time on the main thread. Repeated JSON parse/stringify work is both CPU-heavy and allocation-heavy, so it often amplifies event-loop latency and GC pressure.`,
+      suggestion: `Avoid repeated \`${api}\` work per request. Parse once at the edge, serialize once at the boundary, cache stable payloads, and prefer streaming JSON for large bodies instead of building huge objects/strings in memory.`,
+      references: [
+        'https://nodejs.org/en/docs/guides/dont-block-the-event-loop',
+        'https://nodejs.org/api/stream.html',
+      ],
+    }),
+  );
 }

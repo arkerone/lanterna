@@ -9,8 +9,10 @@ describe('parseRunArgs', () => {
   it('parses the target command after `--` and preserves profiling options', () => {
     expect(
       parseRunArgs([
-        '--duration', '1.5s',
-        '--sample-interval', '2500',
+        '--duration',
+        '1.5s',
+        '--sample-interval',
+        '2500',
         '--pretty',
         '--deep',
         '--',
@@ -60,9 +62,7 @@ describe('parseRunArgs', () => {
 
 describe('parseAttachArgs', () => {
   it('accepts a pid target and normalizes options', () => {
-    expect(
-      parseAttachArgs(['--pid', '42', '--duration', '1500ms', '--pretty']),
-    ).toEqual({
+    expect(parseAttachArgs(['--pid', '42', '--duration', '1500ms', '--pretty'])).toEqual({
       pid: 42,
       durationMs: 1500,
       pretty: true,
@@ -92,20 +92,20 @@ describe('parseAttachArgs', () => {
   });
 
   it('rejects attach with both pid and inspect-url', () => {
-    expect(() => parseAttachArgs([
-      '--pid',
-      '42',
-      '--inspect-url',
-      'ws://127.0.0.1:9229/test',
-      '--duration',
-      '1s',
-    ])).toThrow('`lanterna attach` accepts at most one of --pid or --inspect-url');
+    expect(() =>
+      parseAttachArgs([
+        '--pid',
+        '42',
+        '--inspect-url',
+        'ws://127.0.0.1:9229/test',
+        '--duration',
+        '1s',
+      ]),
+    ).toThrow('`lanterna attach` accepts at most one of --pid or --inspect-url');
   });
 
   it('accepts attach without an explicit target so the CLI can prompt interactively', () => {
-    expect(
-      parseAttachArgs(['--pid', '--pretty']),
-    ).toEqual({
+    expect(parseAttachArgs(['--pid', '--pretty'])).toEqual({
       promptForTarget: true,
       pretty: true,
       sampleIntervalMicros: 1000,
@@ -114,9 +114,7 @@ describe('parseAttachArgs', () => {
   });
 
   it('accepts attach without duration for manual-stop mode', () => {
-    expect(
-      parseAttachArgs(['--pid', '42']),
-    ).toEqual({
+    expect(parseAttachArgs(['--pid', '42'])).toEqual({
       pid: 42,
       pretty: false,
       sampleIntervalMicros: 1000,
@@ -125,9 +123,7 @@ describe('parseAttachArgs', () => {
   });
 
   it('does not prompt interactively for bare attach anymore', () => {
-    expect(
-      parseAttachArgs([]),
-    ).toEqual({
+    expect(parseAttachArgs([])).toEqual({
       pretty: false,
       sampleIntervalMicros: 1000,
       detectors: [],

@@ -4,7 +4,10 @@ import { logger } from '../shared/logger.js';
 type EventHandler = (params: unknown) => void;
 type CloseHandler = () => void;
 type ChromeRemoteInterfaceClient = CDP.Client & {
-  removeListener(event: string, listener: (params: unknown, sessionId?: string) => void): CDP.Client;
+  removeListener(
+    event: string,
+    listener: (params: unknown, sessionId?: string) => void,
+  ): CDP.Client;
   send(command: string, parameters?: Record<string, unknown>): Promise<unknown>;
 };
 
@@ -24,7 +27,7 @@ interface RuntimeEvaluateResult {
 }
 
 export async function connectCdp(webSocketDebuggerUrl: string): Promise<CdpClient> {
-  const client = await CDP({ target: webSocketDebuggerUrl }) as ChromeRemoteInterfaceClient;
+  const client = (await CDP({ target: webSocketDebuggerUrl })) as ChromeRemoteInterfaceClient;
   const closeHandlers = new Set<CloseHandler>();
   let closed = false;
 
@@ -53,7 +56,7 @@ export async function connectCdp(webSocketDebuggerUrl: string): Promise<CdpClien
       if (closed) {
         throw new Error('CDP connection closed');
       }
-      return await client.send(method, params) as TResponse;
+      return (await client.send(method, params)) as TResponse;
     },
     async evaluate(expression: string, opts: { awaitPromise?: boolean } = {}): Promise<unknown> {
       const result = await client.send('Runtime.evaluate', {

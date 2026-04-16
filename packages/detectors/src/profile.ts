@@ -1,18 +1,18 @@
 import {
-  buildLanternaReport,
-  sleep,
-  startAttachCapture,
-  startSpawnCapture,
   type AnalysisPipeline,
+  buildLanternaReport,
   type CaptureHandle,
   type FindingAnalyzer,
   type LanternaReport,
   type SectionAnalyzer,
+  sleep,
+  startAttachCapture,
+  startSpawnCapture,
 } from '@lanterna/core';
 import { createDefaultAnalysisPipeline } from './analyze-capture.js';
-import { createFindingAnalyzerFromDetector } from './plugin.js';
-import type { LanternaDetectorPlugin, LanternaPluginContext } from './plugin.js';
 import type { Detector } from './detectors/types.js';
+import type { LanternaDetectorPlugin, LanternaPluginContext } from './plugin.js';
+import { createFindingAnalyzerFromDetector } from './plugin.js';
 
 export interface RunProfileOptions {
   command: string[];
@@ -78,9 +78,10 @@ export async function runProfile(
 
   onProgress?.({
     stage: 'capture-running',
-    message: options.durationMs === undefined
-      ? 'CPU profiling is running until the child exits...'
-      : `CPU profiling is running for ${options.durationMs}ms...`,
+    message:
+      options.durationMs === undefined
+        ? 'CPU profiling is running until the child exits...'
+        : `CPU profiling is running for ${options.durationMs}ms...`,
   });
   const stopReason = await waitForStopReason(handle, options.durationMs);
 
@@ -127,9 +128,10 @@ export async function attachProfile(
 
   onProgress?.({
     stage: 'capture-running',
-    message: options.durationMs === undefined
-      ? 'CPU profiling is running. Stop with Ctrl+C or wait for the process to exit.'
-      : `CPU profiling is running for ${options.durationMs}ms...`,
+    message:
+      options.durationMs === undefined
+        ? 'CPU profiling is running. Stop with Ctrl+C or wait for the process to exit.'
+        : `CPU profiling is running for ${options.durationMs}ms...`,
   });
 
   const stopReason = await waitForStopReason(handle, options.durationMs);
@@ -189,7 +191,10 @@ async function waitForStopReason(
 ): Promise<StopReason> {
   const manualStop = createManualStopWatcher();
   try {
-    const pending = [handle.waitForExit().then<StopReason>(() => ({ type: 'exit' })), manualStop.promise];
+    const pending = [
+      handle.waitForExit().then<StopReason>(() => ({ type: 'exit' })),
+      manualStop.promise,
+    ];
     if (durationMs !== undefined) {
       pending.push(sleep(durationMs).then<StopReason>(() => ({ type: 'timeout' })));
     }

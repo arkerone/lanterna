@@ -1,20 +1,15 @@
 import { spawn } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { connectCdp } from '../../inspector/client.js';
+import { readEventLoopSamples } from '../../runtime-signals/readers/event-loop.js';
+import { parseDeoptsFromStderr } from '../core/deopts.js';
 import {
   createCaptureIntegrity,
   finishCaptureSession,
   startCaptureSession,
 } from '../core/session.js';
-import type {
-  ProfileSource,
-  RawCapture,
-  SourceHandle,
-  SpawnStartOptions,
-} from '../core/types.js';
-import { readEventLoopSamples } from '../../runtime-signals/readers/event-loop.js';
-import { parseDeoptsFromStderr } from '../core/deopts.js';
+import type { ProfileSource, RawCapture, SourceHandle, SpawnStartOptions } from '../core/types.js';
 import { createSpawnLifecycle } from './child-lifecycle.js';
 import { waitForInspectorUrl } from './inspector-url.js';
 import { terminateSpawnedChild } from './terminate.js';
@@ -124,11 +119,14 @@ export class SpawnSource implements ProfileSource<SpawnStartOptions> {
       return stopPromise;
     };
 
-    lifecycle.waitForAppCompletion().then(() => {
-      if (lifecycle.state.appCompleted && !stopped) {
-        stopPromise ??= stopInternal();
-      }
-    }).catch(() => {});
+    lifecycle
+      .waitForAppCompletion()
+      .then(() => {
+        if (lifecycle.state.appCompleted && !stopped) {
+          stopPromise ??= stopInternal();
+        }
+      })
+      .catch(() => {});
 
     return {
       target: session.target,
@@ -149,7 +147,14 @@ function buildSpawnEnvironment(deep: boolean): NodeJS.ProcessEnv {
     nodeOptions.push('--trace-deopt');
   }
 
-  const hookPath = resolve(__dirname, '..', '..', 'runtime-signals', 'hooks', 'event-loop-hook.cjs');
+  const hookPath = resolve(
+    __dirname,
+    '..',
+    '..',
+    'runtime-signals',
+    'hooks',
+    'event-loop-hook.cjs',
+  );
   nodeOptions.push(`--require=${hookPath}`);
 
   return {

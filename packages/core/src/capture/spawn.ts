@@ -10,8 +10,6 @@ export { SpawnSource } from './spawn/index.js';
  * first event-loop tick, so no startup work is missed. Call
  * `handle.stop()` to end the session and retrieve the {@link RawCapture}.
  */
-export async function startSpawnCapture(
-  options: SpawnStartOptions,
-): Promise<CaptureHandle> {
+export async function startSpawnCapture(options: SpawnStartOptions): Promise<CaptureHandle> {
   return new SpawnSource().start(options);
 }

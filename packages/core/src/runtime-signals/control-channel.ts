@@ -1,5 +1,5 @@
-import { controlEventSchema, type ControlEvent } from './schemas.js';
 import { logger } from '../shared/logger.js';
+import { type ControlEvent, controlEventSchema } from './schemas.js';
 
 export function attachControlChannel(
   stream: NodeJS.ReadableStream,

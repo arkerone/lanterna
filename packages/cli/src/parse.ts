@@ -1,5 +1,5 @@
-import { Command, CommanderError } from 'commander';
 import { DEFAULT_SAMPLE_INTERVAL_MICROS, MIN_SAMPLE_INTERVAL_MICROS } from '@lanterna/core';
+import { Command, CommanderError } from 'commander';
 
 export interface RunProfileOptions {
   command: string[];
@@ -67,7 +67,8 @@ export function parseAttachArgs(args: string[]): AttachProfileOptions {
   }>();
 
   const promptForTarget = parsed.pid === true;
-  const targetCount = Number(parsed.pid !== undefined && parsed.pid !== true) + Number(Boolean(parsed.inspectUrl));
+  const targetCount =
+    Number(parsed.pid !== undefined && parsed.pid !== true) + Number(Boolean(parsed.inspectUrl));
   if (targetCount > 1) {
     throw new Error('`lanterna attach` accepts at most one of --pid or --inspect-url');
   }
@@ -91,8 +92,18 @@ function createRunParser(): Command {
     .option('--output, -o <path>', 'Write JSON report to path')
     .option('--pretty', 'Pretty-print JSON')
     .option('--deep', 'Enable --trace-deopt')
-    .option('--sample-interval <us>', 'V8 sample interval in microseconds', parseSampleInterval, DEFAULT_SAMPLE_INTERVAL_MICROS)
-    .option('--detectors <spec>', 'Load an additional detector plugin (package name or path). Repeatable.', appendDetector, [] as string[]);
+    .option(
+      '--sample-interval <us>',
+      'V8 sample interval in microseconds',
+      parseSampleInterval,
+      DEFAULT_SAMPLE_INTERVAL_MICROS,
+    )
+    .option(
+      '--detectors <spec>',
+      'Load an additional detector plugin (package name or path). Repeatable.',
+      appendDetector,
+      [] as string[],
+    );
 }
 
 function createAttachParser(): Command {
@@ -101,10 +112,24 @@ function createAttachParser(): Command {
     .option('--duration <value>', 'Profiling duration', parseDuration)
     .option('--output, -o <path>', 'Write JSON report to path')
     .option('--pretty', 'Pretty-print JSON')
-    .option('--sample-interval <us>', 'V8 sample interval in microseconds', parseSampleInterval, DEFAULT_SAMPLE_INTERVAL_MICROS)
-    .option('--pid [pid]', 'Attach to an existing Node.js pid, or open the interactive picker if no pid is provided', parseOptionalPid)
+    .option(
+      '--sample-interval <us>',
+      'V8 sample interval in microseconds',
+      parseSampleInterval,
+      DEFAULT_SAMPLE_INTERVAL_MICROS,
+    )
+    .option(
+      '--pid [pid]',
+      'Attach to an existing Node.js pid, or open the interactive picker if no pid is provided',
+      parseOptionalPid,
+    )
     .option('--inspect-url <url>', 'Attach to an existing inspector WebSocket URL')
-    .option('--detectors <spec>', 'Load an additional detector plugin (package name or path). Repeatable.', appendDetector, [] as string[])
+    .option(
+      '--detectors <spec>',
+      'Load an additional detector plugin (package name or path). Repeatable.',
+      appendDetector,
+      [] as string[],
+    )
     .option('--deep', 'Unsupported in attach mode');
 }
 
@@ -132,7 +157,9 @@ function parseCommand(command: Command, args: string[]): void {
   }
 
   if (command.name() === 'attach' && command.opts<{ deep?: boolean }>().deep) {
-    throw new Error('`lanterna attach` does not support --deep; attach mode cannot enable deopt tracing on an existing process');
+    throw new Error(
+      '`lanterna attach` does not support --deep; attach mode cannot enable deopt tracing on an existing process',
+    );
   }
 }
 
@@ -171,7 +198,11 @@ function parseDuration(value: string): number {
 function parseSampleInterval(value: string): number {
   const parsed = Number(value);
   if (!Number.isFinite(parsed) || parsed < MIN_SAMPLE_INTERVAL_MICROS) {
-    throw new CommanderError(1, 'lanterna.invalidSampleInterval', `invalid --sample-interval (min ${MIN_SAMPLE_INTERVAL_MICROS}): ${value}`);
+    throw new CommanderError(
+      1,
+      'lanterna.invalidSampleInterval',
+      `invalid --sample-interval (min ${MIN_SAMPLE_INTERVAL_MICROS}): ${value}`,
+    );
   }
   return parsed;
 }

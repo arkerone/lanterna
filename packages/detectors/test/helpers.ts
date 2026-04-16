@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import type { RawCapture, RawCpuProfile } from '@lanterna/core';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -13,7 +13,10 @@ export function loadProfile(name: string): RawCpuProfile {
   ) as RawCpuProfile;
 }
 
-export function makeRaw(cpuProfile: RawCpuProfile, overrides: Partial<RawCapture> = {}): RawCapture {
+export function makeRaw(
+  cpuProfile: RawCpuProfile,
+  overrides: Partial<RawCapture> = {},
+): RawCapture {
   return {
     target: {
       pid: 99999,

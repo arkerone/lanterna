@@ -265,12 +265,12 @@ export interface BuiltinFindingEvidenceExtraMap {
   'node-modules-hotspot': NodeModulesHotspotEvidenceExtra;
 }
 
-export type BuiltinFindingEvidenceExtra =
-  Exclude<BuiltinFindingEvidenceExtraMap[BuiltinFindingCategory], undefined>;
+export type BuiltinFindingEvidenceExtra = Exclude<
+  BuiltinFindingEvidenceExtraMap[BuiltinFindingCategory],
+  undefined
+>;
 
-export type FindingEvidenceExtra =
-  | BuiltinFindingEvidenceExtra
-  | Record<string, unknown>;
+export type FindingEvidenceExtra = BuiltinFindingEvidenceExtra | Record<string, unknown>;
 
 export interface FindingEvidence<TExtra = FindingEvidenceExtra> {
   file: string;
@@ -280,7 +280,10 @@ export interface FindingEvidence<TExtra = FindingEvidenceExtra> {
   extra?: TExtra;
 }
 
-export interface BaseFinding<TCategory extends FindingCategory = FindingCategory, TExtra = FindingEvidenceExtra> {
+export interface BaseFinding<
+  TCategory extends FindingCategory = FindingCategory,
+  TExtra = FindingEvidenceExtra,
+> {
   id: string;
   severity: FindingSeverity;
   category: TCategory;
@@ -291,8 +294,10 @@ export interface BaseFinding<TCategory extends FindingCategory = FindingCategory
   references: string[];
 }
 
-export type BuiltinFinding<C extends BuiltinFindingCategory = BuiltinFindingCategory> =
-  BaseFinding<C, BuiltinFindingEvidenceExtraMap[C]>;
+export type BuiltinFinding<C extends BuiltinFindingCategory = BuiltinFindingCategory> = BaseFinding<
+  C,
+  BuiltinFindingEvidenceExtraMap[C]
+>;
 
 export type ExtensionFinding = BaseFinding<string, Record<string, unknown> | undefined>;
 

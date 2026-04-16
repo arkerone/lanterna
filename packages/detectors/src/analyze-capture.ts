@@ -1,8 +1,8 @@
 import {
-  AnalysisPipeline,
-  createAnalysisPipeline,
   type AnalysisOptions,
+  type AnalysisPipeline,
   type AnalysisResult,
+  createAnalysisPipeline,
   type RawCapture,
 } from '@lanterna/core';
 import { createBuiltInFindingAnalyzers } from './detectors/index.js';
@@ -16,10 +16,7 @@ let defaultPipeline: AnalysisPipeline | undefined;
  * need a fresh pipeline or custom analyzers, use {@link createDefaultAnalysisPipeline}
  * directly.
  */
-export function analyzeCapture(
-  rawCapture: RawCapture,
-  options: AnalysisOptions,
-): AnalysisResult {
+export function analyzeCapture(rawCapture: RawCapture, options: AnalysisOptions): AnalysisResult {
   defaultPipeline ??= createDefaultAnalysisPipeline();
   return defaultPipeline.run(rawCapture, options);
 }

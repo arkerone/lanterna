@@ -1,5 +1,5 @@
-import pino from 'pino';
 import type { LevelWithSilent, Logger } from 'pino';
+import pino from 'pino';
 
 export type LoggerLevel = 'silent' | 'warn' | 'debug';
 
@@ -17,9 +17,7 @@ function toPinoLevel(level: LoggerLevel): LevelWithSilent {
   return 'error';
 }
 
-export function createLogger(
-  { level = resolveLogLevel() }: { level?: LoggerLevel } = {},
-): Logger {
+export function createLogger({ level = resolveLogLevel() }: { level?: LoggerLevel } = {}): Logger {
   return pino(
     {
       name: 'lanterna',

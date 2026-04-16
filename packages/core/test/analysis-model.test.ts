@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { enrichCpuTree, buildHotspotAnalysis } from '../src/analysis/model/hotspots.js';
 import { classifyFrame } from '../src/analysis/model/classify.js';
+import { buildHotspotAnalysis, enrichCpuTree } from '../src/analysis/model/hotspots.js';
 import { CWD, loadProfile } from './helpers.js';
 
 describe('classifyFrame', () => {
@@ -18,17 +18,33 @@ describe('classifyFrame', () => {
     {
       label: 'regular node_modules packages',
       input: ['parse', `file://${CWD}/node_modules/fast-json-parse/index.js`, CWD] as const,
-      expected: { category: 'node_modules', file: 'node_modules/fast-json-parse/index.js', package: 'fast-json-parse' },
+      expected: {
+        category: 'node_modules',
+        file: 'node_modules/fast-json-parse/index.js',
+        package: 'fast-json-parse',
+      },
     },
     {
       label: 'scoped packages',
       input: ['fn', `file://${CWD}/node_modules/@fastify/router/index.js`, CWD] as const,
-      expected: { category: 'node_modules', file: 'node_modules/@fastify/router/index.js', package: '@fastify/router' },
+      expected: {
+        category: 'node_modules',
+        file: 'node_modules/@fastify/router/index.js',
+        package: '@fastify/router',
+      },
     },
     {
       label: 'pnpm virtual store packages',
-      input: ['fn', `file://${CWD}/node_modules/.pnpm/express@4.18.2/node_modules/express/index.js`, CWD] as const,
-      expected: { category: 'node_modules', file: 'node_modules/.pnpm/express@4.18.2/node_modules/express/index.js', package: 'express' },
+      input: [
+        'fn',
+        `file://${CWD}/node_modules/.pnpm/express@4.18.2/node_modules/express/index.js`,
+        CWD,
+      ] as const,
+      expected: {
+        category: 'node_modules',
+        file: 'node_modules/.pnpm/express@4.18.2/node_modules/express/index.js',
+        package: 'express',
+      },
     },
     {
       label: 'garbage collector pseudo frames',
@@ -74,7 +90,9 @@ describe('enrichCpuTree', () => {
 
   it('classifies the GC node distinctly in the gc-pressure fixture', () => {
     const tree = enrichCpuTree(loadProfile('gc-pressure'), CWD, 1000);
-    const gcNode = Array.from(tree.nodes.values()).find((node) => node.function === '(garbage collector)');
+    const gcNode = Array.from(tree.nodes.values()).find(
+      (node) => node.function === '(garbage collector)',
+    );
 
     expect(gcNode).toMatchObject({ function: '(garbage collector)', category: 'gc' });
   });

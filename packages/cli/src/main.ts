@@ -126,4 +126,4 @@ export async function main(argv: string[]): Promise<void> {
   process.exitCode = 2;
 }
 
-export { GLOBAL_HELP, RUN_HELP, ATTACH_HELP };
+export { ATTACH_HELP, GLOBAL_HELP, RUN_HELP };

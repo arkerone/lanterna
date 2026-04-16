@@ -1,6 +1,6 @@
+import type { AnalysisOptions } from '../analysis/core/types.js';
 import type { EnrichedTree } from '../analysis/model/hotspots.js';
 import type { RawCapture } from '../capture/core/types.js';
-import type { AnalysisOptions } from '../analysis/core/types.js';
 import type { ReportMeta } from './types.js';
 import { LANTERNA_VERSION } from './version.generated.js';
 

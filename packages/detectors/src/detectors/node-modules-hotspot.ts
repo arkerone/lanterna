@@ -6,15 +6,15 @@ import type {
   NodeModulesHotspotEvidenceExtra,
 } from '@lanterna/core';
 import { defineBuiltinFinding } from '@lanterna/core';
-import type { Detector, FindingContext } from './types.js';
+import { DETECTOR_THRESHOLDS } from '../config.js';
 import {
-  buildAttributionEvidence,
   buildAttributedFinding,
+  buildAttributionEvidence,
   findStallCorrelation,
   resolveAttribution,
   toAlternativeHotspotEvidence,
 } from './shared.js';
-import { DETECTOR_THRESHOLDS } from '../config.js';
+import type { Detector, FindingContext } from './types.js';
 
 export const nodeModulesHotspotDetector: Detector = {
   id: 'node-modules-hotspot',
@@ -22,14 +22,13 @@ export const nodeModulesHotspotDetector: Detector = {
   detect(report, context): Finding[] {
     const thresholds = DETECTOR_THRESHOLDS.nodeModulesHotspot;
     const matches = context.fullHotspots
-      .filter((candidate) => (
-        candidate.category === 'node_modules'
-        && candidate.package !== undefined
-        && (
-          candidate.selfPct >= thresholds.minSelfPct
-          || candidate.totalPct >= thresholds.minTotalPct
-        )
-      ))
+      .filter(
+        (candidate) =>
+          candidate.category === 'node_modules' &&
+          candidate.package !== undefined &&
+          (candidate.selfPct >= thresholds.minSelfPct ||
+            candidate.totalPct >= thresholds.minTotalPct),
+      )
       .sort((left, right) => {
         const totalDelta = right.totalPct - left.totalPct;
         if (totalDelta !== 0) return totalDelta;
@@ -58,19 +57,22 @@ function buildFinding(
     eventLoopCorrelation: findStallCorrelation(caller, report),
     alternativeHotspots: alternatives.map(toAlternativeHotspotEvidence),
   };
-  return defineBuiltinFinding(buildAttributedFinding({
-    id: `node-modules-hotspot:${hotspot.package ?? hotspot.function}`,
-    category: 'node-modules-hotspot',
-    severity: hotspot.totalPct >= DETECTOR_THRESHOLDS.nodeModulesHotspot.criticalTotalPct ? 'critical' : 'warning',
-    title: `Dependency hotspot on hot path (${hotspot.package ?? hotspot.function})`,
-    hotspot,
-    caller,
-    selfPct: hotspot.totalPct,
-    extra: evidenceExtra,
-    why: `A dependency frame from \`${hotspot.package ?? hotspot.file}\` is dominating the CPU profile. That usually means the main request path is paying for expensive library work rather than your own code directly.`,
-    suggestion: `Inspect how often this dependency is called and whether you can reduce input size, cache results, switch to a cheaper code path, or replace the library for this workload. If the work is inherently heavy, move it off the main thread.`,
-    references: [
-      'https://nodejs.org/en/docs/guides/dont-block-the-event-loop',
-    ],
-  }));
+  return defineBuiltinFinding(
+    buildAttributedFinding({
+      id: `node-modules-hotspot:${hotspot.package ?? hotspot.function}`,
+      category: 'node-modules-hotspot',
+      severity:
+        hotspot.totalPct >= DETECTOR_THRESHOLDS.nodeModulesHotspot.criticalTotalPct
+          ? 'critical'
+          : 'warning',
+      title: `Dependency hotspot on hot path (${hotspot.package ?? hotspot.function})`,
+      hotspot,
+      caller,
+      selfPct: hotspot.totalPct,
+      extra: evidenceExtra,
+      why: `A dependency frame from \`${hotspot.package ?? hotspot.file}\` is dominating the CPU profile. That usually means the main request path is paying for expensive library work rather than your own code directly.`,
+      suggestion: `Inspect how often this dependency is called and whether you can reduce input size, cache results, switch to a cheaper code path, or replace the library for this workload. If the work is inherently heavy, move it off the main thread.`,
+      references: ['https://nodejs.org/en/docs/guides/dont-block-the-event-loop'],
+    }),
+  );
 }

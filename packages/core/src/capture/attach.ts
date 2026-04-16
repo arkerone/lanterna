@@ -1,20 +1,15 @@
-import { connectCdp, type CdpClient } from '../inspector/client.js';
+import { type CdpClient, connectCdp } from '../inspector/client.js';
 import { openInspectorForPid } from '../inspector/discovery.js';
+import { ATTACH_RUNTIME_HOOK_SOURCE } from '../runtime-signals/hooks/runtime-hook.js';
+import { readEventLoopSamples } from '../runtime-signals/readers/event-loop.js';
+import { readGcEvents } from '../runtime-signals/readers/gc.js';
+import { sleep } from '../shared/sleep.js';
 import {
   createCaptureIntegrity,
   finishCaptureSession,
   startCaptureSession,
 } from './core/session.js';
-import type {
-  AttachStartOptions,
-  CaptureHandle,
-  ProfileSource,
-  RawCapture,
-} from './core/types.js';
-import { readEventLoopSamples } from '../runtime-signals/readers/event-loop.js';
-import { readGcEvents } from '../runtime-signals/readers/gc.js';
-import { ATTACH_RUNTIME_HOOK_SOURCE } from '../runtime-signals/hooks/runtime-hook.js';
-import { sleep } from '../shared/sleep.js';
+import type { AttachStartOptions, CaptureHandle, ProfileSource, RawCapture } from './core/types.js';
 
 const ATTACH_FINALIZE_READ_TIMEOUT_MS = 1_500;
 
@@ -32,13 +27,14 @@ export class AttachSource implements ProfileSource<AttachStartOptions> {
         : `Resolving an attachable inspector endpoint for pid ${options.pid ?? 'unknown'}...`,
     });
 
-    const webSocketDebuggerUrl = options.inspectUrl
-      ?? await openInspectorForPid(options.pid ?? -1, (message) => {
+    const webSocketDebuggerUrl =
+      options.inspectUrl ??
+      (await openInspectorForPid(options.pid ?? -1, (message) => {
         options.onProgress?.({
           stage: 'inspector-ready',
           message,
         });
-      });
+      }));
 
     options.onProgress?.({
       stage: 'connect-cdp',
@@ -69,7 +65,9 @@ export class AttachSource implements ProfileSource<AttachStartOptions> {
         pid: options.pid,
       });
       if (options.pid !== undefined && session.target.pid !== options.pid) {
-        throw new Error(`inspector target pid mismatch: expected ${options.pid}, got ${session.target.pid}`);
+        throw new Error(
+          `inspector target pid mismatch: expected ${options.pid}, got ${session.target.pid}`,
+        );
       }
 
       const signalExit = () => {
@@ -96,18 +94,17 @@ export class AttachSource implements ProfileSource<AttachStartOptions> {
         detachCloseHandler();
 
         const captureIntegrity = createCaptureIntegrity();
-        const gcEventsAbs = cdp.closed ? [] : await withTimeout(
-          readGcEvents(cdp),
-          ATTACH_FINALIZE_READ_TIMEOUT_MS,
-          [],
-        );
+        const gcEventsAbs = cdp.closed
+          ? []
+          : await withTimeout(readGcEvents(cdp), ATTACH_FINALIZE_READ_TIMEOUT_MS, []);
         const eventLoopRead = cdp.closed
           ? { samples: [], available: false, resolutionMs: undefined, summary: undefined }
-          : await withTimeout(
-            readEventLoopSamples(cdp),
-            ATTACH_FINALIZE_READ_TIMEOUT_MS,
-            { samples: [], available: false, resolutionMs: undefined, summary: undefined },
-          );
+          : await withTimeout(readEventLoopSamples(cdp), ATTACH_FINALIZE_READ_TIMEOUT_MS, {
+              samples: [],
+              available: false,
+              resolutionMs: undefined,
+              summary: undefined,
+            });
 
         captureIntegrity.eventLoopTimed = eventLoopRead.samples.length > 0;
         captureIntegrity.gcTimed = gcEventsAbs.length > 0;
@@ -140,9 +137,7 @@ export class AttachSource implements ProfileSource<AttachStartOptions> {
   }
 }
 
-export async function startAttachCapture(
-  options: AttachStartOptions,
-): Promise<CaptureHandle> {
+export async function startAttachCapture(options: AttachStartOptions): Promise<CaptureHandle> {
   return new AttachSource().start(options);
 }
 
@@ -157,13 +152,6 @@ async function installAttachRuntimeHook(cdp: CdpClient): Promise<void> {
   );
 }
 
-async function withTimeout<T>(
-  promise: Promise<T>,
-  timeoutMs: number,
-  fallback: T,
-): Promise<T> {
-  return await Promise.race([
-    promise.catch(() => fallback),
-    sleep(timeoutMs).then(() => fallback),
-  ]);
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, fallback: T): Promise<T> {
+  return await Promise.race([promise.catch(() => fallback), sleep(timeoutMs).then(() => fallback)]);
 }

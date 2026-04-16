@@ -1,7 +1,7 @@
 import type { RawCapture } from '../../capture/core/types.js';
 import type { CorrelatedHotspot, FrameCategory } from '../../report/types.js';
-import type { EnrichedTree, NodeEnriched } from './hotspots.js';
 import { GC_CORRELATION_LOOKAROUND_MS } from '../../shared/config.js';
+import type { EnrichedTree, NodeEnriched } from './hotspots.js';
 
 export interface TimedSample {
   atMs: number;
@@ -13,10 +13,7 @@ export interface TimeWindow {
   endMs: number;
 }
 
-export function buildTimedSamples(
-  raw: RawCapture,
-  sampleIntervalMicros: number,
-): TimedSample[] {
+export function buildTimedSamples(raw: RawCapture, sampleIntervalMicros: number): TimedSample[] {
   const sampleLeafIds = raw.cpuProfile.samples ?? [];
   if (sampleLeafIds.length === 0) return [];
 

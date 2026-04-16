@@ -12,10 +12,12 @@ export function waitForInspectorUrl(child: ChildProcess, stderrBuffer: string[])
 
     let settled = false;
     const timeout = setTimeout(() => {
-      rejectOnce(buildInspectorStartupError(
-        stderrBuffer,
-        `timed out waiting for inspector URL (${INSPECTOR_STARTUP_TIMEOUT_MS}ms). Is the target a node process?`,
-      ));
+      rejectOnce(
+        buildInspectorStartupError(
+          stderrBuffer,
+          `timed out waiting for inspector URL (${INSPECTOR_STARTUP_TIMEOUT_MS}ms). Is the target a node process?`,
+        ),
+      );
     }, INSPECTOR_STARTUP_TIMEOUT_MS);
 
     const cleanup = () => {
@@ -48,12 +50,16 @@ export function waitForInspectorUrl(child: ChildProcess, stderrBuffer: string[])
         resolveOnce(match[1]);
         return;
       }
-      const unsupportedInspector = text.match(/bad option: --inspect-brk|--inspect-brk is not allowed|--require is not allowed/i);
+      const unsupportedInspector = text.match(
+        /bad option: --inspect-brk|--inspect-brk is not allowed|--require is not allowed/i,
+      );
       if (unsupportedInspector) {
-        rejectOnce(buildInspectorStartupError(
-          stderrBuffer,
-          'unable to start Node inspector for target process. Lanterna requires Node inspector support.',
-        ));
+        rejectOnce(
+          buildInspectorStartupError(
+            stderrBuffer,
+            'unable to start Node inspector for target process. Lanterna requires Node inspector support.',
+          ),
+        );
       }
     };
 
@@ -62,10 +68,12 @@ export function waitForInspectorUrl(child: ChildProcess, stderrBuffer: string[])
     };
 
     const onExit = (code: number | null, signal: NodeJS.Signals | null) => {
-      rejectOnce(buildInspectorStartupError(
-        stderrBuffer,
-        `target exited before inspector was ready (code=${code}, signal=${signal})`,
-      ));
+      rejectOnce(
+        buildInspectorStartupError(
+          stderrBuffer,
+          `target exited before inspector was ready (code=${code}, signal=${signal})`,
+        ),
+      );
     };
 
     stderr.on('data', onData);

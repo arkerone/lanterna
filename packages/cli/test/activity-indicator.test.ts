@@ -58,6 +58,8 @@ describe('activity indicator', () => {
         text: expect.stringContaining('Connecting to CDP'),
       }),
     );
-    expect(stderrWrite).toHaveBeenCalledWith(expect.stringContaining('lanterna: failed to connect'));
+    expect(stderrWrite).toHaveBeenCalledWith(
+      expect.stringContaining('lanterna: failed to connect'),
+    );
   });
 });

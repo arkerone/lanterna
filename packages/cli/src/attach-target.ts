@@ -1,11 +1,11 @@
 import { readlink } from 'node:fs/promises';
 import { basename } from 'node:path';
+import { cancel, intro, isCancel, log, outro, select } from '@clack/prompts';
+import { readInspectableTargetsByPid } from '@lanterna/core';
 import chalk from 'chalk';
 import Table from 'cli-table3';
-import { cancel, intro, isCancel, log, outro, select } from '@clack/prompts';
 import psList from 'ps-list';
 import type { AttachProfileOptions } from './parse.js';
-import { readInspectableTargetsByPid } from '@lanterna/core';
 
 const NODE_LAUNCHERS = new Set([
   'node',
@@ -58,7 +58,9 @@ export async function resolveAttachTarget(
   intro(chalk.cyanBright('Lanterna Attach'), { output: process.stderr });
   log.step('Select a running Node.js process to profile.', { output: process.stderr });
   process.stderr.write(`${renderProcessTable(processes)}\n`);
-  process.stderr.write(`${chalk.gray('* PID attach = best effort via SIGUSR1 on a live, signalable process')}\n`);
+  process.stderr.write(
+    `${chalk.gray('* PID attach = best effort via SIGUSR1 on a live, signalable process')}\n`,
+  );
 
   const selection = await select({
     message: 'Which running program should Lanterna attach to?',
@@ -134,14 +136,13 @@ async function listRunningNodeProcesses(): Promise<RunningNodeProcess[]> {
 
   const readyCandidates = attachableCandidates.filter(isAttachableAppProcess);
 
-  return readyCandidates
-    .sort((left, right) => {
-      const modeDelta = rankAttachMode(left.attachMode) - rankAttachMode(right.attachMode);
-      if (modeDelta !== 0) return modeDelta;
-      const cpuDelta = (right.cpu ?? 0) - (left.cpu ?? 0);
-      if (cpuDelta !== 0) return cpuDelta;
-      return left.pid - right.pid;
-    });
+  return readyCandidates.sort((left, right) => {
+    const modeDelta = rankAttachMode(left.attachMode) - rankAttachMode(right.attachMode);
+    if (modeDelta !== 0) return modeDelta;
+    const cpuDelta = (right.cpu ?? 0) - (left.cpu ?? 0);
+    if (cpuDelta !== 0) return cpuDelta;
+    return left.pid - right.pid;
+  });
 }
 
 function isLikelyNodeProcess(
@@ -154,12 +155,10 @@ function isLikelyNodeProcess(
 
   const cmd = command ?? '';
   return (
-    runtime === 'cursor'
-    && (
-      cmd.includes('--node-ipc')
-      || cmd.includes('node.mojom.NodeService')
-      || cmd.includes('/resources/helpers/node ')
-    )
+    runtime === 'cursor' &&
+    (cmd.includes('--node-ipc') ||
+      cmd.includes('node.mojom.NodeService') ||
+      cmd.includes('/resources/helpers/node '))
   );
 }
 
@@ -300,9 +299,7 @@ function formatPctPlain(value: number | undefined): string {
 }
 
 function formatAttachMode(mode: RunningNodeProcess['attachMode']): string {
-  return mode === 'cdp-ready'
-    ? chalk.green('CDP ready')
-    : chalk.blue('PID attach*');
+  return mode === 'cdp-ready' ? chalk.green('CDP ready') : chalk.blue('PID attach*');
 }
 
 function formatAttachModePlain(mode: RunningNodeProcess['attachMode']): string {

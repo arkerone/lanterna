@@ -1,18 +1,18 @@
 import type {
-  AttributionEvidence,
   AlternativeHotspotEvidence,
+  AttributionEvidence,
   BaseFinding,
   BlockingIoEvidenceExtra,
   BuiltinFindingCategory,
-  JsonHotPathEvidenceExtra,
-  NodeModulesHotspotEvidenceExtra,
   Hotspot,
+  HotspotAttribution,
+  JsonHotPathEvidenceExtra,
   LanternaReport,
+  NodeModulesHotspotEvidenceExtra,
   RequireInHotPathEvidenceExtra,
   StallCorrelation,
   SyncCryptoEvidenceExtra,
 } from '@lanterna/core';
-import type { HotspotAttribution } from '@lanterna/core';
 import type { FindingContext } from './types.js';
 
 export interface ResolvedAttribution {
@@ -27,10 +27,7 @@ export interface ResolvedAttribution {
  * frame appears on ≥80% of the hotspot's sampled call paths). Use `attribution`
  * when you need to surface the candidate regardless of confidence.
  */
-export function resolveAttribution(
-  hotspot: Hotspot,
-  context: FindingContext,
-): ResolvedAttribution {
+export function resolveAttribution(hotspot: Hotspot, context: FindingContext): ResolvedAttribution {
   const attribution = context.userAttributionById.get(hotspot.id);
   const caller = attribution?.confidence === 'high' ? attribution : undefined;
   return { attribution, caller };
@@ -41,10 +38,11 @@ export function findStallCorrelation(
   report: LanternaReport,
 ): StallCorrelation | undefined {
   if (!caller) return undefined;
-  const match = report.eventLoop.correlatedHotspots?.find((candidate) =>
-    candidate.file === caller.file
-    && candidate.line === caller.line
-    && candidate.function === caller.function,
+  const match = report.eventLoop.correlatedHotspots?.find(
+    (candidate) =>
+      candidate.file === caller.file &&
+      candidate.line === caller.line &&
+      candidate.function === caller.function,
   );
   if (!match) return undefined;
   return { overlapPct: match.overlapPct, samplePct: match.samplePct };
@@ -62,9 +60,7 @@ export function buildAttributionEvidence(
   };
 }
 
-export function toAlternativeHotspotEvidence(
-  hotspot: Hotspot,
-): AlternativeHotspotEvidence {
+export function toAlternativeHotspotEvidence(hotspot: Hotspot): AlternativeHotspotEvidence {
   return {
     id: hotspot.id,
     function: hotspot.function,
@@ -103,23 +99,25 @@ type AttributedFindingExtra =
 export function buildAttributedFinding<
   C extends Extract<
     BuiltinFindingCategory,
-    'blocking-io' | 'sync-crypto' | 'json-on-hot-path' | 'node-modules-hotspot' | 'require-in-hot-path'
+    | 'blocking-io'
+    | 'sync-crypto'
+    | 'json-on-hot-path'
+    | 'node-modules-hotspot'
+    | 'require-in-hot-path'
   >,
->(
-  options: {
-    id: string;
-    category: C;
-    severity: BaseFinding['severity'];
-    title: string;
-    hotspot: Hotspot;
-    caller: HotspotAttribution | undefined;
-    selfPct: number;
-    why: string;
-    suggestion: string;
-    references: string[];
-    extra: AttributedFindingExtra;
-  },
-): BaseFinding<
+>(options: {
+  id: string;
+  category: C;
+  severity: BaseFinding['severity'];
+  title: string;
+  hotspot: Hotspot;
+  caller: HotspotAttribution | undefined;
+  selfPct: number;
+  why: string;
+  suggestion: string;
+  references: string[];
+  extra: AttributedFindingExtra;
+}): BaseFinding<
   C,
   C extends 'blocking-io'
     ? BlockingIoEvidenceExtra
@@ -155,16 +153,15 @@ export function buildAttributedFinding<
       line: resolveEvidenceField(caller, hotspot, 'line'),
       function: resolveEvidenceField(caller, hotspot, 'function'),
       selfPct,
-      extra: extra as
-        C extends 'blocking-io'
-          ? BlockingIoEvidenceExtra
-          : C extends 'sync-crypto'
-            ? SyncCryptoEvidenceExtra
-            : C extends 'json-on-hot-path'
-              ? JsonHotPathEvidenceExtra
-              : C extends 'node-modules-hotspot'
-                ? NodeModulesHotspotEvidenceExtra
-                : RequireInHotPathEvidenceExtra,
+      extra: extra as C extends 'blocking-io'
+        ? BlockingIoEvidenceExtra
+        : C extends 'sync-crypto'
+          ? SyncCryptoEvidenceExtra
+          : C extends 'json-on-hot-path'
+            ? JsonHotPathEvidenceExtra
+            : C extends 'node-modules-hotspot'
+              ? NodeModulesHotspotEvidenceExtra
+              : RequireInHotPathEvidenceExtra,
     },
     why,
     suggestion,

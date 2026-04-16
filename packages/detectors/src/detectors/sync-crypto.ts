@@ -5,16 +5,15 @@ import type {
   LanternaReport,
   SyncCryptoEvidenceExtra,
 } from '@lanterna/core';
-import { defineBuiltinFinding } from '@lanterna/core';
-import type { Detector, FindingContext } from './types.js';
+import { defineBuiltinFinding, stripOptPrefix } from '@lanterna/core';
+import { DETECTOR_THRESHOLDS, SYNC_CRYPTO_FNS } from '../config.js';
 import {
-  buildAttributionEvidence,
   buildAttributedFinding,
+  buildAttributionEvidence,
   findStallCorrelation,
   resolveAttribution,
 } from './shared.js';
-import { stripOptPrefix } from '@lanterna/core';
-import { SYNC_CRYPTO_FNS, DETECTOR_THRESHOLDS } from '../config.js';
+import type { Detector, FindingContext } from './types.js';
 
 export const syncCryptoDetector: Detector = {
   id: 'sync-crypto-on-hot-path',
@@ -24,10 +23,13 @@ export const syncCryptoDetector: Detector = {
     for (const hotspot of context.fullHotspots) {
       if (hotspot.category !== 'node:builtin' && hotspot.category !== 'native') continue;
       const normalizedFunctionName = stripOptPrefix(hotspot.function);
-      if (!SYNC_CRYPTO_FNS.some((functionName) => (
-        normalizedFunctionName === functionName
-        || normalizedFunctionName.endsWith(`.${functionName}`)
-      ))) {
+      if (
+        !SYNC_CRYPTO_FNS.some(
+          (functionName) =>
+            normalizedFunctionName === functionName ||
+            normalizedFunctionName.endsWith(`.${functionName}`),
+        )
+      ) {
         continue;
       }
       if (hotspot.totalPct < thresholds.minTotalPct) continue;
@@ -49,20 +51,23 @@ function buildFinding(
     ...buildAttributionEvidence(attribution, caller),
     eventLoopCorrelation: findStallCorrelation(caller, report),
   };
-  return defineBuiltinFinding(buildAttributedFinding({
-    id: 'sync-crypto-on-hot-path',
-    category: 'sync-crypto',
-    severity: hotspot.totalPct > DETECTOR_THRESHOLDS.syncCrypto.criticalPct ? 'critical' : 'warning',
-    title: `Synchronous crypto on hot path (${hotspot.function})`,
-    hotspot,
-    caller,
-    selfPct: hotspot.totalPct,
-    extra: evidenceExtra,
-    why: `\`${hotspot.function}\` is a synchronous crypto primitive that blocks the event loop for the duration of the computation. On a server it pauses all other requests.`,
-    suggestion: `Switch to the async variant (e.g. \`crypto.pbkdf2\` / \`crypto.scrypt\` with a callback or promisified) and/or offload to a worker pool (piscina). For PBKDF2/scrypt which are CPU-bound by design, worker_threads is the right answer above a few hundred reqs/s.`,
-    references: [
-      'https://nodejs.org/api/crypto.html#cryptopbkdf2password-salt-iterations-keylen-digest-callback',
-      'https://github.com/piscinajs/piscina',
-    ],
-  }));
+  return defineBuiltinFinding(
+    buildAttributedFinding({
+      id: 'sync-crypto-on-hot-path',
+      category: 'sync-crypto',
+      severity:
+        hotspot.totalPct > DETECTOR_THRESHOLDS.syncCrypto.criticalPct ? 'critical' : 'warning',
+      title: `Synchronous crypto on hot path (${hotspot.function})`,
+      hotspot,
+      caller,
+      selfPct: hotspot.totalPct,
+      extra: evidenceExtra,
+      why: `\`${hotspot.function}\` is a synchronous crypto primitive that blocks the event loop for the duration of the computation. On a server it pauses all other requests.`,
+      suggestion: `Switch to the async variant (e.g. \`crypto.pbkdf2\` / \`crypto.scrypt\` with a callback or promisified) and/or offload to a worker pool (piscina). For PBKDF2/scrypt which are CPU-bound by design, worker_threads is the right answer above a few hundred reqs/s.`,
+      references: [
+        'https://nodejs.org/api/crypto.html#cryptopbkdf2password-salt-iterations-keylen-digest-callback',
+        'https://github.com/piscinajs/piscina',
+      ],
+    }),
+  );
 }

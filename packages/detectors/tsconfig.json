@@ -6,8 +6,6 @@
     "composite": true,
     "tsBuildInfoFile": "./dist/.tsbuildinfo"
   },
-  "references": [
-    { "path": "../core" }
-  ],
+  "references": [{ "path": "../core" }],
   "include": ["src/**/*"]
 }

@@ -37,11 +37,13 @@ export const targetInfoSchema = z.object({
 export const controlHookReadySchema = z.object({
   type: z.literal('hook-ready'),
   eventLoopResolutionMs: z.number().finite().optional(),
-  capabilities: z.object({
-    eventLoop: z.boolean().optional(),
-    gc: z.boolean().optional(),
-    lifecycle: z.boolean().optional(),
-  }).optional(),
+  capabilities: z
+    .object({
+      eventLoop: z.boolean().optional(),
+      gc: z.boolean().optional(),
+      lifecycle: z.boolean().optional(),
+    })
+    .optional(),
 });
 
 export const controlCaptureStartSchema = z.object({

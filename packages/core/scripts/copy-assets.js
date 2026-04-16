@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // Generate runtime hook asset after tsc.
 import { writeFile } from 'node:fs/promises';
-import { fileURLToPath, pathToFileURL } from 'node:url';
 import { dirname, resolve } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const packageRoot = resolve(__dirname, '..');

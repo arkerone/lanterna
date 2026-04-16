@@ -1,7 +1,7 @@
 import type { BuiltinFinding, ExcessiveGcEvidenceExtra, Finding } from '@lanterna/core';
 import { defineBuiltinFinding } from '@lanterna/core';
-import type { Detector } from './types.js';
 import { DETECTOR_THRESHOLDS } from '../config.js';
+import type { Detector } from './types.js';
 
 export const excessiveGcDetector: Detector = {
   id: 'excessive-gc',
@@ -13,22 +13,26 @@ export const excessiveGcDetector: Detector = {
     const pauseTrigger = longestPauseMs > thresholds.longestPauseTrigger;
     if (!ratioTrigger && !pauseTrigger) return [];
 
-    const totalTimedGcEvents = Object.values(report.gc.count).reduce((sum, count) => sum + count, 0);
-    const hasTimedGcEvidence = totalTimedGcEvents > 0 || report.gc.totalPauseMs > 0;
-    const hasEnoughCpuSamplesForRatioOnly = (
-      report.meta.durationMs >= thresholds.minDurationMs
-      && report.meta.totalSamples >= thresholds.minSamples
+    const totalTimedGcEvents = Object.values(report.gc.count).reduce(
+      (sum, count) => sum + count,
+      0,
     );
+    const hasTimedGcEvidence = totalTimedGcEvents > 0 || report.gc.totalPauseMs > 0;
+    const hasEnoughCpuSamplesForRatioOnly =
+      report.meta.durationMs >= thresholds.minDurationMs &&
+      report.meta.totalSamples >= thresholds.minSamples;
     if (ratioTrigger && !pauseTrigger && !hasTimedGcEvidence && !hasEnoughCpuSamplesForRatioOnly) {
       return [];
     }
 
     const topCandidate = report.gc.correlatedHotspots?.[0];
-    const severity: Finding['severity'] = (
+    const severity: Finding['severity'] =
       gcRatio > thresholds.ratioCritical || longestPauseMs > thresholds.longestPauseCritical
-    ) ? 'critical' : 'warning';
+        ? 'critical'
+        : 'warning';
     const evidenceParts: string[] = [];
-    if (ratioTrigger) evidenceParts.push(`GC consumed ${(gcRatio * 100).toFixed(1)}% of on-CPU time`);
+    if (ratioTrigger)
+      evidenceParts.push(`GC consumed ${(gcRatio * 100).toFixed(1)}% of on-CPU time`);
     if (pauseTrigger) evidenceParts.push(`longest pause was ${longestPauseMs.toFixed(1)}ms`);
     const evidenceExtra: ExcessiveGcEvidenceExtra = {
       proofLevel: 'aggregate-correlation',

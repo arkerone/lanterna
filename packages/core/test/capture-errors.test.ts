@@ -73,9 +73,7 @@ describe('openInspectorForPid', () => {
   it.runIf(process.platform === 'win32')(
     'rejects with a platform-specific message on Windows',
     async () => {
-      await expect(openInspectorForPid(1234)).rejects.toThrow(
-        /not supported on Windows/,
-      );
+      await expect(openInspectorForPid(1234)).rejects.toThrow(/not supported on Windows/);
     },
   );
 

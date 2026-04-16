@@ -5,9 +5,7 @@ import type {
   Hotspot,
   LanternaReport,
 } from '@lanterna/core';
-import { defineBuiltinFinding } from '@lanterna/core';
-import type { Detector, FindingContext } from './types.js';
-import { findStallCorrelation, toAlternativeHotspotEvidence } from './shared.js';
+import { defineBuiltinFinding, stripOptPrefix } from '@lanterna/core';
 import {
   BLOCKING_IO_PATTERNS,
   DETECTOR_THRESHOLDS,
@@ -15,7 +13,8 @@ import {
   REQUIRE_PATTERNS,
   SYNC_CRYPTO_FNS,
 } from '../config.js';
-import { stripOptPrefix } from '@lanterna/core';
+import { findStallCorrelation, toAlternativeHotspotEvidence } from './shared.js';
+import type { Detector, FindingContext } from './types.js';
 
 // Derived from the individual detector pattern sources so that cpu-bound exclusions
 // automatically stay in sync when a new pattern is added to another detector.
@@ -32,15 +31,14 @@ export const cpuBoundUserHotspotDetector: Detector = {
   detect(report, context): Finding[] {
     const thresholds = DETECTOR_THRESHOLDS.cpuBoundUserHotspot;
     const matches = context.fullHotspots
-      .filter((candidate) => (
-        candidate.category === 'user'
-        && (
-          candidate.selfPct >= thresholds.minSelfPct
-          || candidate.totalPct >= thresholds.minTotalPct
-        )
-        && !isSpecialCase(candidate)
-        && !isExplainedBySpecificCallee(candidate, context)
-      ))
+      .filter(
+        (candidate) =>
+          candidate.category === 'user' &&
+          (candidate.selfPct >= thresholds.minSelfPct ||
+            candidate.totalPct >= thresholds.minTotalPct) &&
+          !isSpecialCase(candidate) &&
+          !isExplainedBySpecificCallee(candidate, context),
+      )
       .sort((left, right) => {
         const totalDelta = right.totalPct - left.totalPct;
         if (totalDelta !== 0) return totalDelta;
@@ -59,10 +57,11 @@ function buildFinding(
 ): BuiltinFinding<'cpu-bound-user-hotspot'> {
   const correlation = findStallCorrelation(hotspot, report);
   const thresholds = DETECTOR_THRESHOLDS.cpuBoundUserHotspot;
-  const severity: Finding['severity'] = (
-    hotspot.totalPct >= thresholds.criticalTotalPct
-    || (correlation?.overlapPct ?? 0) >= thresholds.strongCorrelationOverlapPct
-  ) ? 'critical' : 'warning';
+  const severity: Finding['severity'] =
+    hotspot.totalPct >= thresholds.criticalTotalPct ||
+    (correlation?.overlapPct ?? 0) >= thresholds.strongCorrelationOverlapPct
+      ? 'critical'
+      : 'warning';
   const evidenceExtra: CpuBoundUserHotspotEvidenceExtra = {
     proofLevel: correlation ? 'attributed-caller' : 'aggregate-correlation',
     totalPct: hotspot.totalPct,
@@ -84,7 +83,8 @@ function buildFinding(
       extra: evidenceExtra,
     },
     why: `\`${hotspot.function}\` alone accounts for ${hotspot.totalPct.toFixed(1)}% of inclusive CPU time in user code on the main thread. Even without a more specific anti-pattern match, this is a dominant hotspot and a likely source of throughput loss or event-loop delay.`,
-    suggestion: 'Reduce work per call, improve the algorithm, cache repeated results when valid, chunk long loops with setImmediate if latency matters, or move CPU-heavy work to worker_threads/piscina.',
+    suggestion:
+      'Reduce work per call, improve the algorithm, cache repeated results when valid, chunk long loops with setImmediate if latency matters, or move CPU-heavy work to worker_threads/piscina.',
     references: [
       'https://nodejs.org/en/docs/guides/dont-block-the-event-loop',
       'https://github.com/piscinajs/piscina',
@@ -97,10 +97,7 @@ function isSpecialCase(hotspot: Hotspot): boolean {
   return SPECIAL_CASE_PATTERNS.some((pattern) => pattern.test(normalizedFunctionName));
 }
 
-function isExplainedBySpecificCallee(
-  hotspot: Hotspot,
-  context: FindingContext,
-): boolean {
+function isExplainedBySpecificCallee(hotspot: Hotspot, context: FindingContext): boolean {
   const explainedByDirectCallee = hotspot.callees.some((calleeRef) => {
     const callee = context.hotspotById.get(calleeRef.id);
     return callee !== undefined && isSpecialCase(callee);
@@ -111,9 +108,9 @@ function isExplainedBySpecificCallee(
     if (!isSpecialCase(candidate)) return false;
     const attribution = context.userAttributionById.get(candidate.id);
     return (
-      attribution?.file === hotspot.file
-      && attribution.line === hotspot.line
-      && attribution.function === hotspot.function
+      attribution?.file === hotspot.file &&
+      attribution.line === hotspot.line &&
+      attribution.function === hotspot.function
     );
   });
 }
