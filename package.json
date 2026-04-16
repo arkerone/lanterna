@@ -12,6 +12,12 @@
     "test": "turbo run test",
     "test:watch": "vitest",
     "dev": "turbo run dev",
+    "lint": "biome lint .",
+    "lint:fix": "biome lint --write .",
+    "format": "biome format --write .",
+    "format:check": "biome format .",
+    "check": "biome check .",
+    "check:fix": "biome check --write .",
     "typecheck": "turbo run typecheck",
     "clean": "turbo run clean && rm -rf node_modules/.cache .turbo",
     "prepare": "husky"
@@ -26,6 +32,7 @@
     ]
   },
   "devDependencies": {
+    "@biomejs/biome": "2.4.12",
     "@types/chrome-remote-interface": "^0.33.0",
     "@types/node": "^24.12.2",
     "husky": "9.1.7",
