@@ -20,6 +20,9 @@
     "check:fix": "biome check --write .",
     "typecheck": "turbo run typecheck",
     "clean": "turbo run clean && rm -rf node_modules/.cache .turbo",
+    "changeset": "changeset",
+    "version-packages": "changeset version",
+    "release": "turbo run build && changeset publish",
     "prepare": "husky"
   },
   "engines": {
@@ -33,6 +36,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "2.4.12",
+    "@changesets/cli": "2.30.0",
     "@types/chrome-remote-interface": "^0.33.0",
     "@types/node": "^24.12.2",
     "husky": "9.1.7",
