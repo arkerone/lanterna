@@ -1,78 +1,31 @@
 {
-  "name": "lanterna",
+  "name": "lanterna-monorepo",
+  "private": true,
   "version": "0.1.0",
-  "description": "Agent-first Node.js CPU profiler — structured, semantically enriched JSON output for AI consumption",
+  "description": "Agent-first Node.js CPU profiler — monorepo root",
   "type": "module",
-  "bin": {
-    "lanterna": "./bin/lanterna.js"
-  },
-  "types": "dist/index.d.ts",
-  "exports": {
-    ".": {
-      "types": "./dist/index.d.ts",
-      "default": "./dist/index.js"
-    },
-    "./analysis": {
-      "types": "./dist/analysis/index.d.ts",
-      "default": "./dist/analysis/index.js"
-    },
-    "./report": {
-      "types": "./dist/report/index.d.ts",
-      "default": "./dist/report/index.js"
-    },
-    "./report/types": {
-      "types": "./dist/report/types.d.ts",
-      "default": "./dist/report/types.js"
-    }
-  },
-  "files": [
-    "README.md",
-    "assets",
-    "bin",
-    "dist",
-    "skills"
+  "workspaces": [
+    "packages/*"
   ],
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/arkerone/lanterna"
-  },
-  "bugs": {
-    "url": "https://github.com/arkerone/lanterna/issues"
-  },
-  "homepage": "https://github.com/arkerone/lanterna#readme",
   "scripts": {
-    "build": "node scripts/generate-version.js && tsc && node scripts/copy-assets.js",
-    "test": "node scripts/generate-version.js && vitest run",
-    "test:watch": "node scripts/generate-version.js && vitest",
-    "dev": "tsc --watch"
+    "build": "npm run build --workspaces --if-present",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "dev": "tsc -b --watch",
+    "clean": "rm -rf packages/*/dist packages/*/.tsbuildinfo"
   },
   "engines": {
     "node": "^24.0.0"
   },
-  "keywords": [
-    "profiler",
-    "cpu",
-    "nodejs",
-    "v8",
-    "ai-agent",
-    "llm"
-  ],
-  "license": "MIT",
   "devDependencies": {
     "@types/chrome-remote-interface": "^0.33.0",
     "@types/node": "^24.12.2",
     "typescript": "^6.0.2",
     "vitest": "^4.1.4"
   },
-  "dependencies": {
-    "@clack/prompts": "^1.2.0",
-    "chalk": "^5.6.2",
-    "chrome-remote-interface": "^0.34.0",
-    "cli-table3": "^0.6.5",
-    "commander": "^14.0.3",
-    "ora": "^9.3.0",
-    "pino": "^10.3.1",
-    "ps-list": "^9.0.0",
-    "zod": "^4.3.6"
-  }
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/arkerone/lanterna"
+  },
+  "license": "MIT"
 }

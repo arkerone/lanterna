@@ -1,7 +1,9 @@
 node_modules/
 dist/
 dist-test/
+packages/*/dist/
+packages/*/.tsbuildinfo
 *.log
 *.cpuprofile
 .DS_Store
-src/report/version.generated.ts
+packages/core/src/report/version.generated.ts
