@@ -42,7 +42,8 @@
   "homepage": "https://github.com/arkerone/lanterna#readme",
   "scripts": {
     "build": "node scripts/generate-version.js && tsc && node scripts/copy-assets.js",
-    "test": "rm -rf dist dist-test && node scripts/generate-version.js && npm run build && tsc -p tsconfig.test.json && node scripts/copy-assets.js --dest=dist-test/src && node --test dist-test/test/**/*.test.js",
+    "test": "node scripts/generate-version.js && vitest run",
+    "test:watch": "node scripts/generate-version.js && vitest",
     "dev": "tsc --watch"
   },
   "engines": {
@@ -60,7 +61,8 @@
   "devDependencies": {
     "@types/chrome-remote-interface": "^0.33.0",
     "@types/node": "^24.12.2",
-    "typescript": "^6.0.2"
+    "typescript": "^6.0.2",
+    "vitest": "^4.1.4"
   },
   "dependencies": {
     "chrome-remote-interface": "^0.34.0",

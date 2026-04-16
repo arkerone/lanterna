@@ -1,5 +1,4 @@
-import { describe, it } from 'node:test';
-import assert from 'node:assert/strict';
+import { describe, expect, it } from 'vitest';
 import {
   analyzeCapture,
   createDefaultAnalysisPipeline,
@@ -10,21 +9,23 @@ import { buildLanternaReport } from '../src/report/index.js';
 import { serializeReport } from '../src/report/serialize.js';
 import { loadProfile, makeRaw } from './helpers.js';
 
-describe('analysis pipeline', () => {
-  it('default pipeline matches analyzeCapture() + buildLanternaReport()', () => {
-    const raw = makeRaw(loadProfile('sync-crypto'));
-    const options = {
-      sampleIntervalMicros: 1000,
-      deep: false,
-      command: ['node', 'app.js'],
-    };
-    const expected = buildLanternaReport(raw, analyzeCapture(raw, options), options);
-    const actual = buildLanternaReport(raw, createDefaultAnalysisPipeline().run(raw, options), options);
+const defaultOptions = {
+  sampleIntervalMicros: 1000,
+  deep: false,
+  command: ['node', 'app.js'],
+};
 
-    assert.deepEqual(actual, expected);
+describe('analysis pipeline', () => {
+  it('produces the same report through the default pipeline and the high-level helper', () => {
+    const raw = makeRaw(loadProfile('sync-crypto'));
+
+    const directReport = buildLanternaReport(raw, analyzeCapture(raw, defaultOptions), defaultOptions);
+    const pipelineReport = buildLanternaReport(raw, createDefaultAnalysisPipeline().run(raw, defaultOptions), defaultOptions);
+
+    expect(pipelineReport).toEqual(directReport);
   });
 
-  it('allows extension sections and findings to be registered programmatically', () => {
+  it('supports custom sections and findings that flow through report serialization', () => {
     const raw = makeRaw(loadProfile('sync-crypto'));
     const pipeline = createDefaultAnalysisPipeline();
 
@@ -48,7 +49,9 @@ describe('analysis pipeline', () => {
           topHotspot: string | null;
           hotspotCount: number;
         };
+
         if (!extension?.topHotspot) return [];
+
         return [{
           id: 'acme.extension-finding',
           severity: 'info',
@@ -68,23 +71,19 @@ describe('analysis pipeline', () => {
       },
     }));
 
-    const options = {
-      sampleIntervalMicros: 1000,
-      deep: false,
-      command: ['node', 'app.js'],
-    };
-    const report = buildLanternaReport(raw, pipeline.run(raw, options), options);
+    const report = buildLanternaReport(raw, pipeline.run(raw, defaultOptions), defaultOptions);
 
-    assert.deepEqual(report.extensions?.['acme.top-hotspot'], {
+    expect(report.extensions?.['acme.top-hotspot']).toEqual({
       topHotspot: 'pbkdf2Sync',
       hotspotCount: report.hotspots.length,
     });
-    assert.ok(report.findings.some((finding) => finding.id === 'acme.extension-finding'));
-    assert.doesNotThrow(() => serializeReport(report, { pretty: false }));
+    expect(report.findings).toContainEqual(expect.objectContaining({ id: 'acme.extension-finding' }));
+    expect(() => serializeReport(report, { pretty: false })).not.toThrow();
   });
 
   it('rejects duplicate extension namespaces', () => {
     const pipeline = createDefaultAnalysisPipeline();
+
     pipeline.register(defineSectionAnalyzer({
       id: 'acme.first',
       kind: 'section',
@@ -94,27 +93,19 @@ describe('analysis pipeline', () => {
       },
     }));
 
-    assert.throws(
-      () => pipeline.register(defineSectionAnalyzer({
-        id: 'acme.second',
-        kind: 'section',
-        namespace: 'acme.shared',
-        run() {
-          return { ok: false };
-        },
-      })),
-      /duplicate section namespace/,
-    );
+    expect(() => pipeline.register(defineSectionAnalyzer({
+      id: 'acme.second',
+      kind: 'section',
+      namespace: 'acme.shared',
+      run() {
+        return { ok: false };
+      },
+    }))).toThrow(/duplicate section namespace/);
   });
 
-  it('rejects invalid built-in evidence extras at serialization time', () => {
+  it('fails serialization when builtin finding evidence contains unsupported extras', () => {
     const raw = makeRaw(loadProfile('sync-crypto'));
-    const options = {
-      sampleIntervalMicros: 1000,
-      deep: false,
-      command: ['node', 'app.js'],
-    };
-    const report = buildLanternaReport(raw, createDefaultAnalysisPipeline().run(raw, options), options);
+    const report = buildLanternaReport(raw, createDefaultAnalysisPipeline().run(raw, defaultOptions), defaultOptions);
 
     report.findings.push({
       id: 'broken-sync-crypto',
@@ -133,9 +124,6 @@ describe('analysis pipeline', () => {
       references: [],
     });
 
-    assert.throws(
-      () => serializeReport(report, { pretty: false }),
-      /invalid lanterna report/,
-    );
+    expect(() => serializeReport(report, { pretty: false })).toThrow(/invalid lanterna report/);
   });
 });

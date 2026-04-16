@@ -1,4 +1,4 @@
-import { describe, it } from 'node:test';
+import { describe, it } from 'vitest';
 import assert from 'node:assert/strict';
 import type { RawCapture, RawCpuProfile } from '../src/capture/core/types.js';
 import { analyzeCapture } from '../src/analysis/index.js';
