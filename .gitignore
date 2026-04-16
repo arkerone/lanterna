@@ -7,3 +7,6 @@ packages/*/.tsbuildinfo
 *.cpuprofile
 .DS_Store
 packages/core/src/report/version.generated.ts
+
+# Husky internals (managed by husky)
+.husky/_/

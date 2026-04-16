@@ -12,14 +12,22 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "dev": "tsc -b --watch",
-    "clean": "rm -rf packages/*/dist packages/*/.tsbuildinfo"
+    "clean": "rm -rf packages/*/dist packages/*/.tsbuildinfo",
+    "prepare": "husky"
   },
   "engines": {
     "node": "^24.0.0"
   },
+  "lint-staged": {
+    "*.{ts,js,cjs,mjs,json,jsonc,md}": [
+      "biome check --write --no-errors-on-unmatched --files-ignore-unknown=true"
+    ]
+  },
   "devDependencies": {
     "@types/chrome-remote-interface": "^0.33.0",
     "@types/node": "^24.12.2",
+    "husky": "9.1.7",
+    "lint-staged": "16.4.0",
     "typescript": "^6.0.2",
     "vitest": "^4.1.4"
   },
