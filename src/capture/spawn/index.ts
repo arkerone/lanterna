@@ -26,6 +26,10 @@ export class SpawnSource implements ProfileSource<SpawnStartOptions> {
     const [command, ...args] = options.command;
     if (!command) throw new Error('command is empty');
 
+    options.onProgress?.({
+      stage: 'spawn-target',
+      message: `Starting ${[command, ...args].join(' ')} under Lanterna...`,
+    });
     const child = spawn(command, args, {
       env: buildSpawnEnvironment(options.deep),
       stdio: ['inherit', 'inherit', 'pipe', 'pipe'],
@@ -39,8 +43,22 @@ export class SpawnSource implements ProfileSource<SpawnStartOptions> {
       captureIntegrity,
     );
 
+    options.onProgress?.({
+      stage: 'wait-inspector',
+      message: 'Waiting for the child process to expose its inspector endpoint...',
+    });
     const webSocketDebuggerUrl = await waitForInspectorUrl(child, stderrBuffer);
+    options.onProgress?.({
+      stage: 'connect-cdp',
+      message: 'Connecting to the child process over CDP...',
+    });
     const cdp = await connectCdp(webSocketDebuggerUrl);
+    options.onProgress?.({
+      stage: 'prepare-runtime',
+      message: options.deep
+        ? 'Preparing runtime hooks and deopt tracing...'
+        : 'Preparing runtime hooks and control signals...',
+    });
     const session = await startCaptureSession(cdp, options.sampleIntervalMicros, {
       pid: child.pid ?? undefined,
     });
@@ -52,6 +70,10 @@ export class SpawnSource implements ProfileSource<SpawnStartOptions> {
     const detachRuntimeCleared = cdp.on('Runtime.executionContextsCleared', markRuntimeComplete);
     const detachClose = cdp.onClose(markRuntimeComplete);
 
+    options.onProgress?.({
+      stage: 'start-capture',
+      message: 'Starting CPU capture and releasing the child process...',
+    });
     await cdp.send('Runtime.runIfWaitingForDebugger');
     lifecycle.armRuntimeCompletion();
 
