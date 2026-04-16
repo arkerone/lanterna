@@ -37,7 +37,7 @@ This document describes every field in the JSON output produced by `lanterna run
 | `cwd` | string | Working directory of the profiled process |
 | `command` | string[] | Command that was run, e.g. `["node", "app.js"]` |
 | `lanternaVersion` | string | Lanterna version that produced the report |
-| `mode` | `"spawn"` \| `"attach"` \| `"in-process"` | How the profiler was connected. The current CLI implementation emits `"spawn"` only. |
+| `mode` | `"spawn"` \| `"attach"` \| `"in-process"` | How the profiler was connected. The CLI can emit `"spawn"` or `"attach"` depending on how Lanterna was invoked. |
 | `deep` | boolean | Whether `--deep` mode was active (enables deopt tracing) |
 | `captureIntegrity.controlChannel` | boolean | Whether the timed control channel from the preload hook was active |
 | `captureIntegrity.eventLoopTimed` | boolean | Whether event loop lag came from timed heartbeat samples |

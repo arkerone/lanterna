@@ -70,11 +70,17 @@ lanterna run --duration 30s --deep -- node app.js
 # Attach to a long-running Node process by pid
 lanterna attach --pid 4242 --duration 15s --output report.json
 
+# Attach until you stop it manually
+lanterna attach --pid 4242
+
+# Open the interactive process picker
+lanterna attach --pid
+
 # Attach directly to an existing inspector WebSocket
 lanterna attach --inspect-url ws://127.0.0.1:9229/<uuid> --duration 15s --pretty
 ```
 
-`--duration` accepts `ms`, `s`, or `m`. If omitted, Lanterna profiles until the child process exits. In `attach` mode, `--duration` is required.
+`--duration` accepts `ms`, `s`, or `m`. If omitted, `run` profiles until the child exits, and `attach` profiles until the target exits or you stop Lanterna with `Ctrl+C`.
 
 While a capture is running, `Ctrl+C` or `SIGTERM` stops profiling early and still produces the final JSON report. In `run` mode Lanterna also stops the spawned target process; in `attach` mode it only stops the profiling session and leaves the target running.
 
@@ -90,7 +96,7 @@ Options:
   --pretty                Pretty-print JSON with 2-space indentation
   --deep                  Enable --trace-deopt in the child process
   --sample-interval <us>  V8 sampling interval in microseconds (default: 1000)
-  --pid <pid>             Attach to an existing Node.js pid
+  --pid [pid]             Attach to an existing Node.js pid, or open the interactive picker
   --inspect-url <url>     Attach to an existing inspector WebSocket URL
   -h, --help              Show help
 ```
@@ -100,17 +106,17 @@ Notes:
 - The `--` separator is required before the target command.
 - `--deep` gives more signal for deopts, but it also makes the child process noisier because V8 deopt traces go to `stderr`.
 - `--sample-interval` must be at least `50`.
-- `lanterna attach` requires exactly one of `--pid` or `--inspect-url`.
-- `lanterna attach` requires `--duration`.
+- `lanterna attach --pid` with no value opens the interactive picker in a TTY.
+- `lanterna attach` can run without `--duration`; in that case it stops when the target exits or when you stop Lanterna manually.
 - `lanterna attach` does not support `--deep`; attach mode cannot enable V8 deopt tracing on a process that is already running.
 - `SIGINT` and `SIGTERM` stop the capture early and still emit the report. A successful manual stop exits with code `0`.
 
 ## `lanterna attach`
 
-1. Lanterna either signals the target pid with `SIGUSR1` and discovers the inspector on `127.0.0.1:9229`, or connects directly to the provided WebSocket URL.
+1. Lanterna either connects directly to the provided WebSocket URL, reuses an already-detected inspector target, or signals the target pid with `SIGUSR1` to request inspector startup.
 2. It connects over the Chrome DevTools Protocol and reads target metadata such as Node version, V8 version, cwd, and pid.
 3. It injects a lightweight runtime hook that starts event-loop heartbeats and GC tracking inside the existing process.
-4. Lanterna starts the V8 sampling CPU profiler and waits for the requested duration.
+4. Lanterna starts the V8 sampling CPU profiler and waits for the requested duration, target exit, or a manual stop.
 5. At stop time, it reads timed runtime signals from the injected globals, stops the profiler, normalizes the capture, and emits the final enriched report.
 
 Behavior:
@@ -243,7 +249,7 @@ Current limitations:
 
 - The target must run under Node with inspector support.
 - `attach --pid` is POSIX-oriented because it relies on `SIGUSR1`; on Windows, use `--inspect-url`.
-- `attach --pid` expects the inspector to become reachable on `127.0.0.1:9229`. If the target already uses a different inspector port, attach with `--inspect-url` instead.
+- Passive CDP discovery currently scans the default local range `127.0.0.1:9229..9238`. If the target already uses another inspector port, attach with `--inspect-url` instead.
 - Event-loop lag is best when both timed heartbeats and the event-loop histogram are available. If either is missing, Lanterna degrades the signal and reports that fact.
 - A hotspot in `node_modules` or `node:builtin` is often a symptom. The real action item may be in the user-code caller that triggered it.
 - `--deep` is required for deopt findings; without it, `deopts[]` is empty by design.

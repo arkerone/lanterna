@@ -9,6 +9,7 @@ The goal is not to check whether the prose looks good. The goal is to pressure a
 The skill passes when the agent consistently does all of the following:
 
 - asks for a runnable command or an existing report instead of inventing one
+- prefers Lanterna's built-in picker for running processes before falling back to a manual process list
 - asks for missing traffic shape or route details before profiling an HTTP service
 - recommends rerunning when the capture is mostly idle or degraded
 - avoids strong event-loop conclusions when `eventLoop.available` is `false`
@@ -36,8 +37,31 @@ Expected behavior:
 Failure signs:
 
 - assumes a startup command
+- ignores the possibility of attach mode when the app may already be running
 - gives generic fixes without profiling data
 - proposes code edits without evidence
+
+### Scenario 1b: Running program, attach should be proposed
+
+Prompt:
+
+```text
+Use lanterna-profile. The API is already running somewhere on this machine, but I don't remember how it was started. Please profile it.
+```
+
+Expected behavior:
+
+- prefers `lanterna attach --pid` to open the built-in picker when possible
+- if it cannot use the picker, lists plausible running Node processes before asking
+- asks which PID or running program should be attached to
+- proposes `lanterna attach --pid ...` rather than inventing a start command
+- explicitly avoids guessing the target if multiple processes exist
+
+Failure signs:
+
+- assumes `npm start` or `node server.js`
+- attaches to the first PID without asking
+- asks only for a command without checking whether a running process can be attached
 
 ### Scenario 2: HTTP target with unclear load shape
 
@@ -60,6 +84,7 @@ Failure signs:
 - assumes a route
 - assumes `autocannon` is installed
 - starts from a hardcoded load command without verifying readiness
+- misses the option of attaching to an existing running service
 
 ### Scenario 3: Idle capture pressure
 

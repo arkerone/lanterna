@@ -18,7 +18,7 @@ triggers:
 
 ## Overview
 
-Use this skill to run Lanterna against a Node.js process, inspect the JSON report, and turn the result into concrete code-level recommendations.
+Use this skill to run or attach Lanterna against a Node.js process, inspect the JSON report, and turn the result into concrete code-level recommendations.
 
 Core rule: do not guess. Read the report first, then read the implicated source files before proposing changes.
 
@@ -29,6 +29,7 @@ Use when:
 - A route, worker, or command is slow under load
 - The user suspects blocking sync work, GC pressure, or event-loop stalls
 - The user wants actionable fixes from a Lanterna JSON report
+- The program may already be running and attach mode is a better fit than spawning a new process
 
 Do not use when:
 - The problem is primarily memory growth or heap leaks without a CPU symptom
@@ -59,13 +60,54 @@ Stop and ask the user when:
 ### 1. Confirm the profiling target
 
 Collect the minimum information needed:
-- Start command for the target program
+- Start command for the target program, or whether the target is already running
 - Whether there is already traffic or load
 - Whether the user wants a quick run or deeper analysis
 
 If the target is an HTTP server and no load generator is active, offer to run one in parallel. Do not assume `autocannon` is installed until you verify it or install it intentionally.
 
-### 2. Run Lanterna with environment-aware commands
+If there is no reliable start command but there are already-running Node processes, prefer proposing `attach` instead of guessing a launch command.
+
+### 2. If the target may already be running, list candidate processes and ask
+
+When the user implies the program is already up, or when they do not know the command, prefer Lanterna's built-in interactive picker before falling back to a manual process list.
+
+Preferred flow:
+
+```bash
+node ./bin/lanterna.js attach --pid
+```
+
+That picker already narrows the list to plausible app processes and shows:
+- `CDP ready` when an inspector target is already detected
+- `PID attach*` for best-effort attach via `SIGUSR1` on a live, signalable process
+
+Use a verified process listing command and show only plausible app processes. Prefer a compact command such as:
+
+```bash
+ps -Ao pid=,command= | rg 'node|npm|pnpm|yarn|tsx|vite|next|nest'
+```
+
+Then ask a direct question that includes the candidates, for example:
+
+```text
+Je peux m'attacher à un process déjà lancé. J’ai trouvé:
+- 4242 node server.js
+- 4310 node dist/worker.js
+- 4478 npm run dev
+
+Lequel veux-tu que je profile avec `lanterna attach --pid <pid>` ?
+```
+
+Rules:
+- Never invent a PID or assume the first process is the right one
+- Prefer the built-in picker over manually pasting `ps` output when Lanterna is available locally
+- If the list is noisy, narrow it before asking
+- If there are no plausible Node targets, fall back to asking for the start command or an existing report
+- If the user identifies a running process, prefer `attach` over respawning unless they explicitly want a fresh run
+- If attach is chosen, remember that `--deep` is unavailable and `deopts[]` will stay empty
+
+### 3. Run Lanterna with environment-aware commands
 
 Prefer a local checkout or installed `lanterna` binary over hardcoded paths.
 
@@ -80,11 +122,26 @@ lanterna run --duration 15s --output /tmp/lanterna-report.json -- npm start
 
 # Deeper run when deopts are relevant
 node ./bin/lanterna.js run --deep --duration 15s --output /tmp/lanterna-report.json -- node server.js
+
+# Attach to an already-running process
+node ./bin/lanterna.js attach --pid 4242 --duration 15s --output /tmp/lanterna-report.json
+
+# Open the interactive picker
+node ./bin/lanterna.js attach --pid
+
+# Attach directly to an existing inspector URL
+lanterna attach --inspect-url ws://127.0.0.1:9229/<uuid> --duration 15s --output /tmp/lanterna-report.json
 ```
 
 For HTTP servers, pair the profile with real traffic. Use a verified command rather than a fixed `sleep` recipe. If you need load, start the app, wait until it is reachable, then run the load generator during most of the capture window.
 
-### 3. Read the report in two passes
+When using `attach`, explicitly call out before profiling:
+- attach mode cannot enable `--deep`
+- `meta.command` will be empty
+- `captureIntegrity.controlChannel` is expected to be `false`
+- `PID attach*` is best effort, not a guarantee that inspector startup will succeed
+
+### 4. Read the report in two passes
 
 First pass: get a compact summary.
 
@@ -101,7 +158,7 @@ Second pass: inspect only the sections you need:
 
 Read `references/report-schema.md` when a field is unclear. Read `references/common-pitfalls.md` when turning a finding into a fix.
 
-### 4. Decide whether the run is usable
+### 5. Decide whether the run is usable
 
 Before writing conclusions, check whether the run should be treated as degraded or repeated.
 
@@ -112,7 +169,7 @@ Usually rerun instead of over-interpreting when:
 - `meta.captureIntegrity.*` contains `false` for the signals you need
 - The hottest frames are startup-only work and the user asked about steady-state throughput
 
-### 5. Interpret before prescribing
+### 6. Interpret before prescribing
 
 Produce the analysis in this order:
 
@@ -138,7 +195,7 @@ List the top user-relevant hotspots even if there is no finding. If a user-code 
 5. Deopts
 When `meta.deep` is true, surface repeated deopts and explain them using `references/common-pitfalls.md`
 
-### 6. Read code before proposing patches
+### 7. Read code before proposing patches
 
 Before suggesting edits:
 - Open the exact file named in `evidence.file`
@@ -188,3 +245,5 @@ If `findings[]` is empty, say that clearly and explain what the hotspots suggest
 - Treating one hot function as the root cause when the caller chain shows otherwise
 - Assuming load tooling or binary paths instead of verifying the environment
 - Patching a dependency or Node builtin directly instead of identifying the user-code caller that drives it
+- Guessing the target command when an already-running process could have been listed and confirmed first
+- Attaching blindly to the first Node PID without asking the user which running program matters

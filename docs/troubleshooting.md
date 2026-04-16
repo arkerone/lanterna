@@ -35,7 +35,7 @@ Common problems and how to resolve them.
 
 1. **The target is not a Node.js process.** `SIGUSR1` will not open a Node inspector on non-Node runtimes.
 
-2. **Port `9229` is already occupied.** `attach --pid` expects the inspector to become reachable on `127.0.0.1:9229`. If another process already owns that port, connect with `--inspect-url` instead.
+2. **The inspector cannot bind in the default local scan range.** `attach --pid` currently scans `127.0.0.1:9229..9238`. If another process already owns that range, or the target uses a different inspector port, connect with `--inspect-url` instead.
 
 3. **The environment disables `SIGUSR1`-based inspector startup.** Some process supervisors or hardened environments may block this path. Start the target with `--inspect` yourself and use:
    ```bash

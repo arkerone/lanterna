@@ -104,7 +104,7 @@ The final output of this phase is a `RawCapture`.
 
 Attach mode has two entry points:
 
-- `--pid <pid>`: Lanterna sends `SIGUSR1` to the target process, then polls `127.0.0.1:9229` for the inspector endpoint
+- `--pid [pid]`: Lanterna can either open the interactive picker, reuse a detected inspector target in the default local scan range `127.0.0.1:9229..9238`, or send `SIGUSR1` to the chosen pid and wait for an inspector endpoint
 - `--inspect-url <ws://...>`: Lanterna connects directly to an already-known inspector WebSocket
 
 Once connected, attach mode:
@@ -113,7 +113,7 @@ Once connected, attach mode:
 2. injects a small runtime hook that publishes event-loop heartbeats and GC events through globals
 3. marks capture start in that injected hook
 4. starts the V8 sampling profiler
-5. waits for the requested duration
+5. waits for the requested duration, target exit, or a manual stop
 6. reads runtime timing data back from the globals, stops the profiler, and closes the CDP session
 
 Important differences from spawn mode:
