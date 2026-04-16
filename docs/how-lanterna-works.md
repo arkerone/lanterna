@@ -1,69 +1,78 @@
 # How Lanterna Works
 
-This document covers capture flow, enrichment, and degraded-signal cases.
+This document explains the capture flow, the enrichment pipeline, and how Lanterna handles degraded signals.
 
-## Mental Model
+## Overview
 
-Lanterna has two major phases:
+Lanterna has two phases:
 
-1. capture raw profiling and timing data from a Node.js child process
-2. enrich that capture into a `LanternaReport`
+```mermaid
+flowchart LR
+    A[Target Node.js process] -->|V8 profiler + runtime signals| B[RawCapture]
+    B -->|classification, aggregation, correlation, detectors| C[LanternaReport]
+```
 
-The capture phase is implemented in two modes:
+1. **Capture** - collect raw CPU samples and timed runtime signals (event-loop, GC, lifecycle).
+2. **Enrichment** - classify frames, aggregate hotspots, correlate timed events, run detectors, emit a `LanternaReport`.
 
-1. `spawn`: Lanterna starts the process itself, enables the inspector, injects a preload hook, and stops the capture when the child exits or the requested duration expires
-2. `attach`: Lanterna connects to an already-running Node.js process over the inspector, injects a runtime hook over CDP, and stops the capture after the requested duration or when the target exits first
+The enrichment pipeline is shared. Only capture differs between modes:
 
-## Runtime Flow
+| | `spawn` | `attach` |
+| --- | --- | --- |
+| Entry point | `lanterna run -- <cmd>` | `lanterna attach` |
+| Starts the process | Yes | No |
+| Startup pause (`--inspect-brk`) | Yes | No |
+| Control channel (FD 3) | Yes | No |
+| Preload hook | `--require=<hook>` | Injected over CDP |
+| `--deep` / `--trace-deopt` | Supported | Not supported |
+| `meta.command` | Populated | `[]` |
 
-The two modes share the same enrichment pipeline. They differ only in how `RawCapture` is collected.
+> [!NOTE]
+> If the inspector never becomes available, Lanterna **fails fast**. It never silently falls back to a weaker profiling mode.
 
-### 1. Spawn and prepare the target
+---
 
-`lanterna run -- <command>` delegates to `SpawnSource`.
+## Spawn mode - `lanterna run`
 
-Before spawning, Lanterna extends `NODE_OPTIONS` with:
+### 1. Prepare the target
 
-- `--inspect-brk=0` to start the Node inspector on a random port and pause before user code runs
-- `--require=<event-loop-hook>` to inject the preload hook
-- `--trace-deopt` when `--deep` is enabled
+Before spawning, Lanterna extends `NODE_OPTIONS`:
 
-It also sets:
+| Flag | Purpose |
+| --- | --- |
+| `--inspect-brk=0` | Start the Node inspector on a random port, pause before user code runs. |
+| `--require=<event-loop-hook>` | Inject the preload hook. |
+| `--trace-deopt` | Added only when `--deep` is enabled. |
+
+And two environment variables:
 
 - `LANTERNA_ACTIVE=1`
 - `LANTERNA_CONTROL_FD=3`
 
-The child is spawned with an extra file descriptor used as a control channel. That control channel carries best-effort JSON events from the preload hook to the parent process.
+The child is spawned with an extra file descriptor (FD 3) used as a **best-effort control channel** for JSON events from the preload hook.
+
+> [!WARNING]
+> The preload hook ships as `event-loop-hook.cjs`. The `.cjs` extension is required because Lanterna's package is `"type": "module"` - a `.js` file would be loaded as ESM, and `require()` would not work.
 
 ### 2. Connect to the inspector
 
-Lanterna waits for the target to print the inspector WebSocket URL, then connects to it over the Chrome DevTools Protocol.
-
-From that point, it can:
+Lanterna waits for the inspector WebSocket URL, then connects over the Chrome DevTools Protocol. From there it can:
 
 - query runtime metadata
-- start and stop the V8 sampling CPU profiler
+- start/stop the V8 sampling CPU profiler
 - release the paused process with `Runtime.runIfWaitingForDebugger`
 - query globals published by the preload hook
 
-If the inspector never becomes available, the run fails fast. Lanterna does not silently fall back to a weaker profiling mode.
-
 ### 3. Preload hook responsibilities
 
-The preload hook does not capture CPU samples. CPU still comes from V8's profiler over CDP.
+The hook does **not** capture CPU samples - that comes from V8's profiler over CDP. Its job is the timing signals that the raw CPU profile cannot provide on its own:
 
-Its job is to publish runtime timing signals that are hard to infer from the raw CPU profile alone:
-
-- event-loop heartbeat samples roughly every 20ms
+- event-loop heartbeat samples (~20 ms)
 - event-loop histogram summary via `monitorEventLoopDelay`
 - GC pause events via `PerformanceObserver`
-- lifecycle events such as hook readiness and app completion
+- lifecycle events (hook ready, app complete)
 
-These events are emitted over the control FD as JSON lines. The parent treats this channel as best effort:
-
-- malformed events are ignored
-- if the channel is partially unavailable, Lanterna still tries to produce a report
-- capture integrity flags record which timed signals were actually observed
+These events are emitted over the control FD as JSON lines. The parent treats the channel as best effort: malformed events are ignored, and partial channels still produce a report - `captureIntegrity.*` records what was actually observed.
 
 ### 4. Start capture
 
@@ -73,126 +82,111 @@ Once the inspector is connected, Lanterna:
 2. starts the V8 CPU profiler with the configured sample interval
 3. releases the paused process
 
-From that point until stop time, three signal families accumulate:
+From that moment, three signal families accumulate:
 
 - CPU samples from the V8 profiler
-- timed event-loop heartbeat samples and histogram data
-- timed GC events
+- event-loop heartbeats + histogram
+- GC events
 
-If `--deep` is enabled, V8 deoptimisation traces are also collected from the child's `stderr` and parsed later into grouped `deopts[]`.
+With `--deep`, V8 deopt traces are also collected from the child's `stderr` and parsed later into grouped `deopts[]`.
 
 ### 5. Stop capture
 
-Lanterna stops when either:
-
-- the requested duration elapses
-- the target process finishes first
-
-During shutdown it:
+Lanterna stops when the requested duration elapses or the target finishes first. During shutdown it:
 
 - reads the final event-loop summary from the target
 - stops the CPU profiler and retrieves the raw profile
 - normalizes timed samples to the capture window
 - closes the CDP connection
-- gives the process a short chance to exit cleanly, then escalates to `SIGTERM` and `SIGKILL` if needed
+- gives the process a brief chance to exit cleanly, then escalates to `SIGTERM` and `SIGKILL` if needed
 
-The final output of this phase is a `RawCapture`.
+The output is a `RawCapture`.
 
-### Attach mode
+---
 
-`lanterna attach` delegates to `AttachSource`.
+## Attach mode - `lanterna attach`
 
 Attach mode has two entry points:
 
-- `--pid [pid]`: Lanterna can either open the interactive picker, reuse a detected inspector target in the default local scan range `127.0.0.1:9229..9238`, or send `SIGUSR1` to the chosen pid and wait for an inspector endpoint
-- `--inspect-url <ws://...>`: Lanterna connects directly to an already-known inspector WebSocket
+| Flag | Behavior |
+| --- | --- |
+| `--pid [pid]` | Open the interactive picker, reuse a detected inspector target in `127.0.0.1:9229..9238`, or send `SIGUSR1` to the pid and wait for an inspector endpoint. |
+| `--inspect-url <url>` | Connect directly to an already-known inspector WebSocket. |
 
 Once connected, attach mode:
 
 1. reads target metadata over CDP
-2. injects a small runtime hook that publishes event-loop heartbeats and GC events through globals
-3. marks capture start in that injected hook
+2. injects a small runtime hook that publishes heartbeats and GC events through **globals** (no FD 3)
+3. marks capture start in the injected hook
 4. starts the V8 sampling profiler
 5. waits for the requested duration, target exit, or a manual stop
-6. reads runtime timing data back from the globals, stops the profiler, and closes the CDP session
+6. reads timed data back from the globals, stops the profiler, closes the CDP session
 
-Important differences from spawn mode:
+> [!TIP]
+> Attach mode reuses the exact same enrichment pipeline as spawn mode. The only differences are in how `RawCapture` is collected - the report schema is identical.
 
-- there is no paused startup phase and no `Runtime.runIfWaitingForDebugger`
-- there is no FD 3 control channel, so `captureIntegrity.controlChannel` is always `false`
-- attach mode cannot enable `--trace-deopt`, so `deopts[]` is empty by design
-- `meta.command` is empty because Lanterna did not launch the process itself
+Attach mode limitations:
 
-## Enrichment Pipeline
+- No paused startup phase, no `Runtime.runIfWaitingForDebugger`.
+- No FD 3 control channel, so `captureIntegrity.controlChannel` is always `false`.
+- Cannot enable `--trace-deopt`, so `deopts[]` is empty by design.
+- `meta.command` is empty - Lanterna did not launch the process.
 
-The analysis pipeline transforms `RawCapture` into `LanternaReport`.
+---
+
+## Enrichment pipeline
+
+The pipeline transforms `RawCapture` into `LanternaReport`.
 
 ### Frame classification
 
-Each frame is classified into one of these categories:
+Each frame is placed into exactly one category:
 
-- `user`
-- `node_modules`
-- `node:builtin`
-- `native`
-- `gc`
-- `program`
-- `idle`
-- `unknown`
+| Category | Typical example | Criterion |
+| --- | --- | --- |
+| `user` | A function inside `target.cwd` | Path is under the target's working directory. |
+| `node_modules` | A package dependency | Path contains `node_modules`. |
+| `node:builtin` | `node:crypto`, `node:fs` | URL starts with `node:`. |
+| `native` | Unnamed runtime/C++ frames | No script URL. |
+| `gc` | Garbage collector frames | V8 GC synthetic frames. |
+| `program` | `(program)` pseudo-frame | V8 idle/top-of-stack marker. |
+| `idle` | `(idle)` pseudo-frame | V8 idle samples. |
+| `unknown` | Frames that fit nothing above | Fallback bucket. |
 
-This classification feeds summary ratios and several findings.
-
-Examples:
-
-- a function inside the target cwd becomes `user`
-- a package under `node_modules` becomes `node_modules`
-- `node:crypto` frames become `node:builtin`
-- unnamed runtime frames with no URL often become `native`
-
-The Lanterna preload hook itself is deliberately classified as internal/native noise rather than user code.
+Classification feeds summary ratios and several findings. Lanterna's own preload hook is deliberately classified as internal/native noise, **not** user code.
 
 ### Hotspots
 
-Lanterna aggregates nodes that share the same `(file, function, line)` into a public hotspot representation.
-
-Each hotspot includes:
+Nodes sharing the same `(file, function, line)` are aggregated into a public hotspot:
 
 - direct CPU (`selfMs`, `selfPct`)
 - inclusive CPU (`totalMs`, `totalPct`)
-- top callers
-- top callees
+- top callers / callees
 - optimization state
 
 ### Hot stacks
 
-Lanterna also keeps the most frequent complete sampled stacks. Hot stacks are useful when a single hotspot is ambiguous and you need to see the surrounding call path.
+Lanterna keeps the most frequent complete sampled stacks. Useful when a single hotspot is ambiguous and you need the surrounding call path.
 
 ### Timed correlation
 
-The raw CPU profile says where CPU time went, but not always when latency symptoms occurred. Timed runtime signals add that missing dimension.
+Raw CPU profiles say *where* CPU time went, not always *when* latency symptoms occurred. Timed runtime signals add the missing dimension.
 
-It builds time windows for:
+Lanterna builds time windows for event-loop stalls and GC pauses, then correlates sampled user-code hotspots with those windows. That lets the report state things like:
 
-- event-loop stalls
-- GC pauses
+- "this user function overlapped most measured stall windows"
+- "this hotspot is a likely contributor to GC pressure"
 
-Then it correlates sampled user-code hotspots with those windows. That is how the report can say things like:
-
-- this user function overlapped most measured stall windows
-- this hotspot is a likely contributor to GC pressure
-
-Correlation is conservative. If no single user frame dominates the measured windows strongly enough, Lanterna reports ranked candidates instead of over-claiming certainty.
+Correlation is conservative: if no single user frame dominates, Lanterna reports ranked candidates rather than over-claiming.
 
 ### Findings
 
-Findings are detectors running on the enriched report, not on the raw capture.
-
-Built-in detectors cover:
+Findings are detectors running on the enriched report, not on the raw capture. Built-in detectors cover:
 
 - synchronous crypto on the hot path
 - blocking sync I/O on the hot path
 - CPU-bound user-code hotspots
-- repeated JSON parse/stringify on the hot path
+- repeated `JSON.parse` / `JSON.stringify` on the hot path
 - dependency hotspots in `node_modules`
 - excessive GC
 - event-loop stalls
@@ -201,80 +195,92 @@ Built-in detectors cover:
 
 Findings are sorted by severity first, then by attributed CPU weight.
 
-## Understanding Signal Quality
+---
 
-Lanterna exposes several indicators so downstream consumers can judge how trustworthy a report is.
+## Signal quality
+
+Lanterna exposes several indicators so consumers can judge how trustworthy a report is.
 
 ### `meta.captureIntegrity`
 
-These flags record which data paths worked during capture:
+| Flag | Meaning |
+| --- | --- |
+| `controlChannel` | The preload hook successfully talked to the parent (spawn mode only). |
+| `eventLoopTimed` | Timed event-loop heartbeat data was observed. |
+| `gcTimed` | Timed GC events were observed. |
+| `cpuSamplesTimed` | The CPU profile included timing deltas. |
 
-- `controlChannel`: the preload hook successfully talked to the parent
-- `eventLoopTimed`: timed event-loop heartbeat data was observed
-- `gcTimed`: timed GC events were observed
-- `cpuSamplesTimed`: the CPU profile included timing deltas
-
-If one of these flags is false, the report is still usable, but some interpretation should be more cautious.
+If one of these flags is `false`, the report is still usable - but some interpretation should be more cautious.
 
 ### `eventLoop.measurementBasis`
 
-Event-loop lag may come from:
-
-- `heartbeats`
-- `histogram`
-- `both`
-- `none`
-
-`both` is the strongest signal. `none` means Lanterna could not obtain a usable event-loop signal and `eventLoop.available` will be false.
+| Value | Strength |
+| --- | --- |
+| `both` | Heartbeats **and** histogram - strongest. |
+| `heartbeats` | Heartbeats only. |
+| `histogram` | Histogram only, weaker (no temporal alignment). |
+| `none` | No usable signal; `eventLoop.available` is `false`. |
 
 ### `eventLoop.confidence`
 
-Lanterna reduces event-loop confidence when the signal is incomplete:
+| Value | When |
+| --- | --- |
+| `high` | Strongest basis available. |
+| `low` | Only a weaker basis was available. |
+| `none` | No usable signal. |
 
-- `high` when it has the strongest basis
-- `low` when only a weaker basis is available
-- `none` when no usable signal exists
+Confidence directly affects how strongly Lanterna attributes a stall to a specific user-code hotspot.
 
-This affects how strongly Lanterna can attribute a stall to a specific user-code hotspot.
+---
 
-## Failure and Degradation Modes
+## Failure and degradation modes
 
-### Inspector unavailable
+<details>
+<summary><strong>Inspector unavailable</strong></summary>
 
-Lanterna requires inspector support. If the target runtime cannot start the inspector, the run fails instead of pretending to profile successfully.
+Lanterna requires inspector support. If the target runtime cannot start the inspector, the run **fails** instead of pretending to profile.
+</details>
 
-### Partial preload-hook signal
+<details>
+<summary><strong>Partial preload-hook signal</strong></summary>
 
-If the preload hook loads but one of its channels degrades:
+If the preload hook loads but a channel degrades:
 
 - the report can still contain CPU hotspots
 - event-loop or GC timing may be partial or absent
-- integrity flags and event-loop metadata show what was lost
+- `captureIntegrity.*` and `eventLoop.*` show exactly what was lost
+</details>
 
-### Low-load captures
+<details>
+<summary><strong>Low-load captures</strong></summary>
 
 A technically valid profile may still be operationally weak:
 
 - high `idleRatio` means the process spent most of the capture idle
 - short captures may under-sample real bottlenecks
-- no meaningful workload means the hottest code path might just be startup noise
+- with no meaningful workload, the hottest path may just be startup noise
+</details>
 
-### `--deep` disabled
+<details>
+<summary><strong><code>--deep</code> disabled</strong></summary>
 
-Without `--deep`, deopt tracing is intentionally absent. `deopts[]` will be empty and no `deopt-loop:*` findings can be emitted.
+Without `--deep`, deopt tracing is intentionally absent. `deopts[]` is empty and no `deopt-loop:*` finding can be emitted.
+</details>
 
-## What Lanterna Does Not Do Today
+---
 
-Lanterna does not currently:
+## What Lanterna does not do today
 
-- expose a public capture API for embedding Lanterna capture in another tool
-- generate flamegraphs as its primary output
-- infer source-level fixes by itself; it emits evidence and suggestions, but the actual remediation still belongs to the user or an agent consuming the report
+- Expose a public capture API for embedding Lanterna in another tool.
+- Generate flamegraphs as its primary output.
+- Infer source-level fixes by itself. It emits evidence and suggestions; remediation belongs to the user or to an agent consuming the report.
 
-## Recommended Reading Order
+---
+
+## Recommended reading order
 
 If you are new to the project:
 
-1. read the quick start and scope notes in `README.md`
-2. read [reading-a-report.md](reading-a-report.md)
-3. come back to this document when you want to understand why a specific field or confidence level exists
+1. Start with [`README.md`](../README.md) for the quick start and scope.
+2. Read [`reading-a-report.md`](reading-a-report.md) to interpret the JSON output.
+3. Come back here when you need to understand *why* a specific field or confidence level exists.

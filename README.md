@@ -1,158 +1,145 @@
 <p align="center">
-  <img src="assets/icon.png" alt="Lanterna icon" width="200" />
+  <img src="assets/icon.png" alt="Lanterna" width="220" />
 </p>
 
-# Lanterna
+<h1 align="center">Lanterna</h1>
 
-> Agent-first Node.js CPU profiler. Lanterna runs your program, captures a V8 CPU profile plus timed runtime signals, and emits a structured JSON report that humans and agents can act on directly.
+<p align="center">
+  <strong>Agent-first Node.js CPU profiler.</strong><br />
+  Runs your program, captures a V8 profile plus timed runtime signals,<br />
+  and emits a structured JSON report that humans <em>and</em> AI agents can act on directly.
+</p>
 
-Lanterna emits an enriched `LanternaReport` with:
+<p align="center">
+  <a href="https://www.npmjs.com/package/lanterna"><img src="https://img.shields.io/npm/v/lanterna.svg" alt="npm version" /></a>
+  <img src="https://img.shields.io/node/v/lanterna.svg" alt="Node.js version" />
+  <img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT" />
+</p>
 
-- categorized hotspots
-- hot call stacks
-- event-loop stall and GC correlation
-- deoptimisation summaries
-- actionable findings with evidence, rationale, and remediation hints
+---
 
-## What Lanterna Is For
+> [!NOTE]
+> Lanterna is built so its output is **useful to an AI agent**, not just a human reader. Instead of a flamegraph, you get a categorized, correlated, and actionable `LanternaReport` - ready to pipe into an LLM or a CLI tool.
 
-Use Lanterna when you need answers to questions such as:
+## Features
 
-- Which function is actually consuming CPU in this Node.js process?
-- Is the bottleneck in my code, a dependency, a Node builtin, native code, or GC?
-- Are synchronous APIs blocking the event loop?
-- Did GC pauses or event-loop stalls line up with specific user-code hotspots?
-- Can I hand the result to an AI agent and get concrete optimisation work back?
-
-Lanterna works in two modes:
-
-- `run`: start the target process and profile it
-- `attach`: connect to an existing Node.js process over the inspector
-
-## Scope
-
-- CLI command: `lanterna run`
-- CLI command: `lanterna attach`
-- capture modes: `spawn`, `attach`
-- JSON output to stdout or file
-- enriched findings for sync crypto, blocking I/O, CPU-bound user hotspots, JSON-on-hot-path, dependency hotspots, excessive GC, event-loop stalls, repeated deopts, and module loading on the hot path
-- optional `--deep` mode for deopt tracing
-
-Not included:
-
-- in-process/programmatic capture API
+- **Two capture modes** - `lanterna run` to spawn & profile a command, `lanterna attach` to connect to a live process via the inspector.
+- **V8 CPU profile + timed signals** - CPU samples correlated with GC pauses, event-loop lag and stalls, optional deopt traces (`--deep`).
+- **Enriched `LanternaReport`** - categorized hotspots, hot call stacks, ratios, capture-integrity flags.
+- **Built-in findings** - sync crypto, blocking I/O, CPU-bound user code, JSON on the hot path, dependency hotspots, excessive GC, event-loop stalls, deopt loops, module loading on the hot path.
+- **Actionable evidence** - each finding ships with file/line, severity, rationale, and remediation hints.
+- **Agent-ready** - stable JSON schema, `skills/lanterna-profile/` workflow for Claude Code.
 
 ## Requirements
 
-- Node.js `>=20`
-- a target command that ultimately runs on Node.js
-- inspector support available in the target runtime
+| Environment | Minimum version | Why |
+| --- | --- | --- |
+| Node.js running Lanterna itself | `>= 20` | Runtime dependencies (`commander`, `ora`, `ps-list`) require Node 20+. |
+| Node.js running the **profiled program** | `>= 12` | Needs `monitorEventLoopDelay` (≥ 11.10) and `PerformanceObserver` with `gc` entries (≥ 11.13). Any active LTS works. |
 
-Lanterna starts the target with `--inspect-brk=0` and a preload hook. If inspector support is unavailable, the run fails fast.
+The profiled target must run on Node.js with inspector support.
+
+> [!IMPORTANT]
+> Lanterna starts the target with `--inspect-brk=0` and a preload hook. If the inspector is unavailable, the run fails fast - it never silently falls back to a weaker mode.
+
+## Installation
+
+```bash
+npm install -g lanterna
+# or, without installing:
+npx lanterna --help
+```
 
 ## Quick Start
 
 ```bash
-npm install -g lanterna
-
-# Profile for 30 seconds and write the JSON report to disk
+# Profile for 30s and write the JSON report to disk
 lanterna run --duration 30s --output report.json -- node app.js
 
-# Emit compact JSON to stdout
-lanterna run --duration 10s -- node server.js
-
-# Pretty-print the report for manual reading
-lanterna run --duration 10s --pretty -- node server.js
-
-# Include V8 deoptimisation tracing
-lanterna run --duration 30s --deep -- node app.js
-
-# Attach to a long-running Node process by pid
+# Attach to a running Node process
 lanterna attach --pid 4242 --duration 15s --output report.json
 
-# Attach until you stop it manually
-lanterna attach --pid 4242
+# Inspect findings with jq
+jq '.findings[] | select(.severity != "info") | {id, severity}' report.json
+```
 
-# Open the interactive process picker
+> [!TIP]
+> `Ctrl+C` (or `SIGTERM`) stops profiling early **and still emits a final report**. In `run` mode it also terminates the spawned target; in `attach` mode the target keeps running.
+
+## Usage
+
+### Profile a command
+
+```bash
+lanterna run [options] -- <command> [args...]
+```
+
+Lanterna spawns the command with the inspector enabled, injects a preload hook to capture GC and event-loop signals, runs the V8 sampling profiler, and emits an enriched report when the duration expires or the child exits.
+
+```bash
+# Profile until the child exits, pretty-print
+lanterna run --pretty -- node server.js
+
+# Include V8 deopt tracing
+lanterna run --duration 30s --deep -- node app.js
+```
+
+### Attach to a running process
+
+```bash
+lanterna attach [options]
+```
+
+Lanterna connects to an existing Node.js process over the Chrome DevTools Protocol, injects a runtime hook, and profiles for the requested duration (or until you stop it).
+
+```bash
+# By PID
+lanterna attach --pid 4242 --duration 15s
+
+# Interactive picker (TTY required)
 lanterna attach --pid
 
-# Attach directly to an existing inspector WebSocket
-lanterna attach --inspect-url ws://127.0.0.1:9229/<uuid> --duration 15s --pretty
+# Directly to an existing inspector WebSocket
+lanterna attach --inspect-url ws://127.0.0.1:9229/<uuid>
 ```
 
-`--duration` accepts `ms`, `s`, or `m`. If omitted, `run` profiles until the child exits, and `attach` profiles until the target exits or you stop Lanterna with `Ctrl+C`.
+> [!WARNING]
+> `attach --pid` relies on `SIGUSR1` and is POSIX-only. On Windows, use `--inspect-url`. Attach mode does **not** support `--deep` - deopt tracing cannot be enabled on a process that is already running.
 
-While a capture is running, `Ctrl+C` or `SIGTERM` stops profiling early and still produces the final JSON report. In `run` mode Lanterna also stops the spawned target process; in `attach` mode it only stops the profiling session and leaves the target running.
+### Options
 
-## CLI Reference
+| Option | Description |
+| --- | --- |
+| `--duration <ms\|s\|m>` | Profile duration. Omit to run until the child/target exits. |
+| `--output <path>` | Write JSON to a file instead of stdout. |
+| `--pretty` | Pretty-print JSON with 2-space indentation. |
+| `--deep` | Enable `--trace-deopt` (spawn mode only). |
+| `--sample-interval <us>` | V8 sampling interval in µs (default `1000`, min `50`). |
+| `--pid [pid]` | Attach by PID, or open the interactive picker if no value. |
+| `--inspect-url <url>` | Attach to an existing inspector WebSocket URL. |
+| `-h, --help` | Show help. |
 
-```text
-lanterna run [options] -- <command> [args...]
-lanterna attach [options]
+The `--` separator is required before the target command in `run` mode.
 
-Options:
-  --duration <ms|s|m>     Profile duration. Omit to run until the child exits.
-  --output <path>         Write JSON to a file instead of stdout
-  --pretty                Pretty-print JSON with 2-space indentation
-  --deep                  Enable --trace-deopt in the child process
-  --sample-interval <us>  V8 sampling interval in microseconds (default: 1000)
-  --pid [pid]             Attach to an existing Node.js pid, or open the interactive picker
-  --inspect-url <url>     Attach to an existing inspector WebSocket URL
-  -h, --help              Show help
-```
+## The Report
 
-Notes:
+Lanterna emits a `LanternaReport` with the following top-level sections:
 
-- The `--` separator is required before the target command.
-- `--deep` gives more signal for deopts, but it also makes the child process noisier because V8 deopt traces go to `stderr`.
-- `--sample-interval` must be at least `50`.
-- `lanterna attach --pid` with no value opens the interactive picker in a TTY.
-- `lanterna attach` can run without `--duration`; in that case it stops when the target exits or when you stop Lanterna manually.
-- `lanterna attach` does not support `--deep`; attach mode cannot enable V8 deopt tracing on a process that is already running.
-- `SIGINT` and `SIGTERM` stop the capture early and still emit the report. A successful manual stop exits with code `0`.
+| Section | Purpose |
+| --- | --- |
+| `meta` | Capture metadata, mode, duration, integrity flags. |
+| `summary` | High-level ratios (user / builtin / native / GC). |
+| `hotspots` | Aggregated functions with self/total CPU + callers/callees. |
+| `hotStacks` | Most frequent sampled stacks. |
+| `gc` | Pause totals, counts, longest pause, correlated hotspots. |
+| `eventLoop` | Lag stats, stalls, correlation candidates, signal quality. |
+| `deopts` | V8 deoptimisation events (only with `--deep`). |
+| `findings` | Actionable detector output, sorted by severity. |
 
-## `lanterna attach`
+**Read it in this order:** `summary.topCategory` → `findings[]` → top `hotspots` → `eventLoop` & `gc`. Full schema in [docs/reading-a-report.md](docs/reading-a-report.md).
 
-1. Lanterna either connects directly to the provided WebSocket URL, reuses an already-detected inspector target, or signals the target pid with `SIGUSR1` to request inspector startup.
-2. It connects over the Chrome DevTools Protocol and reads target metadata such as Node version, V8 version, cwd, and pid.
-3. It injects a lightweight runtime hook that starts event-loop heartbeats and GC tracking inside the existing process.
-4. Lanterna starts the V8 sampling CPU profiler and waits for the requested duration, target exit, or a manual stop.
-5. At stop time, it reads timed runtime signals from the injected globals, stops the profiler, normalizes the capture, and emits the final enriched report.
-
-Behavior:
-
-- `meta.command` is `[]` because Lanterna did not launch the process itself.
-- `meta.captureIntegrity.controlChannel` is `false` by design because attach mode does not have the spawn-mode FD 3 control pipe.
-- `deopts[]` remains empty because attach mode does not enable `--trace-deopt` on the target.
-- If Lanterna itself receives `SIGINT` or `SIGTERM`, it finalizes the capture and exits, but it does not stop the attached target process.
-
-## `lanterna run`
-
-1. Lanterna spawns your command with `NODE_OPTIONS` extended to include `--inspect-brk=0` and a preload hook.
-2. It waits for the inspector WebSocket, connects over the Chrome DevTools Protocol, and reads target metadata such as Node version, V8 version, cwd, and pid.
-3. The preload hook starts publishing timed heartbeat events and GC events over a dedicated control channel.
-4. Lanterna starts the V8 sampling CPU profiler, then releases the process with `Runtime.runIfWaitingForDebugger`.
-5. When the requested duration expires, or when the child finishes, Lanterna stops profiling, reads the final event-loop summary, and normalizes the capture into a raw session.
-6. The analysis pipeline classifies frames, aggregates hotspots, computes hot stacks, correlates user-code hotspots with GC and event-loop stall windows, runs detectors, and emits the final JSON report.
-
-If Lanterna receives `SIGINT` or `SIGTERM` while `run` is active, it still finalizes the report and then terminates the spawned target process.
-
-The detailed architecture and degradation modes are documented in [docs/how-lanterna-works.md](docs/how-lanterna-works.md).
-
-## Report Shape
-
-Lanterna outputs a `LanternaReport` JSON object with these top-level sections:
-
-- `meta`: capture metadata, command, duration, sample interval, mode, and integrity flags
-- `summary`: high-level ratios such as user code vs builtin vs native vs GC
-- `hotspots`: aggregated functions with self and total CPU, plus callers and callees
-- `hotStacks`: most frequent sampled stacks
-- `gc`: GC pause totals, counts, longest pause, and correlated hotspots
-- `eventLoop`: lag statistics, stall intervals, correlation candidates, and signal quality
-- `deopts`: grouped V8 deoptimisation events when `--deep` is enabled
-- `findings`: actionable detector output sorted by severity and attributed CPU weight
-
-Example:
+<details>
+<summary><strong>Example output</strong></summary>
 
 ```json
 {
@@ -186,80 +173,57 @@ Example:
 }
 ```
 
-For a field-by-field interpretation guide, see [docs/reading-a-report.md](docs/reading-a-report.md).
-
-## Reading Order
-
-1. `summary.topCategory` and the ratio fields to understand where the process spends on-CPU time.
-2. `findings[]` for the highest-priority actionable signals.
-3. `hotspots[0..N]` to see where CPU is spent directly and transitively.
-4. `eventLoop` and `gc` to understand latency and memory-pressure side effects.
-
-Heuristics:
-
-- High `builtinRatio` plus a `sync-crypto` or `blocking-io` finding usually means user code is calling a synchronous builtin on the hot path.
-- High `idleRatio` usually means the process was not under enough load to make the profile representative.
-- `eventLoop.available = true` is not enough on its own; also read `measurementBasis` and `confidence`.
-- If `captureIntegrity.*` flags are degraded, treat correlation signals more cautiously.
+</details>
 
 ## Findings
 
-Lanterna emits these built-in detectors:
-
 | Finding id | Category | Trigger |
 | --- | --- | --- |
-| `sync-crypto-on-hot-path` | `sync-crypto` | sampled `node:builtin` or native sync crypto frame with `totalPct >= 1`, optionally attributed back to a user caller |
-| `blocking-io:<api>` | `blocking-io` | sampled `node:builtin` or native sync fs, child_process, or zlib frame with meaningful `selfPct` or `totalPct` |
-| `cpu-bound-user-hotspot:<hotspot>` | `cpu-bound-user-hotspot` | dominant user-code hotspot with no more specific detector match |
-| `json-on-hot-path:<api>` | `json-on-hot-path` | `JSON.parse` or `JSON.stringify` consuming meaningful CPU on the hot path |
-| `node-modules-hotspot:<package>` | `node-modules-hotspot` | a dependency frame dominates a meaningful share of CPU time |
-| `excessive-gc` | `excessive-gc` | `gcRatio > 10%` or `longestPauseMs > 100ms` |
-| `event-loop-stall` | `event-loop-stall` | `p99LagMs >= 100` or `maxLagMs >= 200` |
-| `deopt-loop:<function>` | `deopt-loop` | same deoptimised function seen at least 5 times in `--deep` mode and the function is also hot in the CPU profile |
-| `require-in-hot-path` | `require-in-hot-path` | module loading functions sampled on the hot path |
+| `sync-crypto-on-hot-path` | `sync-crypto` | Sampled sync crypto frame with `totalPct >= 1`, optionally attributed to a user caller. |
+| `blocking-io:<api>` | `blocking-io` | Sampled sync fs / child_process / zlib frame with meaningful CPU. |
+| `cpu-bound-user-hotspot:<hotspot>` | `cpu-bound-user-hotspot` | Dominant user-code hotspot with no more specific match. |
+| `json-on-hot-path:<api>` | `json-on-hot-path` | `JSON.parse` / `JSON.stringify` consuming meaningful CPU. |
+| `node-modules-hotspot:<package>` | `node-modules-hotspot` | A dependency frame dominates meaningful CPU time. |
+| `excessive-gc` | `excessive-gc` | `gcRatio > 10%` or `longestPauseMs > 100ms`. |
+| `event-loop-stall` | `event-loop-stall` | `p99LagMs >= 100` or `maxLagMs >= 200`. |
+| `deopt-loop:<function>` | `deopt-loop` | Same deoptimised function seen ≥ 5 times (`--deep`) and hot in the CPU profile. |
+| `require-in-hot-path` | `require-in-hot-path` | Module loading functions sampled on the hot path. |
 
-The exact `evidence.extra` payload varies by detector. Builtin-backed findings now include a `proofLevel` so downstream consumers can distinguish direct callee evidence from caller attribution and aggregate correlation.
+Builtin-backed findings include a `proofLevel` so consumers can distinguish direct callee evidence from caller attribution.
 
-## Quick jq Recipes
-
-Useful one-liners for querying a report from the terminal:
+## Querying a report with jq
 
 ```bash
-# Show all critical and warning findings
+# Critical and warning findings
 jq '.findings[] | select(.severity != "info") | {id, severity, file: .evidence.file, line: .evidence.line}' report.json
 
-# Top 5 hotspots by CPU
+# Top 5 hotspots
 jq '.hotspots[:5] | .[] | {fn: .functionName, selfPct, totalPct, file}' report.json
 
 # Event-loop summary
 jq '{basis: .eventLoop.measurementBasis, confidence: .eventLoop.confidence, maxLagMs: .eventLoop.maxLagMs, p99LagMs: .eventLoop.p99LagMs}' report.json
 
-# GC overview
-jq '{gcRatio: .summary.gcRatio, longestPauseMs: .gc.longestPauseMs, pauseCount: (.gc.count.scavenge + .gc.count.markSweep)}' report.json
-
-# Capture integrity flags
+# Capture integrity
 jq '.meta.captureIntegrity' report.json
 ```
 
-## Signal Quality and Limitations
+## Signal Quality & Limitations
 
-Lanterna does more than dump a raw `.cpuprofile`, but the output still needs to be read with an understanding of capture quality.
-
-Current limitations:
+> [!WARNING]
+> A hotspot in `node_modules` or `node:builtin` is often a **symptom**. The real action item may be in the user-code caller that triggered it.
 
 - The target must run under Node with inspector support.
-- `attach --pid` is POSIX-oriented because it relies on `SIGUSR1`; on Windows, use `--inspect-url`.
-- Passive CDP discovery currently scans the default local range `127.0.0.1:9229..9238`. If the target already uses another inspector port, attach with `--inspect-url` instead.
-- Event-loop lag is best when both timed heartbeats and the event-loop histogram are available. If either is missing, Lanterna degrades the signal and reports that fact.
-- A hotspot in `node_modules` or `node:builtin` is often a symptom. The real action item may be in the user-code caller that triggered it.
+- Passive CDP discovery scans `127.0.0.1:9229..9238`; use `--inspect-url` for other ports.
+- Event-loop lag quality depends on both timed heartbeats and the event-loop histogram - Lanterna degrades and reports when either is missing.
 - `--deep` is required for deopt findings; without it, `deopts[]` is empty by design.
-- Low-load or short-lived captures can be valid, but they often produce weaker attribution and less representative ratios.
+- Low-load or short-lived captures can be valid, but produce weaker attribution and less representative ratios.
 
-Read [docs/how-lanterna-works.md](docs/how-lanterna-works.md) for the exact integrity and degradation behavior.
+Exact integrity and degradation behavior: [docs/how-lanterna-works.md](docs/how-lanterna-works.md).
 
-## Programmatic Surface
+## Programmatic API
 
-Lanterna is still CLI-first, but it now exposes a cleaner programmatic split:
+<details>
+<summary><strong>Import surface</strong></summary>
 
 ```ts
 import {
@@ -277,42 +241,41 @@ import {
 import type { Finding, Hotspot } from 'lanterna/report';
 ```
 
-Recommended public entrypoints:
+Public entrypoints:
 
-- `runProfile(...)`: spawn a Node process, capture it, analyze it, return a `LanternaReport`
-- `attachProfile(...)`: attach to an existing Node inspector target and return a `LanternaReport`
-- `analyzeCapture(...)`: turn a `RawCapture` into analysis output
-- `serializeReport(...)`: validate and serialize a final `LanternaReport`
-- `lanterna/analysis`: analysis pipeline and analyzer registration helpers
-- `lanterna/report`: report types and report assembly/serialization helpers
+- `runProfile(...)` - spawn a Node process, capture, analyze, return a `LanternaReport`.
+- `attachProfile(...)` - attach to an existing inspector target and return a `LanternaReport`.
+- `analyzeCapture(...)` - turn a `RawCapture` into analysis output.
+- `serializeReport(...)` - validate and serialize a final `LanternaReport`.
+- `lanterna/analysis` - pipeline and analyzer registration helpers.
+- `lanterna/report` - report types and serialization helpers.
 
-Not public:
+Spawn/attach capture internals and in-process mode are **not** public.
 
-- spawn capture internals
-- attach capture internals
-- in-process capture mode
-
-## Internal Structure
-
-The source tree is organized by responsibility rather than by layered architecture:
-
-- `src/cli`: argument parsing, command dispatch, report output
-- `src/profile.ts`: top-level orchestration for `runProfile` and `attachProfile`
-- `src/capture`: raw capture session lifecycle and capture types
-- `src/inspector`: CDP client, runtime metadata access, inspector discovery
-- `src/runtime-signals`: preload/runtime hook and timed signal readers
-- `src/analysis/core`: analysis pipeline orchestration, context, analyzer contracts
-- `src/analysis/model`: frame classification, hotspot aggregation, timed correlations, summaries
-- `src/analysis/detectors`: built-in findings and detector helpers
-- `src/report`: report types, meta assembly, schema validation, serialization
-- `src/shared`: small cross-cutting utilities and constants
+</details>
 
 ## Documentation
 
-- [docs/how-lanterna-works.md](docs/how-lanterna-works.md): runtime flow, architecture, and degradation modes
-- [docs/reading-a-report.md](docs/reading-a-report.md): how to interpret the JSON report
-- [docs/troubleshooting.md](docs/troubleshooting.md): common problems and how to fix them
-- [skills/lanterna-profile/SKILL.md](skills/lanterna-profile/SKILL.md): agent-oriented profiling workflow using Lanterna
+- [docs/how-lanterna-works.md](docs/how-lanterna-works.md) - runtime flow, architecture, degradation modes
+- [docs/reading-a-report.md](docs/reading-a-report.md) - how to interpret the JSON report
+- [docs/troubleshooting.md](docs/troubleshooting.md) - common problems and fixes
+- [skills/lanterna-profile/SKILL.md](skills/lanterna-profile/SKILL.md) - agent-oriented profiling workflow for Claude Code
+
+<details>
+<summary><strong>Source layout</strong></summary>
+
+- `src/cli` - argument parsing, command dispatch, report output
+- `src/profile.ts` - top-level orchestration for `runProfile` / `attachProfile`
+- `src/capture` - raw capture session lifecycle and capture types
+- `src/inspector` - CDP client, runtime metadata, inspector discovery
+- `src/runtime-signals` - preload/runtime hook and timed signal readers
+- `src/analysis/core` - pipeline orchestration, context, analyzer contracts
+- `src/analysis/model` - frame classification, hotspot aggregation, correlations
+- `src/analysis/detectors` - built-in findings
+- `src/report` - report types, meta assembly, schema validation, serialization
+- `src/shared` - cross-cutting utilities
+
+</details>
 
 ## Development
 
@@ -322,9 +285,4 @@ npm run build
 npm test
 ```
 
-Tests use `node:test` and cover:
-
-- frame classification
-- hotspot aggregation
-- detector behavior and evidence attribution
-- live profiling paths, including short-lived processes and real event-loop stall correlation
+Tests use Vitest and cover frame classification, hotspot aggregation, detector evidence attribution, and live profiling paths - including short-lived processes and real event-loop stall correlation.

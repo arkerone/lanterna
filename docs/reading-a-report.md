@@ -1,324 +1,261 @@
 # Reading a Lanterna Report
 
-Lanterna emits a structured `LanternaReport`. Read it in this order.
+Lanterna emits a structured `LanternaReport`. This guide walks through each section - **in reading order** - and how to interpret it.
 
-## Read It In This Order
+## At a glance
 
-1. `meta`
-2. `summary`
-3. `findings`
-4. `hotspots`
-5. `eventLoop` and `gc`
-6. `hotStacks`
-7. `deopts`
+| # | Section | What it tells you | When to distrust it |
+| --- | --- | --- | --- |
+| 1 | `meta` | What was captured (mode, duration, integrity flags). | `durationMs` very short, or `captureIntegrity.*` flags `false`. |
+| 2 | `summary` | Where CPU time went (ratios, top category). | `idleRatio` > 0.95 - the profile is mostly idle. |
+| 3 | `findings` | Prioritized hypotheses backed by the capture. | Empty `findings[]` does not prove a healthy profile. |
+| 4 | `hotspots` | Where CPU is actually spent (self + inclusive). | A hot leaf in `node_modules` is usually a symptom, not a cause. |
+| 5 | `eventLoop` | Latency signal + stall windows. | `confidence = low` or `measurementBasis = histogram` alone. |
+| 6 | `gc` | Pause counts, duration, correlated hotspots. | Very short runs with no `gcTimed`. |
+| 7 | `hotStacks` | Complete sampled call paths, weighted. | Not always needed - use when a single hotspot is ambiguous. |
+| 8 | `deopts` | V8 deoptimisation clusters. | Empty unless `meta.deep === true`. |
 
-## `meta`: What Was Captured
+---
 
-Key fields:
+## 1. `meta` - what was captured
 
-- `durationMs`: wall-clock duration of the capture
-- `sampleIntervalMicros`: V8 CPU sampling interval
-- `command`: the executed command, or `[]` in attach mode
-- `mode`: either `spawn` or `attach`
-- `deep`: whether deopt tracing was enabled
-- `captureIntegrity`: quality indicators for timed signals
+| Field | Meaning |
+| --- | --- |
+| `durationMs` | Wall-clock duration of the capture. |
+| `sampleIntervalMicros` | V8 CPU sampling interval. |
+| `command` | The executed command, or `[]` in attach mode. |
+| `mode` | `"spawn"` or `"attach"`. |
+| `deep` | Whether deopt tracing was enabled. |
+| `captureIntegrity` | Quality indicators for timed signals. |
 
-Use it to sanity-check the capture:
+Sanity-check pattern:
 
-- If `durationMs` is very short, treat ratios and rankings as less stable.
-- If `captureIntegrity.controlChannel` is false in `spawn` mode, event-loop and GC timing likely degraded.
-- In `attach` mode, `captureIntegrity.controlChannel` is expected to be false because there is no FD 3 control channel.
-- If `deep` is false, ignore `deopts[]` entirely.
+- Short `durationMs` → treat ratios and rankings as less stable.
+- `captureIntegrity.controlChannel = false` in `spawn` mode → event-loop and GC timing likely degraded.
+- In `attach` mode, `controlChannel = false` is **expected** (no FD 3 channel).
+- `deep = false` → ignore `deopts[]` entirely.
 
-## `summary`: Where CPU Time Went
+---
 
-Important fields:
+## 2. `summary` - where CPU time went
 
-- `onCpuRatio`: fraction of all samples where the process was actually doing work
-- `userCodeRatio`: fraction of on-CPU time spent in user code
-- `nodeModulesRatio`: fraction of on-CPU time in dependencies
-- `builtinRatio`: fraction of on-CPU time in Node builtins
-- `nativeRatio`: fraction of on-CPU time in V8/native frames
-- `gcRatio`: fraction of on-CPU time spent in garbage collection
-- `idleRatio`: fraction of all samples spent idle
-- `topCategory`: dominant non-idle category
-- `dominantBlockingKind`: coarse summary derived from emitted findings
+| Field | Meaning |
+| --- | --- |
+| `onCpuRatio` | Fraction of samples where the process was doing work. |
+| `userCodeRatio` | On-CPU time in user code. |
+| `nodeModulesRatio` | On-CPU time in dependencies. |
+| `builtinRatio` | On-CPU time in Node builtins. |
+| `nativeRatio` | On-CPU time in V8 / native frames. |
+| `gcRatio` | On-CPU time spent in garbage collection. |
+| `idleRatio` | Fraction of samples spent idle. |
+| `topCategory` | Dominant non-idle category. |
+| `dominantBlockingKind` | Coarse summary derived from emitted findings. |
 
 Common patterns:
 
-- High `userCodeRatio`: your own code is where CPU is spent; hotspots are likely actionable directly.
-- High `builtinRatio`: often a sync builtin such as crypto, fs, child process, or compression.
-- High `nativeRatio`: the actual CPU work may sit below a JS wrapper; look at callers and findings, not just the hottest leaf.
-- High `gcRatio`: memory churn is likely part of the problem.
-- High `idleRatio`: the run may not represent the real hot path because the process was mostly waiting.
+- **High `userCodeRatio`** → hotspots are likely actionable directly.
+- **High `builtinRatio`** → often a sync builtin (crypto, fs, child process, zlib).
+- **High `nativeRatio`** → the real CPU work sits below JS wrappers; look at callers and findings, not just the leaf.
+- **High `gcRatio`** → memory churn is part of the problem.
+- **High `idleRatio`** → the run may not represent the real hot path.
 
-## `findings`: The Action Queue
+---
+
+## 3. `findings` - the action queue
 
 Each finding contains:
 
-- `id`
-- `severity`
-- `category`
-- `title`
-- `evidence`
-- `why`
-- `suggestion`
-- `references`
+| Field | Purpose |
+| --- | --- |
+| `id` | Detector-specific identifier. |
+| `severity` | `critical` / `warning` / `info`. |
+| `category` | Grouping for filtering. |
+| `title` | Short human label. |
+| `evidence` | File, line, function, CPU weight, detector-specific `extra`. |
+| `why` | Why this pattern matters. |
+| `suggestion` | Concrete remediation hint. |
+| `references` | Links to docs or related findings. |
 
-Read `findings[]` as prioritized hypotheses backed by the capture.
+Read `findings[]` as **prioritized hypotheses backed by the capture**.
 
-### Evidence Attribution
+### Evidence attribution
 
 The most useful part is usually `evidence`:
 
-- `file`, `line`, `function`: where Lanterna believes the action should happen
-- `selfPct`: CPU weight attributed to that evidence
-- `extra`: detector-specific metadata
+- `file`, `line`, `function` - where Lanterna believes the action should happen.
+- `selfPct` - CPU weight attributed to that evidence.
+- `extra` - detector-specific metadata.
 
-For some detectors, `evidence.file` and `evidence.function` point to a user caller rather than the builtin callee. That is intentional.
-Use `evidence.extra.proofLevel` to judge how strong the claim is:
+For some detectors, `evidence.file` points to the **user caller** rather than the builtin callee. That is intentional - it's where you actually edit code.
 
-- `direct-builtin`: Lanterna directly sampled the builtin/native callee
-- `attributed-caller`: the builtin was sampled and Lanterna has high-confidence user-caller attribution
-- `aggregate-correlation`: the finding is based on aggregate timing/correlation rather than a directly sampled callee
-- `deopt-trace-only`: the finding comes from `--trace-deopt`, gated by CPU heat
+<details>
+<summary><strong><code>proofLevel</code> - how strong is the claim?</strong></summary>
 
-### Detector Meanings
+| Value | Meaning |
+| --- | --- |
+| `direct-builtin` | Lanterna directly sampled the builtin/native callee. |
+| `attributed-caller` | The builtin was sampled and Lanterna has high-confidence user-caller attribution. |
+| `aggregate-correlation` | Based on aggregate timing/correlation rather than a directly sampled callee. |
+| `deopt-trace-only` | Comes from `--trace-deopt`, gated by CPU heat. |
 
-#### `sync-crypto-on-hot-path`
+</details>
 
-Interpretation:
+### Detector reference
 
-- your code is calling synchronous crypto work on the main thread
-- the report only emits this when it samples a builtin/native sync crypto frame
-- the report attributes the evidence to the user caller only when caller attribution is high-confidence
+| Detector id | Interpretation | Typical next step |
+| --- | --- | --- |
+| `sync-crypto-on-hot-path` | Synchronous crypto on the main thread. | Switch to async crypto or move to worker threads. |
+| `blocking-io:<api>` | Synchronous fs / child-process / zlib on the hot path. | Replace with the async equivalent, or move off the request path. |
+| `cpu-bound-user-hotspot:<hotspot>` | A user function dominates on-CPU time. | Inspect for algorithmic cost, repeated work, or missing offload. |
+| `json-on-hot-path:<api>` | `JSON.parse` / `JSON.stringify` is a meaningful part of the request path. | Cache stable payloads, stream large ones, reduce repeated work. |
+| `node-modules-hotspot:<package>` | A dependency dominates a meaningful share of CPU. | Inspect the user caller path first. See below. |
+| `excessive-gc` | Too much on-CPU time in GC, or a pause long enough to matter. | Inspect top user hotspots for allocation patterns. |
+| `event-loop-stall` | Main thread stopped servicing tasks for too long. | See below. |
+| `deopt-loop:<function>` | A hot function keeps deoptimising under `--deep`. | See below. |
+| `require-in-hot-path` | Module loading during active work, not just startup. | Hoist the import or memoize the lazy load. |
 
-Typical next step:
-
-- switch to async crypto or move the work to worker threads
-
-#### `blocking-io:<api>`
-
-Interpretation:
-
-- a synchronous fs, child-process, or zlib API is on the hot path
-- the report only emits this when it samples the builtin/native blocking callee, not just a matching function name
-
-Typical next step:
-
-- replace it with the async equivalent or restructure the work off the request path
-
-#### `excessive-gc`
-
-Interpretation:
-
-- the process spent too much on-CPU time in GC, or a GC pause was long enough to matter
-
-Typical next step:
-
-- inspect the top user hotspots for allocation-heavy patterns
+A few detectors deserve extra care:
 
 #### `event-loop-stall`
 
-Interpretation:
-
-- the main thread stopped servicing tasks for too long
-- correlation candidates indicate which user hotspots overlapped the measured stall windows
-
-Typical next step:
-
-- inspect the top correlated user hotspot, then the hottest user function overall
+Correlation candidates indicate which user hotspots overlapped the measured stall windows - not a proof that a single line caused the stall. Inspect the top correlated user hotspot first, then the hottest user function overall. If `measurementBasis = histogram` alone, `correlatedHotspots` is based on overall CPU overlap, not temporal overlap.
 
 #### `deopt-loop:<function>`
 
-Interpretation:
-
-- a function that is hot in the CPU profile also kept deoptimising under `--deep`
-
-Typical next step:
-
-- stabilize shapes and types, then reprofile
-
-#### `cpu-bound-user-hotspot:<hotspot>`
-
-Interpretation:
-
-- a user-code function is dominating on-CPU time on the main thread
-- no more specific built-in detector explained that cost well enough
-
-Typical next step:
-
-- inspect the function body for algorithmic cost, repeated work, or a missing offload to worker threads
-
-#### `json-on-hot-path:<api>`
-
-Interpretation:
-
-- `JSON.parse` or `JSON.stringify` is a meaningful part of the request path
-- the actionable evidence usually points to the user caller, not the builtin frame
-
-Typical next step:
-
-- reduce repeated parse/stringify work, cache stable payloads, or stream large payloads
+Fires only when a function is **both** hot in the CPU profile **and** repeatedly deoptimised under `--deep`. Focus on stabilising shapes and types, then reprofile. One-off deopt entries are noise.
 
 #### `node-modules-hotspot:<package>`
 
-Interpretation:
+A dependency hotspot is often a symptom - your code controls when and how often the dependency runs. Inspect the caller path, reduce input size or call frequency, and only then decide whether the dependency itself needs replacing.
 
-- a dependency dominates a meaningful share of CPU time
-- the user caller still matters because your code controls when and how often the dependency runs
+---
 
-Typical next step:
+## 4. `hotspots` - where CPU is actually spent
 
-- inspect the caller path, reduce input size or call frequency, and decide whether the dependency usage or the dependency itself needs replacing
-
-#### `require-in-hot-path`
-
-Interpretation:
-
-- module loading is happening during active work rather than once at startup
-- the actionable evidence may point at the user caller while `evidence.extra.callee` keeps the module-loader frame
-
-Typical next step:
-
-- hoist the import or memoize the lazy load
-
-## `hotspots`: Where CPU Is Actually Spent
-
-Each hotspot includes:
-
-- `selfMs` and `selfPct`: direct time in that function
-- `totalMs` and `totalPct`: inclusive time, including children
-- `callers`: who invoked it
-- `callees`: what it invoked
-- `category`
-- `optimizationState`
+| Field | Meaning |
+| --- | --- |
+| `selfMs` / `selfPct` | Direct time in this function. |
+| `totalMs` / `totalPct` | Inclusive time, including children. |
+| `callers[]` | Who invoked it. |
+| `callees[]` | What it invoked. |
+| `category` | Classification (`user`, `node_modules`, `node:builtin`, …). |
+| `optimizationState` | V8 state (optimised, not-optimised, deopted, …). |
 
 How to read it:
 
 - Use `selfPct` to find the hottest direct leaves.
-- Use `totalPct` to find broad expensive paths where work may happen in descendants or native code.
-- Use `callers[]` when a builtin or dependency is hot; the caller is often the real source fix.
+- Use `totalPct` to find broad expensive paths where work happens in descendants or native code.
+- Use `callers[]` when a builtin or dependency is hot - the caller is often the real source fix.
 
-## `eventLoop`: Latency Signal
+---
 
-`eventLoop` tells you whether CPU pressure translated into event-loop delay.
+## 5. `eventLoop` - latency signal
 
-Important fields:
+Tells you whether CPU pressure translated into event-loop delay.
 
-- `available`
-- `measurementBasis`
-- `confidence`
-- `maxLagMs`
-- `p99LagMs`
-- `p50LagMs`
-- `meanLagMs`
-- `stallIntervals`
-- `correlatedHotspots`
+| Field | Meaning |
+| --- | --- |
+| `available` | Whether a usable event-loop signal exists. |
+| `measurementBasis` | `both` (strongest), `heartbeats`, `histogram`, or `none`. |
+| `confidence` | `high` / `low` / `none`. |
+| `maxLagMs`, `p99LagMs`, `p50LagMs`, `meanLagMs` | Lag percentiles. |
+| `stallIntervals` | When the main thread stopped picking up work. |
+| `correlatedHotspots` | User hotspots whose sampled CPU overlapped those windows. |
 
-How to interpret it:
+Interpretation rules:
 
-- `available = false` means there is no usable event-loop signal for this run.
-- `measurementBasis = both` is the strongest case.
-- `heartbeats` or `histogram` alone are useful, but weaker.
-- `stallIntervals` shows when the main thread stopped picking up work.
-- `correlatedHotspots` ranks user hotspots whose sampled CPU overlapped those windows.
+- `available = false` → no usable signal for this run.
+- `both` is strongest; `heartbeats` or `histogram` alone are useful but weaker.
+- Correlation is **strong evidence for investigation**, not proof that one line explains the entire stall.
+- If the top candidate has weak overlap or confidence is low, inspect the broader hotspot list.
 
-Do not overread correlation:
+---
 
-- correlation is strong evidence for investigation
-- correlation is not proof that a single line alone explains the entire stall
+## 6. `gc` - allocation pressure and pauses
 
-If the top candidate has weak overlap or confidence is low, inspect the broader hotspot list too.
-
-## `gc`: Allocation Pressure and Pauses
-
-`gc` summarizes runtime pause activity:
-
-- `totalPauseMs`
-- `count`
-- `longestPauseMs`
-- `pausesOver10ms`
-- `correlatedHotspots`
+| Field | Meaning |
+| --- | --- |
+| `totalPauseMs` | Cumulative pause time. |
+| `count` | Scavenge / mark-sweep counts. |
+| `longestPauseMs` | Longest single pause observed. |
+| `pausesOver10ms` | Number of pauses exceeding 10 ms. |
+| `correlatedHotspots` | User hotspots ranked by overlap with GC windows. |
 
 How to interpret it:
 
-- frequent short pauses usually mean allocation churn
-- a long `markSweep` pause usually means old-space pressure or retained memory
-- correlated hotspots give you a ranked starting point for allocation analysis
+- Frequent short pauses → allocation churn.
+- A long `markSweep` pause → old-space pressure or retained memory.
+- Correlated hotspots give you a ranked starting point for allocation analysis.
 
 What to inspect in code:
 
-- repeated object churn in hot loops
-- unbounded caches
-- large `Buffer.concat` usage
-- repeated `JSON.parse` and `JSON.stringify`
+- Repeated object churn in hot loops.
+- Unbounded caches.
+- Large `Buffer.concat` usage.
+- Repeated `JSON.parse` / `JSON.stringify`.
 
-## `hotStacks`: Sampled Call Paths
+---
 
-`hotStacks[]` is useful when a single hotspot is not enough.
+## 7. `hotStacks` - sampled call paths
 
-Each entry is a complete sampled stack with:
+Useful when a single hotspot is not enough.
 
-- `weightPct`
-- `frames[]` from leaf to root
+| Field | Meaning |
+| --- | --- |
+| `weightPct` | Share of samples this exact stack represents. |
+| `frames[]` | Complete stack, leaf → root. |
 
 Use hot stacks when:
 
-- multiple callers feed the same builtin
-- a dependency hotspot could be triggered by several different routes
-- you want the surrounding path without manually reconstructing it from callers/callees
+- Multiple callers feed the same builtin.
+- A dependency hotspot could be triggered by several different routes.
+- You want the surrounding path without manually reconstructing it from callers/callees.
 
-## `deopts`: V8 JIT Instability
+---
 
-`deopts[]` is populated only when `meta.deep` is true.
+## 8. `deopts` - V8 JIT instability
 
-Each entry groups repeated deoptimisations with:
+Populated only when `meta.deep === true`.
 
-- function
-- file
-- line
-- reason
-- bailout type
-- count
-- explanation
+| Field | Meaning |
+| --- | --- |
+| `function` / `file` / `line` | Where the deopt happened. |
+| `reason` / `bailout` | V8's reason for deoptimising. |
+| `count` | How many times Lanterna saw this deopt. |
+| `explanation` | Human-readable note. |
 
 How to use it:
 
-- focus on repeated entries, not one-off noise
-- compare the deopted function to the hotspot list
-- if a function is both hot and repeatedly deoptimised, it is usually worth fixing
+- Focus on **repeated** entries, not one-off noise.
+- Compare deopted functions to the hotspot list - a function that is both hot and repeatedly deoptimised is usually worth fixing.
 
-## Common Reading Mistakes
+---
 
-### Mistake: treating `topCategory` as a diagnosis
+## Common reading mistakes
 
-`topCategory` is a summary, not a root cause. High `native` often just means the CPU work happened below JS wrappers.
+> [!WARNING]
+> **Treating `topCategory` as a diagnosis.** `topCategory` is a summary, not a root cause. High `native` often just means CPU work happened below JS wrappers.
 
-### Mistake: assuming no findings means no problem
+> [!WARNING]
+> **Assuming no findings means no problem.** Lanterna's detectors are heuristic. A clean `findings[]` lowers the odds of the usual issues; it does not prove the profile is healthy.
 
-Lanterna covers common CPU and event-loop patterns, but it is still heuristic. A clean `findings[]` lowers the odds of the usual issues; it does not prove the profile is healthy.
+> [!WARNING]
+> **Blaming `node_modules` immediately.** A dependency hotspot is often just where the CPU landed. The caller path is usually your code.
 
-### Mistake: blaming `node_modules` immediately
+> [!WARNING]
+> **Ignoring `idleRatio`.** A profile captured without real load can be technically valid but operationally misleading.
 
-A dependency hotspot is often just where the CPU landed. The caller path may still be your code.
+> [!WARNING]
+> **Reading event-loop lag without reading confidence.** Always read `measurementBasis` and `confidence` alongside the lag numbers.
 
-### Mistake: ignoring `idleRatio`
+---
 
-A profile captured without real load can be technically valid but operationally misleading.
+## What to do after reading a report
 
-### Mistake: reading event-loop lag without reading confidence
+1. Act on `critical` findings first.
+2. Inspect the top 5 hotspots even if they did not trigger a finding.
+3. If the run was mostly idle, rerun under representative load.
+4. If you suspect JIT instability, rerun with `--deep`.
+5. Read the actual source file named in `evidence.file` before making changes.
 
-Always read `measurementBasis` and `confidence` alongside lag numbers.
-
-## What To Do After Reading a Report
-
-Use this sequence:
-
-1. act on critical findings first
-2. inspect the top 5 hotspots even if they did not trigger a finding
-3. if the run was mostly idle, rerun under representative load
-4. if you suspect JIT instability, rerun with `--deep`
-5. read the actual source file named in `evidence.file` before making changes
-
-If you want to understand why the report exposes these fields and flags, read [how-lanterna-works.md](how-lanterna-works.md).
+Want to understand *why* these fields and flags exist? Read [how-lanterna-works.md](how-lanterna-works.md).
