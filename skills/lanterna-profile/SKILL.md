@@ -75,7 +75,7 @@ When the user implies the program is already up, or when they do not know the co
 Preferred flow:
 
 ```bash
-node ./bin/lanterna.js attach --pid
+node ./packages/cli/bin/lanterna.js attach --pid
 ```
 
 That picker already narrows the list to plausible app processes and shows:
@@ -115,19 +115,19 @@ Examples:
 
 ```bash
 # Local checkout
-node ./bin/lanterna.js run --duration 15s --output /tmp/lanterna-report.json -- node server.js
+node ./packages/cli/bin/lanterna.js run --duration 15s --output /tmp/lanterna-report.json -- node server.js
 
 # Installed binary
 lanterna run --duration 15s --output /tmp/lanterna-report.json -- npm start
 
 # Deeper run when deopts are relevant
-node ./bin/lanterna.js run --deep --duration 15s --output /tmp/lanterna-report.json -- node server.js
+node ./packages/cli/bin/lanterna.js run --deep --duration 15s --output /tmp/lanterna-report.json -- node server.js
 
 # Attach to an already-running process
-node ./bin/lanterna.js attach --pid 4242 --duration 15s --output /tmp/lanterna-report.json
+node ./packages/cli/bin/lanterna.js attach --pid 4242 --duration 15s --output /tmp/lanterna-report.json
 
 # Open the interactive picker
-node ./bin/lanterna.js attach --pid
+node ./packages/cli/bin/lanterna.js attach --pid
 
 # Attach directly to an existing inspector URL
 lanterna attach --inspect-url ws://127.0.0.1:9229/<uuid> --duration 15s --output /tmp/lanterna-report.json

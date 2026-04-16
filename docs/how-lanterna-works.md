@@ -269,9 +269,18 @@ Without `--deep`, deopt tracing is intentionally absent. `deopts[]` is empty and
 
 ---
 
+## Extending the pipeline
+
+Lanterna is a monorepo of three packages (`cli → detectors → core`). The analysis pipeline is the extension point:
+
+- `@lanterna/core` exposes `createAnalysisPipeline`, `defineFindingAnalyzer`, and `defineSectionAnalyzer` for full control with no default detectors registered.
+- `@lanterna/detectors` wraps the core pipeline with the built-in detector pack. `runProfile` / `attachProfile` accept `detectors`, `analyzers`, and a `setupPipeline` hook so custom rules can be injected at call time. The package also exposes `LanternaDetectorPlugin` — the ES-module contract used by third-party plugins.
+- `@lanterna/cli` loads plugins via `--detectors <spec>` (repeatable) or a `.lanterna.json` file and composes them into `setupPipeline` before calling the facades.
+
+See the root README's [Extending Lanterna](../README.md#extending-lanterna) section for the authoring guide.
+
 ## What Lanterna does not do today
 
-- Expose a public capture API for embedding Lanterna in another tool.
 - Generate flamegraphs as its primary output.
 - Infer source-level fixes by itself. It emits evidence and suggestions; remediation belongs to the user or to an agent consuming the report.
 

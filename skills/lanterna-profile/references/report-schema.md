@@ -180,15 +180,20 @@ Only populated when `meta.deep = true` (`--deep` flag). Requires `--trace-deopt`
 | `suggestion` | string | Concrete, code-level remediation action |
 | `references[]` | string[] | URLs to Node.js / V8 documentation |
 
-### Finding categories
+### Built-in finding categories
 
 | id | category | Trigger |
 |---|---|---|
 | `sync-crypto-on-hot-path` | `sync-crypto` | `pbkdf2Sync`/`scryptSync`/`randomBytesSync` with `totalPct >= 1%` |
 | `blocking-io:<api>` | `blocking-io` | Sync fs/child_process/zlib API with meaningful `selfPct` or `totalPct` |
+| `cpu-bound-user-hotspot:<hotspot>` | `cpu-bound-user-hotspot` | Dominant user-code hotspot with no more specific match |
+| `json-on-hot-path:<api>` | `json-on-hot-path` | `JSON.parse` / `JSON.stringify` consuming meaningful CPU |
+| `node-modules-hotspot:<package>` | `node-modules-hotspot` | A dependency frame dominates meaningful CPU time |
 | `excessive-gc` | `excessive-gc` | `gcRatio > 10%` OR `longestPauseMs > 100ms` |
 | `event-loop-stall` | `event-loop-stall` | `maxLagMs >= 200ms` OR `p99LagMs >= 100ms` |
 | `deopt-loop:<fn>` | `deopt-loop` | Same function deoptimised ≥ 5 times (requires `--deep`) |
 | `require-in-hot-path` | `require-in-hot-path` | `Module._load` / `require` on hot path with meaningful sample weight |
 
 Findings are sorted: `critical > warning > info`, then by `evidence.selfPct` descending.
+
+> Lanterna supports third-party detector plugins loaded via `--detectors <spec>` or `.lanterna.json`. A report may therefore contain `finding.category` values that are **not** in the table above. Treat unknown categories as extension findings with `evidence.extra` that is schema-defined by the plugin author — not by the core schema.

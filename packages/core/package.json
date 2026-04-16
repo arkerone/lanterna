@@ -1,0 +1,31 @@
+{
+  "name": "@lanterna/core",
+  "version": "0.1.0",
+  "description": "Agent-first Node.js CPU profiler — headless capture + analysis primitives",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "prebuild": "node scripts/generate-version.js",
+    "build": "tsc -b && node scripts/copy-assets.js",
+    "dev": "tsc -b --watch"
+  },
+  "dependencies": {
+    "chrome-remote-interface": "^0.34.0",
+    "pino": "^10.3.1",
+    "zod": "^4.3.6"
+  },
+  "engines": {
+    "node": "^24.0.0"
+  },
+  "license": "MIT"
+}
