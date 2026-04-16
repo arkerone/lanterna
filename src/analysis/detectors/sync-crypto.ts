@@ -28,6 +28,7 @@ export const syncCryptoDetector: Detector = {
     const thresholds = DETECTOR_THRESHOLDS.syncCrypto;
     const findings: Finding[] = [];
     for (const hotspot of context.fullHotspots) {
+      if (hotspot.category !== 'node:builtin' && hotspot.category !== 'native') continue;
       const normalizedFunctionName = stripOptPrefix(hotspot.function);
       if (!SYNC_CRYPTO_FNS.some((functionName) => (
         normalizedFunctionName === functionName

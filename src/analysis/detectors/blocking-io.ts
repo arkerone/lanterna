@@ -37,6 +37,7 @@ export const blockingIoDetector: Detector = {
     const thresholds = DETECTOR_THRESHOLDS.blockingIo;
     const findings: Finding[] = [];
     for (const hotspot of context.fullHotspots) {
+      if (hotspot.category !== 'node:builtin' && hotspot.category !== 'native') continue;
       const normalizedFunctionName = stripOptPrefix(hotspot.function);
       const patternMatch = BLOCKING_PATTERNS.find((pattern) => pattern.re.test(normalizedFunctionName));
       if (!patternMatch) continue;

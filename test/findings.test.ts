@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import type { RawCapture, RawCpuProfile } from '../src/capture/core/types.js';
 import { analyzeCapture } from '../src/analysis/index.js';
 import { buildLanternaReport } from '../src/report/index.js';
+import { serializeReport } from '../src/report/serialize.js';
 import type { LanternaReport } from '../src/report/types.js';
 import { LANTERNA_VERSION } from '../src/report/version.generated.js';
 import { CWD, loadProfile, makeRaw } from './helpers.js';
@@ -44,6 +45,39 @@ describe('findings – sync-crypto-on-hot-path', () => {
     // The callee is exposed in evidence.extra.callee for reference.
     assert.match(f.evidence.function, /hashPassword/);
     assert.ok((f.evidence.extra as Record<string, unknown>)?.callee?.toString().includes('pbkdf2Sync'));
+    assert.equal((f.evidence.extra as Record<string, unknown>)?.proofLevel, 'attributed-caller');
+  });
+});
+
+describe('findings – sync-crypto false positive suppression', () => {
+  const profile: RawCpuProfile = {
+    nodes: [
+      {
+        id: 1,
+        callFrame: { functionName: '(root)', scriptId: '0', url: '', lineNumber: -1, columnNumber: -1 },
+        hitCount: 0,
+        children: [2],
+      },
+      {
+        id: 2,
+        callFrame: { functionName: 'pbkdf2Sync', scriptId: '1', url: `file://${CWD}/src/crypto-like.js`, lineNumber: 3, columnNumber: 0 },
+        hitCount: 100,
+        children: [],
+      },
+    ],
+    startTime: 1000000,
+    endTime: 2000000,
+    samples: Array(100).fill(2),
+    timeDeltas: [],
+  };
+
+  const report = createReport(
+    makeRaw(profile),
+    { sampleIntervalMicros: 1000, deep: false, command: ['node', 'app.js'] },
+  );
+
+  it('does not emit sync-crypto for a user-defined function with a colliding name', () => {
+    assert.equal(report.findings.some((f) => f.id === 'sync-crypto-on-hot-path'), false);
   });
 });
 
@@ -143,6 +177,7 @@ describe('findings – event-loop-stall', () => {
     const candidates = (f.evidence.extra as Record<string, unknown>).candidateHotspots as Array<Record<string, unknown>>;
     assert.ok(candidates.length > 0);
     assert.match(String(candidates[0]?.function), /hashPassword/);
+    assert.equal((f.evidence.extra as Record<string, unknown>).proofLevel, 'aggregate-correlation');
   });
 });
 
@@ -208,6 +243,39 @@ describe('findings – blocking-io', () => {
     // Evidence should point to the user-code caller (processRequest), not node:fs.
     assert.match(f.evidence.function, /processRequest/);
     assert.ok((f.evidence.extra as Record<string, unknown>)?.api?.toString().includes('readFileSync'));
+    assert.equal((f.evidence.extra as Record<string, unknown>)?.proofLevel, 'attributed-caller');
+  });
+});
+
+describe('findings – blocking-io false positive suppression', () => {
+  const profile: RawCpuProfile = {
+    nodes: [
+      {
+        id: 1,
+        callFrame: { functionName: '(root)', scriptId: '0', url: '', lineNumber: -1, columnNumber: -1 },
+        hitCount: 0,
+        children: [2],
+      },
+      {
+        id: 2,
+        callFrame: { functionName: 'readFileSync', scriptId: '1', url: `file://${CWD}/src/fs-like.js`, lineNumber: 4, columnNumber: 0 },
+        hitCount: 100,
+        children: [],
+      },
+    ],
+    startTime: 1000000,
+    endTime: 2000000,
+    samples: Array(100).fill(2),
+    timeDeltas: [],
+  };
+
+  const report = createReport(
+    makeRaw(profile),
+    { sampleIntervalMicros: 1000, deep: false, command: ['node', 'app.js'] },
+  );
+
+  it('does not emit blocking-io for a user-defined function with a colliding name', () => {
+    assert.equal(report.findings.some((f) => f.id.startsWith('blocking-io')), false);
   });
 });
 
@@ -248,6 +316,7 @@ describe('findings – deopt-loop', () => {
   it('deopt-loop finding has warning severity for count 5-20', () => {
     const f = report.findings.find((f) => f.id.startsWith('deopt-loop:'))!;
     assert.equal(f.severity, 'warning');
+    assert.equal((f.evidence.extra as Record<string, unknown>)?.proofLevel, 'deopt-trace-only');
   });
 
   it('deopt-loop finding has critical severity when count > 20', () => {
@@ -302,6 +371,44 @@ describe('findings – deopt-loop', () => {
       { sampleIntervalMicros: 1000, deep: false, command: ['node', 'app.js'] },
     );
     assert.equal(noDeepReport.findings.some((f) => f.id.startsWith('deopt-loop:')), false);
+  });
+});
+
+describe('findings – deopt-loop cold function suppression', () => {
+  const report = createReport(
+    makeRaw({
+      nodes: [
+        {
+          id: 1,
+          callFrame: { functionName: '(root)', scriptId: '0', url: '', lineNumber: -1, columnNumber: -1 },
+          hitCount: 0,
+          children: [2, 3],
+        },
+        {
+          id: 2,
+          callFrame: { functionName: 'hotFn', scriptId: '1', url: `file://${CWD}/src/hot.js`, lineNumber: 8, columnNumber: 0 },
+          hitCount: 99,
+          children: [],
+        },
+        {
+          id: 3,
+          callFrame: { functionName: 'coldFn', scriptId: '2', url: `file://${CWD}/src/cold.js`, lineNumber: 5, columnNumber: 0 },
+          hitCount: 1,
+          children: [],
+        },
+      ],
+      startTime: 1000000,
+      endTime: 2000000,
+      samples: Array(99).fill(2).concat([3]),
+      timeDeltas: [],
+    }, {
+      deopts: [{ function: 'coldFn', file: `${CWD}/src/cold.js`, line: 5, reason: 'wrong map', bailoutType: 'soft', count: 10 }],
+    }),
+    { sampleIntervalMicros: 1000, deep: true, command: ['node', 'app.js'] },
+  );
+
+  it('does not emit deopt-loop for cold functions', () => {
+    assert.equal(report.findings.some((f) => f.id.startsWith('deopt-loop:')), false);
   });
 });
 
@@ -401,6 +508,7 @@ describe('findings – json-on-hot-path', () => {
     const f = report.findings.find((f) => f.id.startsWith('json-on-hot-path:'))!;
     assert.match(f.evidence.function, /serializeResponse/);
     assert.match(String((f.evidence.extra as Record<string, unknown>)?.callee), /JSON\.stringify/);
+    assert.equal((f.evidence.extra as Record<string, unknown>)?.proofLevel, 'attributed-caller');
   });
 });
 
@@ -452,6 +560,74 @@ describe('findings – node-modules-hotspot', () => {
     const f = report.findings.find((f) => f.id.startsWith('node-modules-hotspot:'))!;
     assert.match(f.evidence.function, /renderPage/);
     assert.equal((f.evidence.extra as Record<string, unknown>)?.package, 'markdown-it');
+    assert.equal((f.evidence.extra as Record<string, unknown>)?.proofLevel, 'attributed-caller');
+  });
+
+  it('serializes even when the dependency callee location is unavailable', () => {
+    const finding = report.findings.find((candidate) => candidate.id.startsWith('node-modules-hotspot:'));
+    assert.ok(finding, 'Expected node-modules-hotspot finding');
+    const extra = finding.evidence.extra as Record<string, unknown>;
+    delete extra.calleeFile;
+    delete extra.calleeLine;
+
+    assert.doesNotThrow(() => serializeReport(report, { pretty: false }));
+  });
+});
+
+describe('findings – node-modules-hotspot selection uses inclusive cost', () => {
+  const profile: RawCpuProfile = {
+    nodes: [
+      {
+        id: 1,
+        callFrame: { functionName: '(root)', scriptId: '0', url: '', lineNumber: -1, columnNumber: -1 },
+        hitCount: 0,
+        children: [2, 3],
+      },
+      {
+        id: 2,
+        callFrame: { functionName: 'renderA', scriptId: '1', url: `file://${CWD}/src/server-a.js`, lineNumber: 3, columnNumber: 0 },
+        hitCount: 0,
+        children: [4],
+      },
+      {
+        id: 3,
+        callFrame: { functionName: 'renderB', scriptId: '2', url: `file://${CWD}/src/server-b.js`, lineNumber: 7, columnNumber: 0 },
+        hitCount: 30,
+        children: [5],
+      },
+      {
+        id: 4,
+        callFrame: { functionName: 'compile', scriptId: '3', url: `file://${CWD}/node_modules/markdown-it/index.js`, lineNumber: 41, columnNumber: 0 },
+        hitCount: 60,
+        children: [],
+      },
+      {
+        id: 5,
+        callFrame: { functionName: 'render', scriptId: '4', url: `file://${CWD}/node_modules/react-dom/index.js`, lineNumber: 12, columnNumber: 0 },
+        hitCount: 10,
+        children: [6],
+      },
+      {
+        id: 6,
+        callFrame: { functionName: 'diff', scriptId: '5', url: `file://${CWD}/node_modules/react-dom/index.js`, lineNumber: 18, columnNumber: 0 },
+        hitCount: 0,
+        children: [],
+      },
+    ],
+    startTime: 1000000,
+    endTime: 2000000,
+    samples: Array(20).fill(4).concat(Array(80).fill(5)),
+    timeDeltas: [],
+  };
+
+  const report = createReport(
+    makeRaw(profile),
+    { sampleIntervalMicros: 1000, deep: false, command: ['node', 'app.js'] },
+  );
+
+  it('prefers the dependency with the highest totalPct', () => {
+    const f = report.findings.find((candidate) => candidate.id.startsWith('node-modules-hotspot:'))!;
+    assert.equal((f.evidence.extra as Record<string, unknown>)?.package, 'react-dom');
   });
 });
 
@@ -486,6 +662,52 @@ describe('findings – cpu-bound-user-hotspot', () => {
     const f = report.findings.find((f) => f.id.startsWith('cpu-bound-user-hotspot:'));
     assert.ok(f, `Expected cpu-bound-user-hotspot finding. findings = ${JSON.stringify(report.findings.map((f) => f.id))}`);
     assert.match(f.evidence.function, /computeRanking/);
+    assert.equal((f?.evidence.extra as Record<string, unknown>)?.proofLevel, 'aggregate-correlation');
+  });
+});
+
+describe('findings – cpu-bound-user-hotspot selection uses inclusive cost', () => {
+  const profile: RawCpuProfile = {
+    nodes: [
+      {
+        id: 1,
+        callFrame: { functionName: '(root)', scriptId: '0', url: '', lineNumber: -1, columnNumber: -1 },
+        hitCount: 0,
+        children: [2, 3],
+      },
+      {
+        id: 2,
+        callFrame: { functionName: 'expensiveLeaf', scriptId: '1', url: `file://${CWD}/src/a.js`, lineNumber: 4, columnNumber: 0 },
+        hitCount: 35,
+        children: [],
+      },
+      {
+        id: 3,
+        callFrame: { functionName: 'broadPath', scriptId: '2', url: `file://${CWD}/src/b.js`, lineNumber: 9, columnNumber: 0 },
+        hitCount: 5,
+        children: [4],
+      },
+      {
+        id: 4,
+        callFrame: { functionName: 'broadChild', scriptId: '3', url: `file://${CWD}/src/b.js`, lineNumber: 15, columnNumber: 0 },
+        hitCount: 0,
+        children: [],
+      },
+    ],
+    startTime: 1000000,
+    endTime: 2000000,
+    samples: Array(35).fill(2).concat(Array(65).fill(4)),
+    timeDeltas: [],
+  };
+
+  const report = createReport(
+    makeRaw(profile),
+    { sampleIntervalMicros: 1000, deep: false, command: ['node', 'app.js'] },
+  );
+
+  it('prefers the user hotspot with the highest totalPct', () => {
+    const f = report.findings.find((candidate) => candidate.id.startsWith('cpu-bound-user-hotspot:'))!;
+    assert.match(f.evidence.function, /broadPath/);
   });
 });
 

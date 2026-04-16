@@ -12,6 +12,7 @@ import {
   buildAttributedFinding,
   findStallCorrelation,
   resolveAttribution,
+  toAlternativeHotspotEvidence,
 } from './shared.js';
 import { DETECTOR_THRESHOLDS } from '../../shared/config.js';
 
@@ -20,21 +21,29 @@ export const nodeModulesHotspotDetector: Detector = {
   order: 40,
   detect(report, context): Finding[] {
     const thresholds = DETECTOR_THRESHOLDS.nodeModulesHotspot;
-    const hotspot = context.fullHotspots.find((candidate) => (
-      candidate.category === 'node_modules'
-      && candidate.package !== undefined
-      && (
-        candidate.selfPct >= thresholds.minSelfPct
-        || candidate.totalPct >= thresholds.minTotalPct
-      )
-    ));
+    const matches = context.fullHotspots
+      .filter((candidate) => (
+        candidate.category === 'node_modules'
+        && candidate.package !== undefined
+        && (
+          candidate.selfPct >= thresholds.minSelfPct
+          || candidate.totalPct >= thresholds.minTotalPct
+        )
+      ))
+      .sort((left, right) => {
+        const totalDelta = right.totalPct - left.totalPct;
+        if (totalDelta !== 0) return totalDelta;
+        return right.selfPct - left.selfPct;
+      });
+    const hotspot = matches[0];
     if (!hotspot) return [];
-    return [buildFinding(hotspot, report, context)];
+    return [buildFinding(hotspot, matches.slice(1, 3), report, context)];
   },
 };
 
 function buildFinding(
   hotspot: Hotspot,
+  alternatives: Hotspot[],
   report: LanternaReport,
   context: FindingContext,
 ): BuiltinFinding<'node-modules-hotspot'> {
@@ -47,6 +56,7 @@ function buildFinding(
     calleeTotalPct: hotspot.totalPct,
     ...buildAttributionEvidence(attribution, caller),
     eventLoopCorrelation: findStallCorrelation(caller, report),
+    alternativeHotspots: alternatives.map(toAlternativeHotspotEvidence),
   };
   return defineBuiltinFinding(buildAttributedFinding({
     id: `node-modules-hotspot:${hotspot.package ?? hotspot.function}`,

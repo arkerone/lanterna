@@ -27,6 +27,7 @@ export const eventLoopStallDetector: Detector = {
     );
     const severity: Finding['severity'] = maxLagMs > thresholds.critical ? 'critical' : 'warning';
     const evidenceExtra: EventLoopStallEvidenceExtra = {
+      proofLevel: 'aggregate-correlation',
       p99LagMs,
       maxLagMs,
       measurementBasis: eventLoop.measurementBasis,

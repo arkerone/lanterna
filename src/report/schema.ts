@@ -31,9 +31,19 @@ const stallCorrelationSchema = z.object({
 });
 
 const attributionEvidenceSchema = z.object({
+  proofLevel: z.enum(['direct-builtin', 'attributed-caller']),
   attributionBasis: z.enum(['sample-path', 'builtin-only']),
   attributionConfidence: z.enum(['low', 'high']),
   userAttribution: hotspotAttributionSchema.optional(),
+});
+
+const alternativeHotspotEvidenceSchema = z.object({
+  id: z.string().min(1),
+  function: z.string(),
+  file: z.string(),
+  line: z.number().int(),
+  selfPct: z.number().finite(),
+  totalPct: z.number().finite(),
 });
 
 const correlatedHotspotSchema = z.object({
@@ -78,9 +88,11 @@ const syncCryptoExtraSchema = attributionEvidenceSchema.extend({
 });
 
 const deoptLoopExtraSchema = z.object({
+  proofLevel: z.literal('deopt-trace-only'),
   reason: z.string().min(1),
   bailoutType: z.string().min(1),
   count: z.number().int().nonnegative(),
+  hotspotTotalPct: z.number().finite().optional(),
 });
 
 const requireInHotPathExtraSchema = attributionEvidenceSchema.extend({
@@ -88,6 +100,7 @@ const requireInHotPathExtraSchema = attributionEvidenceSchema.extend({
 });
 
 const excessiveGcExtraSchema = z.object({
+  proofLevel: z.literal('aggregate-correlation'),
   gcRatio: z.number().finite(),
   longestPauseMs: z.number().finite(),
   timedGcEventCount: z.number().int().nonnegative(),
@@ -97,6 +110,7 @@ const excessiveGcExtraSchema = z.object({
 });
 
 const eventLoopStallExtraSchema = z.object({
+  proofLevel: z.literal('aggregate-correlation'),
   p99LagMs: z.number().finite(),
   maxLagMs: z.number().finite(),
   measurementBasis: measurementBasisSchema,
@@ -107,9 +121,14 @@ const eventLoopStallExtraSchema = z.object({
 });
 
 const cpuBoundUserHotspotExtraSchema = z.object({
+  proofLevel: z.union([
+    z.literal('aggregate-correlation'),
+    z.literal('attributed-caller'),
+  ]),
   totalPct: z.number().finite(),
   selfPct: z.number().finite(),
   eventLoopCorrelation: stallCorrelationSchema.optional(),
+  alternativeHotspots: z.array(alternativeHotspotEvidenceSchema).optional(),
 });
 
 const jsonHotPathExtraSchema = attributionEvidenceSchema.extend({
@@ -121,10 +140,11 @@ const jsonHotPathExtraSchema = attributionEvidenceSchema.extend({
 const nodeModulesHotspotExtraSchema = attributionEvidenceSchema.extend({
   package: z.string().min(1).optional(),
   callee: z.string().min(1),
-  calleeFile: z.string().min(1),
-  calleeLine: z.number().int(),
+  calleeFile: z.string().min(1).optional(),
+  calleeLine: z.number().int().optional(),
   calleeTotalPct: z.number().finite(),
   eventLoopCorrelation: stallCorrelationSchema.optional(),
+  alternativeHotspots: z.array(alternativeHotspotEvidenceSchema).optional(),
 });
 
 const builtinFindingExtraSchema = z.union([

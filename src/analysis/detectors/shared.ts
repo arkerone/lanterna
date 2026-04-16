@@ -1,5 +1,6 @@
 import type {
   AttributionEvidence,
+  AlternativeHotspotEvidence,
   BaseFinding,
   BlockingIoEvidenceExtra,
   BuiltinFindingCategory,
@@ -47,9 +48,23 @@ export function buildAttributionEvidence(
   caller: HotspotAttribution | undefined,
 ): AttributionEvidence {
   return {
+    proofLevel: caller ? 'attributed-caller' : 'direct-builtin',
     attributionBasis: caller ? 'sample-path' : 'builtin-only',
     attributionConfidence: caller?.confidence ?? 'low',
     userAttribution: attribution,
+  };
+}
+
+export function toAlternativeHotspotEvidence(
+  hotspot: Hotspot,
+): AlternativeHotspotEvidence {
+  return {
+    id: hotspot.id,
+    function: hotspot.function,
+    file: hotspot.file,
+    line: hotspot.line,
+    selfPct: hotspot.selfPct,
+    totalPct: hotspot.totalPct,
   };
 }
 

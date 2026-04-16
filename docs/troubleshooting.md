@@ -56,7 +56,7 @@ Common problems and how to resolve them.
 
 2. **The profiling window missed the hot code.** If your app has a startup phase that loads modules and then settles, the 30-second default may be capturing idle steady state. Time the profiling window to cover the actual load.
 
-3. **Deopts not detected — missing `--deep`.** The `deopt-loop` detector only fires when `--deep` is passed. Without it, `deopts[]` is empty by design:
+3. **Deopts not detected — missing `--deep`.** The `deopt-loop` detector only fires when `--deep` is passed, and only for functions that are also hot in the CPU profile. Without `--deep`, `deopts[]` is empty by design:
    ```bash
    lanterna run --deep --duration 30s -- node app.js
    ```
@@ -96,6 +96,7 @@ Common problems and how to resolve them.
 
 - A fully degraded capture (`controlChannel: false`) can happen if the child process closes FD 3 early. Some process managers (pm2, Docker entrypoints) may close extra file descriptors. Try running the process directly.
 - In attach mode, `controlChannel: false` is expected because the target was not spawned with Lanterna's FD 3 pipe. Judge attach-mode quality primarily from `eventLoopTimed`, `gcTimed`, and `cpuSamplesTimed`.
+- On an interrupted `attach` capture, Lanterna prefers a partial report with degraded signal flags over hanging while waiting for late runtime reads.
 - `eventLoopTimed: false` with `gcTimed: false` is normal for very short processes (< 200ms). The measurements simply did not have time to land.
 - Always read `captureIntegrity` before drawing conclusions from correlation evidence.
 

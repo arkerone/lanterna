@@ -31,6 +31,7 @@ export const excessiveGcDetector: Detector = {
     if (ratioTrigger) evidenceParts.push(`GC consumed ${(gcRatio * 100).toFixed(1)}% of on-CPU time`);
     if (pauseTrigger) evidenceParts.push(`longest pause was ${longestPauseMs.toFixed(1)}ms`);
     const evidenceExtra: ExcessiveGcEvidenceExtra = {
+      proofLevel: 'aggregate-correlation',
       gcRatio,
       longestPauseMs,
       timedGcEventCount: totalTimedGcEvents,

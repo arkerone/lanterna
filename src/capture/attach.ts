@@ -14,6 +14,9 @@ import type {
 import { readEventLoopSamples } from '../runtime-signals/readers/event-loop.js';
 import { readGcEvents } from '../runtime-signals/readers/gc.js';
 import { ATTACH_RUNTIME_HOOK_SOURCE } from '../runtime-signals/hooks/runtime-hook.js';
+import { sleep } from '../shared/sleep.js';
+
+const ATTACH_FINALIZE_READ_TIMEOUT_MS = 1_500;
 
 interface InstallAttachRuntimeResult {
   installed?: boolean;
@@ -68,10 +71,18 @@ export class AttachSource implements ProfileSource<AttachStartOptions> {
         detachCloseHandler();
 
         const captureIntegrity = createCaptureIntegrity();
-        const gcEventsAbs = cdp.closed ? [] : await readGcEvents(cdp);
+        const gcEventsAbs = cdp.closed ? [] : await withTimeout(
+          readGcEvents(cdp),
+          ATTACH_FINALIZE_READ_TIMEOUT_MS,
+          [],
+        );
         const eventLoopRead = cdp.closed
           ? { samples: [], available: false, resolutionMs: undefined, summary: undefined }
-          : await readEventLoopSamples(cdp);
+          : await withTimeout(
+            readEventLoopSamples(cdp),
+            ATTACH_FINALIZE_READ_TIMEOUT_MS,
+            { samples: [], available: false, resolutionMs: undefined, summary: undefined },
+          );
 
         captureIntegrity.eventLoopTimed = eventLoopRead.samples.length > 0;
         captureIntegrity.gcTimed = gcEventsAbs.length > 0;
@@ -111,7 +122,7 @@ export async function startAttachCapture(
 }
 
 async function installAttachRuntimeHook(cdp: CdpClient): Promise<void> {
-  const value = await cdp.evaluate(ATTACH_RUNTIME_HOOK_SOURCE, { awaitPromise: true });
+  const value = await cdp.evaluate(ATTACH_RUNTIME_HOOK_SOURCE);
   const result = (value ?? {}) as InstallAttachRuntimeResult;
   if (result.installed) return;
   throw new Error(
@@ -119,4 +130,15 @@ async function installAttachRuntimeHook(cdp: CdpClient): Promise<void> {
       ? `failed to install attach runtime hook: ${result.reason}`
       : 'failed to install attach runtime hook',
   );
+}
+
+async function withTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  fallback: T,
+): Promise<T> {
+  return await Promise.race([
+    promise.catch(() => fallback),
+    sleep(timeoutMs).then(() => fallback),
+  ]);
 }

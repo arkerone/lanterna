@@ -10,6 +10,7 @@ import type { Detector, FindingContext } from './types.js';
 import { findStallCorrelation } from './shared.js';
 import { DETECTOR_THRESHOLDS } from '../../shared/config.js';
 import { stripOptPrefix } from '../../shared/frame.js';
+import { toAlternativeHotspotEvidence } from './shared.js';
 
 const SPECIAL_CASE_PATTERNS = [
   /(^|\.)pbkdf2Sync$/,
@@ -39,22 +40,30 @@ export const cpuBoundUserHotspotDetector: Detector = {
   order: 50,
   detect(report, context): Finding[] {
     const thresholds = DETECTOR_THRESHOLDS.cpuBoundUserHotspot;
-    const hotspot = context.fullHotspots.find((candidate) => (
-      candidate.category === 'user'
-      && (
-        candidate.selfPct >= thresholds.minSelfPct
-        || candidate.totalPct >= thresholds.minTotalPct
-      )
-      && !isSpecialCase(candidate)
-      && !isExplainedBySpecificCallee(candidate, context)
-    ));
+    const matches = context.fullHotspots
+      .filter((candidate) => (
+        candidate.category === 'user'
+        && (
+          candidate.selfPct >= thresholds.minSelfPct
+          || candidate.totalPct >= thresholds.minTotalPct
+        )
+        && !isSpecialCase(candidate)
+        && !isExplainedBySpecificCallee(candidate, context)
+      ))
+      .sort((left, right) => {
+        const totalDelta = right.totalPct - left.totalPct;
+        if (totalDelta !== 0) return totalDelta;
+        return right.selfPct - left.selfPct;
+      });
+    const hotspot = matches[0];
     if (!hotspot) return [];
-    return [buildFinding(hotspot, report)];
+    return [buildFinding(hotspot, matches.slice(1, 3), report)];
   },
 };
 
 function buildFinding(
   hotspot: Hotspot,
+  alternatives: Hotspot[],
   report: LanternaReport,
 ): BuiltinFinding<'cpu-bound-user-hotspot'> {
   const correlation = findStallCorrelation(hotspot, report);
@@ -64,9 +73,11 @@ function buildFinding(
     || (correlation?.overlapPct ?? 0) >= thresholds.strongCorrelationOverlapPct
   ) ? 'critical' : 'warning';
   const evidenceExtra: CpuBoundUserHotspotEvidenceExtra = {
+    proofLevel: correlation ? 'attributed-caller' : 'aggregate-correlation',
     totalPct: hotspot.totalPct,
     selfPct: hotspot.selfPct,
     eventLoopCorrelation: correlation,
+    alternativeHotspots: alternatives.map(toAlternativeHotspotEvidence),
   };
 
   return defineBuiltinFinding({

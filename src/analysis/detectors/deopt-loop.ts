@@ -1,20 +1,24 @@
 import type { BuiltinFinding, DeoptLoopEvidenceExtra, Finding } from '../../report/types.js';
 import { defineBuiltinFinding } from '../../report/types.js';
-import type { Detector } from './types.js';
+import type { Detector, FindingContext } from './types.js';
 import { DETECTOR_THRESHOLDS } from '../../shared/config.js';
 
 export const deoptLoopDetector: Detector = {
   id: 'deopt-loop',
-  detect(report): Finding[] {
+  detect(report, context): Finding[] {
     if (!report.meta.deep) return [];
     const thresholds = DETECTOR_THRESHOLDS.deoptLoop;
     const findings: Finding[] = [];
     for (const deopt of report.deopts) {
       if (deopt.count < thresholds.minCount) continue;
+      const matchingHotspot = findHotDeoptHotspot(deopt.function, deopt.file, deopt.line, context);
+      if (!matchingHotspot) continue;
       const evidenceExtra: DeoptLoopEvidenceExtra = {
+        proofLevel: 'deopt-trace-only',
         reason: deopt.reason,
         bailoutType: deopt.bailoutType,
         count: deopt.count,
+        hotspotTotalPct: matchingHotspot.totalPct,
       };
       const finding: BuiltinFinding<'deopt-loop'> = defineBuiltinFinding({
         id: `deopt-loop:${deopt.function}`,
@@ -40,3 +44,21 @@ export const deoptLoopDetector: Detector = {
     return findings;
   },
 };
+
+function findHotDeoptHotspot(
+  functionName: string,
+  file: string,
+  line: number,
+  context: FindingContext,
+) {
+  return context.fullHotspots.find((hotspot) => (
+    hotspot.function === functionName
+    && matchesDeoptFile(hotspot.file, file)
+    && Math.abs(hotspot.line - line) <= 1
+    && hotspot.totalPct > 1
+  ));
+}
+
+function matchesDeoptFile(hotspotFile: string, deoptFile: string): boolean {
+  return hotspotFile === deoptFile || deoptFile.endsWith(`/${hotspotFile}`);
+}

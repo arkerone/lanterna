@@ -202,17 +202,17 @@ Lanterna emits these built-in detectors:
 
 | Finding id | Category | Trigger |
 | --- | --- | --- |
-| `sync-crypto-on-hot-path` | `sync-crypto` | `pbkdf2Sync`, `scryptSync`, or `randomBytesSync` with `totalPct >= 1` |
-| `blocking-io:<api>` | `blocking-io` | sync fs, child_process, or zlib APIs with meaningful `selfPct` or `totalPct` |
+| `sync-crypto-on-hot-path` | `sync-crypto` | sampled `node:builtin` or native sync crypto frame with `totalPct >= 1`, optionally attributed back to a user caller |
+| `blocking-io:<api>` | `blocking-io` | sampled `node:builtin` or native sync fs, child_process, or zlib frame with meaningful `selfPct` or `totalPct` |
 | `cpu-bound-user-hotspot:<hotspot>` | `cpu-bound-user-hotspot` | dominant user-code hotspot with no more specific detector match |
 | `json-on-hot-path:<api>` | `json-on-hot-path` | `JSON.parse` or `JSON.stringify` consuming meaningful CPU on the hot path |
 | `node-modules-hotspot:<package>` | `node-modules-hotspot` | a dependency frame dominates a meaningful share of CPU time |
 | `excessive-gc` | `excessive-gc` | `gcRatio > 10%` or `longestPauseMs > 100ms` |
 | `event-loop-stall` | `event-loop-stall` | `p99LagMs >= 100` or `maxLagMs >= 200` |
-| `deopt-loop:<function>` | `deopt-loop` | same deoptimised function seen at least 5 times in `--deep` mode |
+| `deopt-loop:<function>` | `deopt-loop` | same deoptimised function seen at least 5 times in `--deep` mode and the function is also hot in the CPU profile |
 | `require-in-hot-path` | `require-in-hot-path` | module loading functions sampled on the hot path |
 
-The exact `evidence.extra` payload varies by detector. Sync crypto, blocking I/O, JSON, dependency, GC, event-loop, and require findings may attribute the action to a user call-site rather than the builtin callee.
+The exact `evidence.extra` payload varies by detector. Builtin-backed findings now include a `proofLevel` so downstream consumers can distinguish direct callee evidence from caller attribution and aggregate correlation.
 
 ## Quick jq Recipes
 

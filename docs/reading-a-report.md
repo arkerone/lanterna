@@ -76,6 +76,12 @@ The most useful part is usually `evidence`:
 - `extra`: detector-specific metadata
 
 For some detectors, `evidence.file` and `evidence.function` point to a user caller rather than the builtin callee. That is intentional.
+Use `evidence.extra.proofLevel` to judge how strong the claim is:
+
+- `direct-builtin`: Lanterna directly sampled the builtin/native callee
+- `attributed-caller`: the builtin was sampled and Lanterna has high-confidence user-caller attribution
+- `aggregate-correlation`: the finding is based on aggregate timing/correlation rather than a directly sampled callee
+- `deopt-trace-only`: the finding comes from `--trace-deopt`, gated by CPU heat
 
 ### Detector Meanings
 
@@ -84,7 +90,8 @@ For some detectors, `evidence.file` and `evidence.function` point to a user call
 Interpretation:
 
 - your code is calling synchronous crypto work on the main thread
-- the report usually attributes the evidence to the user caller when possible
+- the report only emits this when it samples a builtin/native sync crypto frame
+- the report attributes the evidence to the user caller only when caller attribution is high-confidence
 
 Typical next step:
 
@@ -95,6 +102,7 @@ Typical next step:
 Interpretation:
 
 - a synchronous fs, child-process, or zlib API is on the hot path
+- the report only emits this when it samples the builtin/native blocking callee, not just a matching function name
 
 Typical next step:
 
@@ -125,7 +133,7 @@ Typical next step:
 
 Interpretation:
 
-- a hot function kept deoptimising under `--deep`
+- a function that is hot in the CPU profile also kept deoptimising under `--deep`
 
 Typical next step:
 

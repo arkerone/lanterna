@@ -266,6 +266,7 @@ describe('live profiling', () => {
     assert.ok(finding, 'expected sync-crypto-on-hot-path finding');
     assert.match(finding.evidence.function, /hashPassword/);
     assert.equal(finding.evidence.extra.attributionConfidence, 'high');
+    assert.equal(finding.evidence.extra.proofLevel, 'attributed-caller');
     assert.ok(
       report.eventLoop.measurementBasis === 'none'
       || report.eventLoop.measurementBasis === 'histogram'

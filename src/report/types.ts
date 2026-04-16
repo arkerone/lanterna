@@ -13,6 +13,11 @@ export type OptimizationState = 'optimized' | 'interpreted' | 'unknown';
 export type FindingSeverity = 'info' | 'warning' | 'critical';
 export type MeasurementBasis = 'none' | 'heartbeats' | 'histogram' | 'both';
 export type MeasurementConfidence = 'none' | 'low' | 'high';
+export type FindingProofLevel =
+  | 'direct-builtin'
+  | 'attributed-caller'
+  | 'aggregate-correlation'
+  | 'deopt-trace-only';
 
 export type BuiltinFindingCategory =
   | 'blocking-io'
@@ -163,7 +168,17 @@ export interface StallCorrelation {
   samplePct: number;
 }
 
+export interface AlternativeHotspotEvidence {
+  id: string;
+  function: string;
+  file: string;
+  line: number;
+  selfPct: number;
+  totalPct: number;
+}
+
 export interface AttributionEvidence {
+  proofLevel: Extract<FindingProofLevel, 'direct-builtin' | 'attributed-caller'>;
   attributionBasis: 'sample-path' | 'builtin-only';
   attributionConfidence: HotspotAttributionEvidence['confidence'] | 'low';
   userAttribution?: HotspotAttributionEvidence;
@@ -182,9 +197,11 @@ export interface SyncCryptoEvidenceExtra extends AttributionEvidence {
 }
 
 export interface DeoptLoopEvidenceExtra {
+  proofLevel: 'deopt-trace-only';
   reason: string;
   bailoutType: string;
   count: number;
+  hotspotTotalPct?: number;
 }
 
 export interface RequireInHotPathEvidenceExtra extends AttributionEvidence {
@@ -192,6 +209,7 @@ export interface RequireInHotPathEvidenceExtra extends AttributionEvidence {
 }
 
 export interface ExcessiveGcEvidenceExtra {
+  proofLevel: 'aggregate-correlation';
   gcRatio: number;
   longestPauseMs: number;
   timedGcEventCount: number;
@@ -201,6 +219,7 @@ export interface ExcessiveGcEvidenceExtra {
 }
 
 export interface EventLoopStallEvidenceExtra {
+  proofLevel: 'aggregate-correlation';
   p99LagMs: number;
   maxLagMs: number;
   measurementBasis: MeasurementBasis;
@@ -211,9 +230,11 @@ export interface EventLoopStallEvidenceExtra {
 }
 
 export interface CpuBoundUserHotspotEvidenceExtra {
+  proofLevel: 'aggregate-correlation' | 'attributed-caller';
   totalPct: number;
   selfPct: number;
   eventLoopCorrelation?: StallCorrelation;
+  alternativeHotspots?: AlternativeHotspotEvidence[];
 }
 
 export interface JsonHotPathEvidenceExtra extends AttributionEvidence {
@@ -225,10 +246,11 @@ export interface JsonHotPathEvidenceExtra extends AttributionEvidence {
 export interface NodeModulesHotspotEvidenceExtra extends AttributionEvidence {
   package?: string;
   callee: string;
-  calleeFile: string;
-  calleeLine: number;
+  calleeFile?: string;
+  calleeLine?: number;
   calleeTotalPct: number;
   eventLoopCorrelation?: StallCorrelation;
+  alternativeHotspots?: AlternativeHotspotEvidence[];
 }
 
 export interface BuiltinFindingEvidenceExtraMap {
