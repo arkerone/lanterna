@@ -92,7 +92,7 @@ export function installLanternaRuntimeHook(
       reset?: () => void;
       enable?: () => void;
     } | null,
-    gcObserver: null as any,
+    gcObserver: null as PerformanceObserver | null,
     completionSent: false,
     completionHoldTimer: null as NodeJS.Timeout | null,
   };
@@ -151,11 +151,13 @@ export function installLanternaRuntimeHook(
   const ensureGcObserver = () => {
     if (state.gcObserver || typeof PerformanceObserverCtor !== 'function') return;
     try {
-      const observer = new PerformanceObserverCtor((list: { getEntries: () => Array<any> }) => {
+      // Node.js GC entries carry a `detail.kind` field not present on the base PerformanceEntry type.
+      type GcEntry = PerformanceEntry & { detail?: { kind?: number } };
+      const observer = new PerformanceObserverCtor((list: { getEntries: () => GcEntry[] }) => {
         for (const entry of list.getEntries()) {
           const event = {
             atMs: entry.startTime,
-            kind: entry.detail && entry.detail.kind !== undefined ? gcKindName(entry.detail.kind) : 'other',
+            kind: entry.detail?.kind !== undefined ? gcKindName(entry.detail.kind) : 'other',
             durationMs: entry.duration,
           };
           state.gcEvents.push(event);
