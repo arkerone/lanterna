@@ -2,18 +2,12 @@ import type { BuiltinFinding, Finding, Hotspot, RequireInHotPathEvidenceExtra } 
 import { defineBuiltinFinding } from '@lanterna/core';
 import type { Detector, FindingContext } from './types.js';
 import { stripOptPrefix } from '@lanterna/core';
-import { DETECTOR_THRESHOLDS } from '../config.js';
+import { REQUIRE_PATTERNS, DETECTOR_THRESHOLDS } from '../config.js';
 import {
   buildAttributionEvidence,
   buildAttributedFinding,
   resolveAttribution,
 } from './shared.js';
-
-const PATTERNS = [
-  /(^|\.)_load$/,      // Module._load (CJS require)
-  /(^|\.)require$/,
-  /(^|\.)loadESM$/,
-];
 
 export const requireInHotPathDetector: Detector = {
   id: 'require-in-hot-path',
@@ -23,7 +17,7 @@ export const requireInHotPathDetector: Detector = {
     const findings: Finding[] = [];
     for (const hotspot of context.fullHotspots) {
       const normalizedFunctionName = stripOptPrefix(hotspot.function);
-      if (!PATTERNS.some((pattern) => pattern.test(normalizedFunctionName))) continue;
+      if (!REQUIRE_PATTERNS.some((pattern) => pattern.test(normalizedFunctionName))) continue;
       if (hotspot.category !== 'node:builtin' && hotspot.category !== 'node_modules') continue;
       if (hotspot.selfPct < thresholds.minSelfPct && hotspot.totalPct < thresholds.minTotalPct) continue;
       findings.push(buildFinding(hotspot, context));

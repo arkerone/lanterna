@@ -1,3 +1,49 @@
+// ---------------------------------------------------------------------------
+// Shared pattern constants
+// Each detector defines its own match set below so that related detectors
+// (e.g. cpu-bound-user-hotspot) can reuse these to stay in sync.
+// ---------------------------------------------------------------------------
+
+/** Regex patterns matching blocking I/O Node.js APIs, paired with their canonical API name. */
+export const BLOCKING_IO_PATTERNS: ReadonlyArray<{ re: RegExp; api: string }> = [
+  { re: /(^|\.)readFileSync$/, api: 'fs.readFileSync' },
+  { re: /(^|\.)writeFileSync$/, api: 'fs.writeFileSync' },
+  { re: /(^|\.)statSync$/, api: 'fs.statSync' },
+  { re: /(^|\.)existsSync$/, api: 'fs.existsSync' },
+  { re: /(^|\.)readdirSync$/, api: 'fs.readdirSync' },
+  { re: /(^|\.)execSync$/, api: 'child_process.execSync' },
+  { re: /(^|\.)execFileSync$/, api: 'child_process.execFileSync' },
+  { re: /(^|\.)spawnSync$/, api: 'child_process.spawnSync' },
+  { re: /(^|\.)gzipSync$/, api: 'zlib.gzipSync' },
+  { re: /(^|\.)gunzipSync$/, api: 'zlib.gunzipSync' },
+  { re: /(^|\.)deflateSync$/, api: 'zlib.deflateSync' },
+  { re: /(^|\.)inflateSync$/, api: 'zlib.inflateSync' },
+];
+
+/** Synchronous crypto primitive function names (without module prefix). */
+export const SYNC_CRYPTO_FNS: ReadonlyArray<string> = [
+  'pbkdf2Sync',
+  'scryptSync',
+  'randomBytesSync',
+];
+
+/** Regex patterns matching module-loading functions (require / ESM). */
+export const REQUIRE_PATTERNS: ReadonlyArray<RegExp> = [
+  /(^|\.)_load$/,      // Module._load (CJS require)
+  /(^|\.)require$/,
+  /(^|\.)loadESM$/,
+];
+
+/** Regex patterns matching JSON serialization APIs, paired with their canonical API name. */
+export const JSON_FUNCTION_PATTERNS: ReadonlyArray<{ re: RegExp; api: string }> = [
+  { re: /(^|\.)JSON\.parse$/, api: 'JSON.parse' },
+  { re: /(^|\.)JSON\.stringify$/, api: 'JSON.stringify' },
+];
+
+// ---------------------------------------------------------------------------
+// Threshold interfaces & values
+// ---------------------------------------------------------------------------
+
 export interface BlockingThresholds {
   readonly minSelfPct: number;
   readonly minTotalPct: number;

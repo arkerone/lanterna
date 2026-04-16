@@ -14,22 +14,7 @@ import {
   resolveAttribution,
 } from './shared.js';
 import { stripOptPrefix } from '@lanterna/core';
-import { DETECTOR_THRESHOLDS } from '../config.js';
-
-const BLOCKING_PATTERNS: Array<{ re: RegExp; api: string }> = [
-  { re: /(^|\.)readFileSync$/, api: 'fs.readFileSync' },
-  { re: /(^|\.)writeFileSync$/, api: 'fs.writeFileSync' },
-  { re: /(^|\.)statSync$/, api: 'fs.statSync' },
-  { re: /(^|\.)existsSync$/, api: 'fs.existsSync' },
-  { re: /(^|\.)readdirSync$/, api: 'fs.readdirSync' },
-  { re: /(^|\.)execSync$/, api: 'child_process.execSync' },
-  { re: /(^|\.)execFileSync$/, api: 'child_process.execFileSync' },
-  { re: /(^|\.)spawnSync$/, api: 'child_process.spawnSync' },
-  { re: /(^|\.)gzipSync$/, api: 'zlib.gzipSync' },
-  { re: /(^|\.)gunzipSync$/, api: 'zlib.gunzipSync' },
-  { re: /(^|\.)deflateSync$/, api: 'zlib.deflateSync' },
-  { re: /(^|\.)inflateSync$/, api: 'zlib.inflateSync' },
-];
+import { BLOCKING_IO_PATTERNS, DETECTOR_THRESHOLDS } from '../config.js';
 
 export const blockingIoDetector: Detector = {
   id: 'blocking-io',
@@ -39,7 +24,7 @@ export const blockingIoDetector: Detector = {
     for (const hotspot of context.fullHotspots) {
       if (hotspot.category !== 'node:builtin' && hotspot.category !== 'native') continue;
       const normalizedFunctionName = stripOptPrefix(hotspot.function);
-      const patternMatch = BLOCKING_PATTERNS.find((pattern) => pattern.re.test(normalizedFunctionName));
+      const patternMatch = BLOCKING_IO_PATTERNS.find((pattern) => pattern.re.test(normalizedFunctionName));
       if (!patternMatch) continue;
       if (hotspot.selfPct < thresholds.minSelfPct && hotspot.totalPct < thresholds.minTotalPct) continue;
       findings.push(buildFinding(hotspot, patternMatch.api, report, context));

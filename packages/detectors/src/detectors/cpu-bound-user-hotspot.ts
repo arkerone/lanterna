@@ -7,32 +7,23 @@ import type {
 } from '@lanterna/core';
 import { defineBuiltinFinding } from '@lanterna/core';
 import type { Detector, FindingContext } from './types.js';
-import { findStallCorrelation } from './shared.js';
-import { DETECTOR_THRESHOLDS } from '../config.js';
+import { findStallCorrelation, toAlternativeHotspotEvidence } from './shared.js';
+import {
+  BLOCKING_IO_PATTERNS,
+  DETECTOR_THRESHOLDS,
+  JSON_FUNCTION_PATTERNS,
+  REQUIRE_PATTERNS,
+  SYNC_CRYPTO_FNS,
+} from '../config.js';
 import { stripOptPrefix } from '@lanterna/core';
-import { toAlternativeHotspotEvidence } from './shared.js';
 
-const SPECIAL_CASE_PATTERNS = [
-  /(^|\.)pbkdf2Sync$/,
-  /(^|\.)scryptSync$/,
-  /(^|\.)randomBytesSync$/,
-  /(^|\.)readFileSync$/,
-  /(^|\.)writeFileSync$/,
-  /(^|\.)statSync$/,
-  /(^|\.)existsSync$/,
-  /(^|\.)readdirSync$/,
-  /(^|\.)execSync$/,
-  /(^|\.)execFileSync$/,
-  /(^|\.)spawnSync$/,
-  /(^|\.)gzipSync$/,
-  /(^|\.)gunzipSync$/,
-  /(^|\.)deflateSync$/,
-  /(^|\.)inflateSync$/,
-  /(^|\.)_load$/,
-  /(^|\.)require$/,
-  /(^|\.)loadESM$/,
-  /(^|\.)JSON\.parse$/,
-  /(^|\.)JSON\.stringify$/,
+// Derived from the individual detector pattern sources so that cpu-bound exclusions
+// automatically stay in sync when a new pattern is added to another detector.
+const SPECIAL_CASE_PATTERNS: ReadonlyArray<RegExp> = [
+  ...SYNC_CRYPTO_FNS.map((name) => new RegExp(`(^|\\.)${name}$`)),
+  ...BLOCKING_IO_PATTERNS.map((p) => p.re),
+  ...REQUIRE_PATTERNS,
+  ...JSON_FUNCTION_PATTERNS.map((p) => p.re),
 ];
 
 export const cpuBoundUserHotspotDetector: Detector = {

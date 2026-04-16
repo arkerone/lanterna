@@ -8,12 +8,7 @@ import {
   resolveAttribution,
 } from './shared.js';
 import { stripOptPrefix } from '@lanterna/core';
-import { DETECTOR_THRESHOLDS } from '../config.js';
-
-const JSON_PATTERNS: Array<{ re: RegExp; api: string }> = [
-  { re: /(^|\.)JSON\.parse$/, api: 'JSON.parse' },
-  { re: /(^|\.)JSON\.stringify$/, api: 'JSON.stringify' },
-];
+import { JSON_FUNCTION_PATTERNS, DETECTOR_THRESHOLDS } from '../config.js';
 
 export const jsonOnHotPathDetector: Detector = {
   id: 'json-on-hot-path',
@@ -23,7 +18,7 @@ export const jsonOnHotPathDetector: Detector = {
     const findings: Finding[] = [];
     for (const hotspot of context.fullHotspots) {
       const normalizedFunctionName = stripOptPrefix(hotspot.function);
-      const patternMatch = JSON_PATTERNS.find((pattern) => pattern.re.test(normalizedFunctionName));
+      const patternMatch = JSON_FUNCTION_PATTERNS.find((pattern) => pattern.re.test(normalizedFunctionName));
       if (!patternMatch) continue;
       if (hotspot.category !== 'node:builtin' && hotspot.category !== 'native') continue;
       if (hotspot.totalPct < thresholds.minTotalPct) continue;

@@ -14,13 +14,7 @@ import {
   resolveAttribution,
 } from './shared.js';
 import { stripOptPrefix } from '@lanterna/core';
-import { DETECTOR_THRESHOLDS } from '../config.js';
-
-const SYNC_CRYPTO_FNS = [
-  'pbkdf2Sync',
-  'scryptSync',
-  'randomBytesSync',
-];
+import { SYNC_CRYPTO_FNS, DETECTOR_THRESHOLDS } from '../config.js';
 
 export const syncCryptoDetector: Detector = {
   id: 'sync-crypto-on-hot-path',
