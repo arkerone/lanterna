@@ -28,7 +28,7 @@ npm install @lanterna/detectors
 
 Thresholds live in `DETECTOR_THRESHOLDS` (exported from this package, not core).
 
-## Usage — one-shot profile
+## Usage - one-shot profile
 
 ```ts
 import { runProfile } from '@lanterna/detectors';
@@ -44,7 +44,7 @@ const report = await runProfile({
 console.log(report.findings);
 ```
 
-## Usage — analyze an existing capture
+## Usage - analyze an existing capture
 
 ```ts
 import { analyzeCapture } from '@lanterna/detectors';
@@ -58,15 +58,15 @@ const report = buildLanternaReport(raw, analysis, options);
 
 ## Exports
 
-- `runProfile(options, onProgress?)` — spawn + capture + analyze + report.
-- `attachProfile(options, onProgress?)` — attach to a running process + capture + analyze + report.
-- `analyzeCapture(raw, options)` — run the default pipeline on a `RawCapture`.
-- `createDefaultAnalysisPipeline()` — pre-populated pipeline you can extend with `register(...)`.
-- `defaultDetectors` — the raw detector descriptors (for introspection or custom composition).
-- `createBuiltInFindingAnalyzers()` — the same detectors wrapped as `FindingAnalyzer` instances.
-- `createFindingAnalyzerFromDetector(detector)` — wrap a single `Detector` into a `FindingAnalyzer`.
-- `buildFindingContext(context)` / `buildAttributedFinding(...)` / `resolveAttribution(...)` / `buildAttributionEvidence(...)` — helpers for writing detectors that reuse Lanterna's hotspot attribution.
-- `LanternaDetectorPlugin` / `LanternaPluginContext` — plugin contract types.
+- `runProfile(options, onProgress?)` - spawn + capture + analyze + report.
+- `attachProfile(options, onProgress?)` - attach to a running process + capture + analyze + report.
+- `analyzeCapture(raw, options)` - run the default pipeline on a `RawCapture`.
+- `createDefaultAnalysisPipeline()` - pre-populated pipeline you can extend with `register(...)`.
+- `defaultDetectors` - the raw detector descriptors (for introspection or custom composition).
+- `createBuiltInFindingAnalyzers()` - the same detectors wrapped as `FindingAnalyzer` instances.
+- `createFindingAnalyzerFromDetector(detector)` - wrap a single `Detector` into a `FindingAnalyzer`.
+- `buildFindingContext(context)` / `buildAttributedFinding(...)` / `resolveAttribution(...)` / `buildAttributionEvidence(...)` - helpers for writing detectors that reuse Lanterna's hotspot attribution.
+- `LanternaDetectorPlugin` / `LanternaPluginContext` - plugin contract types.
 - `DETECTOR_THRESHOLDS` + threshold types.
 
 ## Writing a detector plugin
@@ -128,12 +128,12 @@ await runProfile({
   detectors: [prismaHotspotDetector],           // auto-wrapped as FindingAnalyzers
   analyzers: [myCustomSectionAnalyzer],         // raw analyzer registration
   setupPipeline: async (pipeline, ctx) => {
-    // full-control hook — runs after detectors/analyzers are registered
+    // full-control hook - runs after detectors/analyzers are registered
   },
 });
 ```
 
 ## Related packages
 
-- [`@lanterna/core`](../core) — headless capture + pipeline primitives (no defaults).
-- [`@lanterna/cli`](../cli) — `lanterna` binary built on top of this package.
+- [`@lanterna/core`](../core) - headless capture + pipeline primitives (no defaults).
+- [`@lanterna/cli`](../cli) - `lanterna` binary built on top of this package.

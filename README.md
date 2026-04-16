@@ -44,13 +44,11 @@ The profiled target must run on Node.js with inspector support.
 
 ## Packages
 
-Lanterna is a monorepo of three npm packages. Pick the one that matches your use case.
-
-| Package | Use when… |
+| Package | What it is |
 | --- | --- |
-| [`@lanterna/cli`](packages/cli) | You want the `lanterna` binary on the command line. |
-| [`@lanterna/detectors`](packages/detectors) | You want `runProfile` / `attachProfile` + the built-in detectors programmatically. |
-| [`@lanterna/core`](packages/core) | You want the low-level capture + analysis primitives, with your own detectors. |
+| [`@lanterna/cli`](packages/cli) | The `lanterna` binary - spawn/attach, argument parsing, interactive picker, report output. |
+| [`@lanterna/detectors`](packages/detectors) | Default detector pack + `runProfile` / `attachProfile` programmatic facades. |
+| [`@lanterna/core`](packages/core) | Headless capture + analysis pipeline primitives. No default detectors. |
 
 External detectors are first-class: publish a plugin (ES module with a default-exported register function) and load it via `--detectors <spec>` or `.lanterna.json`. See [`@lanterna/detectors`](packages/detectors#writing-a-detector-plugin) for the contract and [`@lanterna/cli`](packages/cli#loading-external-detectors) for loading.
 
@@ -298,10 +296,10 @@ const report: LanternaReport = await runProfile({
 });
 ```
 
-- `runProfile(...)` — spawn a Node process, capture, analyze, return a `LanternaReport`.
-- `attachProfile(...)` — attach to an existing inspector target and return a `LanternaReport`.
-- `analyzeCapture(raw, options)` — run the default pipeline on a `RawCapture`.
-- `DETECTOR_THRESHOLDS` — thresholds used by the built-in rules.
+- `runProfile(...)` - spawn a Node process, capture, analyze, return a `LanternaReport`.
+- `attachProfile(...)` - attach to an existing inspector target and return a `LanternaReport`.
+- `analyzeCapture(raw, options)` - run the default pipeline on a `RawCapture`.
+- `DETECTOR_THRESHOLDS` - thresholds used by the built-in rules.
 
 Both `runProfile` and `attachProfile` accept extension options so you can add detectors without going through the CLI:
 
@@ -339,7 +337,7 @@ import {
 } from '@lanterna/core';
 ```
 
-Use core when you want full control over the pipeline — no default detectors are registered. Register your own analyzers with `pipeline.register(defineFindingAnalyzer({...}))` / `defineSectionAnalyzer({...})`.
+Use core when you want full control over the pipeline - no default detectors are registered. Register your own analyzers with `pipeline.register(defineFindingAnalyzer({...}))` / `defineSectionAnalyzer({...})`.
 
 </details>
 
@@ -355,11 +353,11 @@ Use core when you want full control over the pipeline — no default detectors a
 
 ```
 packages/
-  core/       @lanterna/core       — capture (spawn/attach), runtime signals, analysis pipeline, report
-  detectors/  @lanterna/detectors  — default detector pack, runProfile / attachProfile / analyzeCapture
-  cli/        @lanterna/cli        — `lanterna` binary, argument parsing, output, interactive picker
+  core/       @lanterna/core       - capture (spawn/attach), runtime signals, analysis pipeline, report
+  detectors/  @lanterna/detectors  - default detector pack, runProfile / attachProfile / analyzeCapture
+  cli/        @lanterna/cli        - `lanterna` binary, argument parsing, output, interactive picker
 skills/
-  lanterna-profile/                — agent-oriented profiling workflow for Claude Code
+  lanterna-profile/                - agent-oriented profiling workflow for Claude Code
 ```
 
 Dependency direction: `cli → detectors → core`.
@@ -376,4 +374,4 @@ npm test            # runs every package's vitest suite
 
 Per-package work: `npm run build -w @lanterna/core`, `npm test -w @lanterna/cli`, etc.
 
-Tests use Vitest and cover frame classification, hotspot aggregation, detector evidence attribution, and live profiling paths — including short-lived processes and real event-loop stall correlation.
+Tests use Vitest and cover frame classification, hotspot aggregation, detector evidence attribution, and live profiling paths - including short-lived processes and real event-loop stall correlation.
