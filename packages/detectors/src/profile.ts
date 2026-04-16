@@ -57,6 +57,14 @@ export type RunProgressEvent =
   | { stage: 'capture-running'; message: string }
   | { stage: 'finalize-capture'; message: string };
 
+/**
+ * Spawns a child process, profiles it, and returns a complete
+ * {@link LanternaReport}.
+ *
+ * High-level facade over `startSpawnCapture` + `AnalysisPipeline.run` +
+ * `buildLanternaReport`. Use the `onProgress` callback to stream stage
+ * updates to a UI or logger.
+ */
 export async function runProfile(
   options: RunProfileOptions,
   onProgress?: (event: RunProgressEvent) => void,
@@ -98,6 +106,14 @@ export async function runProfile(
   return report;
 }
 
+/**
+ * Attaches to a running Node.js process, profiles it for the given duration
+ * (or until it exits), and returns a complete {@link LanternaReport}.
+ *
+ * High-level facade over `startAttachCapture` + `AnalysisPipeline.run` +
+ * `buildLanternaReport`. The target process must already be listening on an
+ * inspector port or be reachable via SIGUSR1 (POSIX only).
+ */
 export async function attachProfile(
   options: AttachProfileOptions,
   onProgress?: (event: AttachProgressEvent) => void,

@@ -4,6 +4,13 @@ import { buildReportMeta } from './meta.js';
 import { serializeReport } from './serialize.js';
 import type { LanternaReport } from './types.js';
 
+/**
+ * Assembles a {@link LanternaReport} from a raw capture and its analysis result.
+ *
+ * This is the final step in the programmatic profiling pipeline:
+ * `startSpawnCapture` / `startAttachCapture` → `AnalysisPipeline.run` →
+ * `buildLanternaReport` → `serializeReport`.
+ */
 export function buildLanternaReport(
   rawCapture: RawCapture,
   analysis: AnalysisResult,

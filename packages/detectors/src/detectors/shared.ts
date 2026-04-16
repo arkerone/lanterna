@@ -20,6 +20,13 @@ export interface ResolvedAttribution {
   caller: HotspotAttribution | undefined;
 }
 
+/**
+ * Resolves the user-code caller most likely responsible for a non-user hotspot.
+ *
+ * Returns `caller` only when attribution confidence is `'high'` (the user
+ * frame appears on ≥80% of the hotspot's sampled call paths). Use `attribution`
+ * when you need to surface the candidate regardless of confidence.
+ */
 export function resolveAttribution(
   hotspot: Hotspot,
   context: FindingContext,
@@ -83,6 +90,16 @@ type AttributedFindingExtra =
   | NodeModulesHotspotEvidenceExtra
   | RequireInHotPathEvidenceExtra;
 
+/**
+ * Builds the `BaseFinding` object for the five builtin categories that follow
+ * the "hotspot with user attribution" pattern:
+ * `blocking-io`, `sync-crypto`, `json-on-hot-path`, `node-modules-hotspot`,
+ * `require-in-hot-path`.
+ *
+ * The evidence `file`/`line`/`function` fields are resolved to the caller when
+ * attribution confidence is high, falling back to the hotspot itself otherwise.
+ * Wrap the result in `defineBuiltinFinding()` before returning from a detector.
+ */
 export function buildAttributedFinding<
   C extends Extract<
     BuiltinFindingCategory,

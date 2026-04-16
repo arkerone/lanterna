@@ -21,6 +21,26 @@ export interface CreateAnalysisPipelineOptions {
   findingAnalyzers?: FindingAnalyzer[];
 }
 
+/**
+ * Runs a series of registered analyzers over a {@link RawCapture} to produce
+ * an {@link AnalysisResult}.
+ *
+ * Two analyzer kinds are supported:
+ * - **FindingAnalyzer** — emits {@link Finding} objects (performance issues).
+ * - **SectionAnalyzer** — computes a typed value stored under a namespace key
+ *   in `result.extensions`, enabling custom report sections.
+ *
+ * Analyzers are executed in `order` (ascending, default 0). Duplicate IDs or
+ * namespaces are rejected at registration time.
+ *
+ * @example
+ * ```ts
+ * const pipeline = createAnalysisPipeline();
+ * pipeline.register(myFindingAnalyzer);
+ * pipeline.register(mySectionAnalyzer);
+ * const result = pipeline.run(rawCapture, options);
+ * ```
+ */
 export class AnalysisPipeline {
   private readonly sectionAnalyzers: SectionAnalyzer[];
   private readonly findingAnalyzers: FindingAnalyzer[];
@@ -96,18 +116,34 @@ export class AnalysisPipeline {
   }
 }
 
+/**
+ * Creates a new {@link AnalysisPipeline} with optional pre-registered analyzers.
+ *
+ * Prefer this factory over `new AnalysisPipeline()` — it keeps calling code
+ * independent of the class constructor signature.
+ */
 export function createAnalysisPipeline(
   options: CreateAnalysisPipelineOptions = {},
 ): AnalysisPipeline {
   return new AnalysisPipeline(options);
 }
 
+/**
+ * Identity helper that returns the analyzer as-is.
+ * Useful for getting TypeScript to infer the `TSection` type from a literal
+ * object without needing an explicit type annotation.
+ */
 export function defineSectionAnalyzer<TSection>(
   analyzer: SectionAnalyzer<TSection>,
 ): SectionAnalyzer<TSection> {
   return analyzer;
 }
 
+/**
+ * Identity helper that returns the analyzer as-is.
+ * Provides a typed entry point for authoring {@link FindingAnalyzer} objects
+ * with full IDE autocompletion.
+ */
 export function defineFindingAnalyzer(
   analyzer: FindingAnalyzer,
 ): FindingAnalyzer {
