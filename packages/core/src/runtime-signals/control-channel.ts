@@ -1,4 +1,5 @@
 import { controlEventSchema, type ControlEvent } from './schemas.js';
+import { logger } from '../shared/logger.js';
 
 export function attachControlChannel(
   stream: NodeJS.ReadableStream,
@@ -22,8 +23,9 @@ export function attachControlChannel(
         if (parsed.success) {
           handlers.onEvent(parsed.data);
         }
-      } catch {
+      } catch (err) {
         // Control events are best-effort. Invalid lines are ignored.
+        logger.debug({ err, line }, 'control channel: failed to parse line');
       }
     }
   });

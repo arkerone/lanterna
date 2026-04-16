@@ -1,4 +1,5 @@
 import CDP from 'chrome-remote-interface';
+import { logger } from '../shared/logger.js';
 
 type EventHandler = (params: unknown) => void;
 type CloseHandler = () => void;
@@ -66,8 +67,9 @@ export async function connectCdp(webSocketDebuggerUrl: string): Promise<CdpClien
       const wrapped = (params: unknown) => {
         try {
           handler(params);
-        } catch {
+        } catch (err) {
           // Event handlers must not tear down the socket.
+          logger.debug({ event, err }, 'CDP event handler threw');
         }
       };
       client.on(event, wrapped);
