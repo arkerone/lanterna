@@ -16,7 +16,10 @@
   ],
   "scripts": {
     "build": "tsc -b",
-    "dev": "tsc -b --watch"
+    "dev": "tsc -b --watch",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "clean": "rm -rf dist .turbo .tsbuildinfo"
   },
   "dependencies": {
     "@lanterna/core": "*"

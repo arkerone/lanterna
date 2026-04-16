@@ -8,16 +8,18 @@
     "packages/*"
   ],
   "scripts": {
-    "build": "npm run build --workspaces --if-present",
-    "test": "vitest run",
+    "build": "turbo run build",
+    "test": "turbo run test",
     "test:watch": "vitest",
-    "dev": "tsc -b --watch",
-    "clean": "rm -rf packages/*/dist packages/*/.tsbuildinfo",
+    "dev": "turbo run dev",
+    "typecheck": "turbo run typecheck",
+    "clean": "turbo run clean && rm -rf node_modules/.cache .turbo",
     "prepare": "husky"
   },
   "engines": {
     "node": ">=22.0.0"
   },
+  "packageManager": "npm@11.3.0",
   "lint-staged": {
     "*.{ts,js,cjs,mjs,json,jsonc,md}": [
       "biome check --write --no-errors-on-unmatched --files-ignore-unknown=true"
@@ -28,6 +30,7 @@
     "@types/node": "^24.12.2",
     "husky": "9.1.7",
     "lint-staged": "16.4.0",
+    "turbo": "2.9.6",
     "typescript": "^6.0.2",
     "vitest": "^4.1.4"
   },

@@ -8,5 +8,10 @@ packages/*/.tsbuildinfo
 .DS_Store
 packages/core/src/report/version.generated.ts
 
+# Tooling caches
+.turbo/
+packages/*/.turbo/
+.eslintcache
+
 # Husky internals (managed by husky)
 .husky/_/
