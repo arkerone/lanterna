@@ -1,7 +1,7 @@
 import type { BuiltinFinding, EventLoopStallEvidenceExtra, Finding } from '@lanterna/core';
 import { defineBuiltinFinding } from '@lanterna/core';
-import type { Detector } from './types.js';
 import { DETECTOR_THRESHOLDS } from '../config.js';
+import type { Detector } from './types.js';
 
 export const eventLoopStallDetector: Detector = {
   id: 'event-loop-stall',
@@ -19,12 +19,11 @@ export const eventLoopStallDetector: Detector = {
     if (p99LagMs < p99Threshold && maxLagMs < maxThreshold) return [];
 
     const topCandidate = eventLoop.correlatedHotspots?.[0];
-    const strongCorrelation = (
-      (eventLoop.measurementBasis === 'heartbeats' || eventLoop.measurementBasis === 'both')
-      && eventLoop.confidence === 'high'
-      && topCandidate !== undefined
-      && topCandidate.overlapPct >= thresholds.strongCorrelationOverlapPct
-    );
+    const strongCorrelation =
+      (eventLoop.measurementBasis === 'heartbeats' || eventLoop.measurementBasis === 'both') &&
+      eventLoop.confidence === 'high' &&
+      topCandidate !== undefined &&
+      topCandidate.overlapPct >= thresholds.strongCorrelationOverlapPct;
     const severity: Finding['severity'] = maxLagMs > thresholds.critical ? 'critical' : 'warning';
     const evidenceExtra: EventLoopStallEvidenceExtra = {
       proofLevel: 'aggregate-correlation',

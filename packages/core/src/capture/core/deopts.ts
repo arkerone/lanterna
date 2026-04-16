@@ -6,8 +6,10 @@ import type { RawDeopt } from './types.js';
 // We extract the last well-formed bailout line per function+location.
 export function parseDeoptsFromStderr(stderr: string): RawDeopt[] {
   const lines = stderr.split('\n');
-  const bailoutPattern = /bailout .*?kind:\s*([^,]+),\s*reason:\s*([^\)]+)\).*?<[^>]*>\s+(\S+)\s+at\s+(\S+):(\d+)/i;
-  const deoptPattern = /deoptimiz\w+\s+.*?\(([^)]+)\):\s*(?:begin|end)\s+\S+\s+<[^>]*>\s+(\S+).*?reason:\s*([^,;]+)/i;
+  const bailoutPattern =
+    /bailout .*?kind:\s*([^,]+),\s*reason:\s*([^)]+)\).*?<[^>]*>\s+(\S+)\s+at\s+(\S+):(\d+)/i;
+  const deoptPattern =
+    /deoptimiz\w+\s+.*?\(([^)]+)\):\s*(?:begin|end)\s+\S+\s+<[^>]*>\s+(\S+).*?reason:\s*([^,;]+)/i;
   const deoptCountsByKey = new Map<string, RawDeopt & { count: number }>();
 
   for (const line of lines) {

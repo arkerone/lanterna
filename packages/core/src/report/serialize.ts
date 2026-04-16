@@ -1,14 +1,11 @@
-import type { LanternaReport } from './types.js';
 import { lanternaReportSchema } from './schema.js';
+import type { LanternaReport } from './types.js';
 
 export interface SerializeReportOptions {
   pretty: boolean;
 }
 
-export function serializeReport(
-  report: LanternaReport,
-  options: SerializeReportOptions,
-): string {
+export function serializeReport(report: LanternaReport, options: SerializeReportOptions): string {
   const parsed = lanternaReportSchema.safeParse(report);
   if (!parsed.success) {
     const details = parsed.error.issues

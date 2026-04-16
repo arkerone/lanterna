@@ -1,11 +1,11 @@
 import type { Finding } from '../../report/types.js';
+import { logger } from '../../shared/logger.js';
 import { buildGcCorrelationWindows, correlateUserHotspots } from '../model/correlations.js';
 import { enrichDeopts } from '../model/deopts.js';
 import { buildEventLoopReport } from '../model/event-loop-report.js';
 import { buildGcReport } from '../model/gc-report.js';
 import { computeHotStacks } from '../model/hot-stacks.js';
 import { buildSummary, deriveDominantBlockingKind } from '../model/summary.js';
-import { logger } from '../../shared/logger.js';
 import { createAnalysisContext } from './context.js';
 import type {
   AnalysisContext,
@@ -101,9 +101,7 @@ export class AnalysisPipeline {
     return result;
   }
 
-  private assertAnalyzerCanRegister(
-    analyzer: SectionAnalyzer | FindingAnalyzer,
-  ): void {
+  private assertAnalyzerCanRegister(analyzer: SectionAnalyzer | FindingAnalyzer): void {
     if (analyzer.kind === 'section') {
       if (this.sectionAnalyzers.some((entry) => entry.namespace === analyzer.namespace)) {
         throw new Error(`duplicate section namespace: ${analyzer.namespace}`);
@@ -144,9 +142,7 @@ export function defineSectionAnalyzer<TSection>(
  * Provides a typed entry point for authoring {@link FindingAnalyzer} objects
  * with full IDE autocompletion.
  */
-export function defineFindingAnalyzer(
-  analyzer: FindingAnalyzer,
-): FindingAnalyzer {
+export function defineFindingAnalyzer(analyzer: FindingAnalyzer): FindingAnalyzer {
   return analyzer;
 }
 

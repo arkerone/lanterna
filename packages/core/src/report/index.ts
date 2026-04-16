@@ -1,5 +1,5 @@
-import type { RawCapture } from '../capture/core/types.js';
 import type { AnalysisOptions, AnalysisResult } from '../analysis/core/types.js';
+import type { RawCapture } from '../capture/core/types.js';
 import { buildReportMeta } from './meta.js';
 import { serializeReport } from './serialize.js';
 import type { LanternaReport } from './types.js';
@@ -34,8 +34,8 @@ export function buildLanternaReport(
   return report;
 }
 
-export { serializeReport };
 export * from './types.js';
+export { serializeReport };
 
 function countTotalSamples(rawCapture: RawCapture): number {
   return rawCapture.cpuProfile.nodes.reduce((sum, node) => sum + (node.hitCount ?? 0), 0);

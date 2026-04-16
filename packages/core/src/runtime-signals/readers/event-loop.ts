@@ -1,5 +1,5 @@
-import type { CdpClient } from '../../inspector/client.js';
 import type { EventLoopSample } from '../../capture/core/types.js';
+import type { CdpClient } from '../../inspector/client.js';
 import { eventLoopReadSchema } from '../schemas.js';
 
 export interface EventLoopReadResult {
@@ -30,13 +30,15 @@ export async function readEventLoopSamples(cdp: CdpClient): Promise<EventLoopRea
       samples: parsed.data.samples ?? [],
       available: true,
       resolutionMs: parsed.data.resolutionMs,
-      summary: parsed.data.summary ? {
-        maxMs: parsed.data.summary.max,
-        meanMs: parsed.data.summary.mean,
-        p50Ms: parsed.data.summary.p50,
-        p99Ms: parsed.data.summary.p99,
-        count: parsed.data.summary.count,
-      } : undefined,
+      summary: parsed.data.summary
+        ? {
+            maxMs: parsed.data.summary.max,
+            meanMs: parsed.data.summary.mean,
+            p50Ms: parsed.data.summary.p50,
+            p99Ms: parsed.data.summary.p99,
+            count: parsed.data.summary.count,
+          }
+        : undefined,
     };
   } catch {
     return { samples: [], available: false };

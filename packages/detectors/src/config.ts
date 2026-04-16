@@ -29,7 +29,7 @@ export const SYNC_CRYPTO_FNS: ReadonlyArray<string> = [
 
 /** Regex patterns matching module-loading functions (require / ESM). */
 export const REQUIRE_PATTERNS: ReadonlyArray<RegExp> = [
-  /(^|\.)_load$/,      // Module._load (CJS require)
+  /(^|\.)_load$/, // Module._load (CJS require)
   /(^|\.)require$/,
   /(^|\.)loadESM$/,
 ];

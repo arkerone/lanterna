@@ -5,7 +5,9 @@ import {
   type RunningNodeProcessCandidate,
 } from '../src/attach-target.js';
 
-function createCandidate(overrides: Partial<RunningNodeProcessCandidate> = {}): RunningNodeProcessCandidate {
+function createCandidate(
+  overrides: Partial<RunningNodeProcessCandidate> = {},
+): RunningNodeProcessCandidate {
   return {
     pid: 4242,
     runtime: 'node',

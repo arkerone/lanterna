@@ -1,4 +1,4 @@
-import { relative, isAbsolute, sep, posix } from 'node:path';
+import { isAbsolute, posix, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { FrameCategory } from '../../report/types.js';
 
@@ -17,11 +17,7 @@ const NATIVE_PSEUDO_FUNCTIONS = new Set([
   '(unresolved function)',
 ]);
 
-export function classifyFrame(
-  functionName: string,
-  url: string,
-  cwd: string,
-): ClassifiedFrame {
+export function classifyFrame(functionName: string, url: string, cwd: string): ClassifiedFrame {
   if (NATIVE_PSEUDO_FUNCTIONS.has(functionName)) {
     if (functionName === '(garbage collector)') return { category: 'gc', file: functionName };
     if (functionName === '(idle)') return { category: 'idle', file: functionName };
@@ -78,7 +74,9 @@ function toPosix(pathValue: string): string {
 
 function isLanternaProfilerArtifact(pathOrUrl: string): boolean {
   const normalized = toPosix(pathOrUrl);
-  return /(^|\/)(src|dist|dist-test)\/runtime-signals\/(?:hooks\/)?event-loop-hook\.(cjs|js)$/.test(normalized);
+  return /(^|\/)(src|dist|dist-test)\/runtime-signals\/(?:hooks\/)?event-loop-hook\.(cjs|js)$/.test(
+    normalized,
+  );
 }
 
 function extractNodeModulesPackage(relativePath: string): string | undefined {

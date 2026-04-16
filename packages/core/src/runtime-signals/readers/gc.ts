@@ -1,5 +1,5 @@
-import type { CdpClient } from '../../inspector/client.js';
 import type { RawGcEvent } from '../../capture/core/types.js';
+import type { CdpClient } from '../../inspector/client.js';
 import { rawGcEventSchema } from '../schemas.js';
 
 const READ_GC_EXPRESSION = `(() => {

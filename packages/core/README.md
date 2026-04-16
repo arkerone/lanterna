@@ -12,15 +12,15 @@ npm install @lanterna/core
 
 ## What's in the box
 
-- **Capture** — `startSpawnCapture` / `startAttachCapture` return a `CaptureHandle` that drives the V8 profiler + timed runtime signals (GC, event-loop lag, deopts).
-- **Analysis pipeline** — `createAnalysisPipeline` with `defineFindingAnalyzer` / `defineSectionAnalyzer` to register custom rules.
-- **Report** — `buildLanternaReport` + `serializeReport` (zod-validated JSON).
-- **Types** — `RawCapture`, `LanternaReport`, `Finding`, `Hotspot`, `AnalysisContext`, `FindingAnalyzer`, etc.
-- **Runtime hook** — ships the `.cjs` preload hook at `dist/runtime-signals/hooks/event-loop-hook.cjs`.
+- **Capture** - `startSpawnCapture` / `startAttachCapture` return a `CaptureHandle` that drives the V8 profiler + timed runtime signals (GC, event-loop lag, deopts).
+- **Analysis pipeline** - `createAnalysisPipeline` with `defineFindingAnalyzer` / `defineSectionAnalyzer` to register custom rules.
+- **Report** - `buildLanternaReport` + `serializeReport` (zod-validated JSON).
+- **Types** - `RawCapture`, `LanternaReport`, `Finding`, `Hotspot`, `AnalysisContext`, `FindingAnalyzer`, etc.
+- **Runtime hook** - ships the `.cjs` preload hook at `dist/runtime-signals/hooks/event-loop-hook.cjs`.
 
 Default detectors (sync-crypto, blocking-io, excessive-gc, event-loop-stall, …) live in `@lanterna/detectors` so core stays minimal.
 
-## Example — custom detector
+## Example - custom detector
 
 ```ts
 import {
@@ -67,5 +67,5 @@ process.stdout.write(serializeReport(report, { pretty: true }));
 
 ## Related packages
 
-- [`@lanterna/detectors`](../detectors) — default detector pack + `runProfile` / `attachProfile` facades.
-- [`@lanterna/cli`](../cli) — `lanterna` binary for humans.
+- [`@lanterna/detectors`](../detectors) - default detector pack + `runProfile` / `attachProfile` facades.
+- [`@lanterna/cli`](../cli) - `lanterna` binary for humans.

@@ -1,12 +1,5 @@
 declare module 'pino' {
-  export type LevelWithSilent =
-    | 'fatal'
-    | 'error'
-    | 'warn'
-    | 'info'
-    | 'debug'
-    | 'trace'
-    | 'silent';
+  export type LevelWithSilent = 'fatal' | 'error' | 'warn' | 'info' | 'debug' | 'trace' | 'silent';
 
   export interface Logger {
     error(obj: unknown, msg?: string): void;

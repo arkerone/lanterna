@@ -1,6 +1,10 @@
-import { startCpuMeasure, stopCpuMeasure } from './cpu.js';
-import { readEventLoopSamples, type EventLoopReadResult } from '../../runtime-signals/readers/event-loop.js';
+import type { CdpClient } from '../../inspector/client.js';
 import { fetchTargetInfo, markCaptureStart, readRuntimeClockNow } from '../../inspector/runtime.js';
+import {
+  type EventLoopReadResult,
+  readEventLoopSamples,
+} from '../../runtime-signals/readers/event-loop.js';
+import { startCpuMeasure, stopCpuMeasure } from './cpu.js';
 import {
   hasTimedCpuSamples,
   isUsableEventLoopSummary,
@@ -17,7 +21,6 @@ import type {
   RawGcEvent,
   TargetInfo,
 } from './types.js';
-import type { CdpClient } from '../../inspector/client.js';
 
 export interface StartedCaptureSession {
   cdp: CdpClient;
@@ -73,7 +76,7 @@ export async function finishCaptureSession(
   } = options;
 
   const durationMs = performance.now() - session.startedAtHr;
-  const eventLoopRead = options.eventLoopRead ?? await readEventLoopSamples(session.cdp);
+  const eventLoopRead = options.eventLoopRead ?? (await readEventLoopSamples(session.cdp));
   const absoluteEventLoopSamples = mergeTimedSamples(
     options.eventLoopSamplesAbs ?? [],
     eventLoopRead.samples,
@@ -94,7 +97,7 @@ export async function finishCaptureSession(
     durationMs,
   );
 
-  let cpuProfile;
+  let cpuProfile: Awaited<ReturnType<typeof stopCpuMeasure>>;
   try {
     cpuProfile = await stopCpuMeasure(session.cdp);
   } catch (error) {
@@ -121,13 +124,16 @@ export async function finishCaptureSession(
     eventLoopSamples: normalizedEventLoopSamples,
     eventLoopHistogram,
     eventLoopResolutionMs: resolvedEventLoopResolutionMs,
-    eventLoopAvailable: eventLoopAvailable || eventLoopRead.available || normalizedEventLoopSamples.length > 0,
+    eventLoopAvailable:
+      eventLoopAvailable || eventLoopRead.available || normalizedEventLoopSamples.length > 0,
     captureIntegrity,
     deopts,
   };
 }
 
-export function createCaptureIntegrity(overrides: Partial<CaptureIntegrity> = {}): CaptureIntegrity {
+export function createCaptureIntegrity(
+  overrides: Partial<CaptureIntegrity> = {},
+): CaptureIntegrity {
   return {
     controlChannel: false,
     eventLoopTimed: false,

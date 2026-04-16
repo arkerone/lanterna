@@ -18,31 +18,31 @@ interface AttachRuntimeResult {
 declare global {
   var __LANTERNA_EVENT_LOOP__:
     | {
-      markCaptureStart: () => void;
-      read: () => {
-        samples: Array<{ atMs: number; lagMs: number }>;
-        summary: {
-          max: number;
-          mean: number;
-          p50: number;
-          p99: number;
-          count: number;
-        } | null;
-        resolutionMs: number;
-      };
-      reset: () => void;
-    }
+        markCaptureStart: () => void;
+        read: () => {
+          samples: Array<{ atMs: number; lagMs: number }>;
+          summary: {
+            max: number;
+            mean: number;
+            p50: number;
+            p99: number;
+            count: number;
+          } | null;
+          resolutionMs: number;
+        };
+        reset: () => void;
+      }
     | undefined;
   var __LANTERNA_GC__:
     | {
-      read: () => Array<{ atMs: number; kind: string; durationMs: number }>;
-      clear: () => void;
-    }
+        read: () => Array<{ atMs: number; kind: string; durationMs: number }>;
+        clear: () => void;
+      }
     | undefined;
   var __LANTERNA_ATTACH_RUNTIME__:
     | {
-      ensureInstalled: () => AttachRuntimeResult;
-    }
+        ensureInstalled: () => AttachRuntimeResult;
+      }
     | undefined;
 }
 
@@ -65,9 +65,7 @@ export function installLanternaRuntimeHook(
   };
 
   const perfHooks = getBuiltin('perf_hooks');
-  const fs = options.controlFd !== undefined && options.controlFd >= 0
-    ? getBuiltin('fs')
-    : null;
+  const fs = options.controlFd !== undefined && options.controlFd >= 0 ? getBuiltin('fs') : null;
   const PerformanceObserverCtor = globalThis.PerformanceObserver || perfHooks?.PerformanceObserver;
   const performanceApi = globalThis.performance || perfHooks?.performance;
   const monitorEventLoopDelay = perfHooks?.monitorEventLoopDelay;
@@ -205,13 +203,15 @@ export function installLanternaRuntimeHook(
 
   const readEventLoop = () => ({
     samples: state.heartbeatSamples.slice(),
-    summary: state.histogram ? {
-      max: state.histogram.max / 1e6,
-      mean: state.histogram.mean / 1e6,
-      p50: state.histogram.percentile(50) / 1e6,
-      p99: state.histogram.percentile(99) / 1e6,
-      count: state.histogram.count,
-    } : null,
+    summary: state.histogram
+      ? {
+          max: state.histogram.max / 1e6,
+          mean: state.histogram.mean / 1e6,
+          p50: state.histogram.percentile(50) / 1e6,
+          p99: state.histogram.percentile(99) / 1e6,
+          count: state.histogram.count,
+        }
+      : null,
     resolutionMs: heartbeatResolutionMs,
   });
 
@@ -305,18 +305,14 @@ export function installLanternaRuntimeHook(
   }
 }
 
-export function getAttachRuntimeHookSource(
-  options: RuntimeHookInstallOptions = {},
-): string {
+export function getAttachRuntimeHookSource(options: RuntimeHookInstallOptions = {}): string {
   return `(${installLanternaRuntimeHook.toString()})(${JSON.stringify(options)})`;
 }
 
-export function getPreloadHookSource(
-  options: RuntimeHookInstallOptions = {},
-): string {
+export function getPreloadHookSource(options: RuntimeHookInstallOptions = {}): string {
   return `'use strict';\n(${installLanternaRuntimeHook.toString()})(${JSON.stringify({
     ...options,
-    controlFd: "__LANTERNA_CONTROL_FD__",
+    controlFd: '__LANTERNA_CONTROL_FD__',
     emitLifecycle: true,
   }).replace('"__LANTERNA_CONTROL_FD__"', "Number(process.env.LANTERNA_CONTROL_FD || '-1')")});\n`;
 }

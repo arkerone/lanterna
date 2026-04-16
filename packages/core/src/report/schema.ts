@@ -133,10 +133,7 @@ const eventLoopStallExtraSchema = z.object({
 });
 
 const cpuBoundUserHotspotExtraSchema = z.object({
-  proofLevel: z.union([
-    z.literal('aggregate-correlation'),
-    z.literal('attributed-caller'),
-  ]),
+  proofLevel: z.union([z.literal('aggregate-correlation'), z.literal('attributed-caller')]),
   totalPct: z.number().finite(),
   selfPct: z.number().finite(),
   eventLoopCorrelation: stallCorrelationSchema.optional(),
@@ -185,53 +182,58 @@ const findingEvidenceSchema = z.object({
   extra: z.union([builtinFindingExtraSchema, genericFindingExtraSchema]).optional(),
 });
 
-const findingSchema = z.object({
-  id: z.string().min(1),
-  severity: findingSeveritySchema,
-  category: z.string().min(1),
-  title: z.string().min(1),
-  evidence: findingEvidenceSchema,
-  why: z.string().min(1),
-  suggestion: z.string().min(1),
-  references: z.array(z.string()),
-}).superRefine((finding, ctx) => {
-  const { category } = finding;
-  const { extra } = finding.evidence;
+const findingSchema = z
+  .object({
+    id: z.string().min(1),
+    severity: findingSeveritySchema,
+    category: z.string().min(1),
+    title: z.string().min(1),
+    evidence: findingEvidenceSchema,
+    why: z.string().min(1),
+    suggestion: z.string().min(1),
+    references: z.array(z.string()),
+  })
+  .superRefine((finding, ctx) => {
+    const { category } = finding;
+    const { extra } = finding.evidence;
 
-  const schemaByCategory = {
-    'blocking-io': blockingIoExtraSchema,
-    'sync-crypto': syncCryptoExtraSchema,
-    'deopt-loop': deoptLoopExtraSchema,
-    'require-in-hot-path': requireInHotPathExtraSchema,
-    'excessive-gc': excessiveGcExtraSchema,
-    'event-loop-stall': eventLoopStallExtraSchema,
-    'cpu-bound-user-hotspot': cpuBoundUserHotspotExtraSchema,
-    'json-on-hot-path': jsonHotPathExtraSchema,
-    'node-modules-hotspot': nodeModulesHotspotExtraSchema,
-  } as const;
+    const schemaByCategory = {
+      'blocking-io': blockingIoExtraSchema,
+      'sync-crypto': syncCryptoExtraSchema,
+      'deopt-loop': deoptLoopExtraSchema,
+      'require-in-hot-path': requireInHotPathExtraSchema,
+      'excessive-gc': excessiveGcExtraSchema,
+      'event-loop-stall': eventLoopStallExtraSchema,
+      'cpu-bound-user-hotspot': cpuBoundUserHotspotExtraSchema,
+      'json-on-hot-path': jsonHotPathExtraSchema,
+      'node-modules-hotspot': nodeModulesHotspotExtraSchema,
+    } as const;
 
-  const extraSchema = schemaByCategory[category as keyof typeof schemaByCategory];
-  if (!extraSchema) {
-    if (extra !== undefined && (typeof extra !== 'object' || extra === null || Array.isArray(extra))) {
-      ctx.addIssue({
-        code: 'custom',
-        path: ['evidence', 'extra'],
-        message: 'custom finding evidence.extra must be a plain object when present',
-      });
+    const extraSchema = schemaByCategory[category as keyof typeof schemaByCategory];
+    if (!extraSchema) {
+      if (
+        extra !== undefined &&
+        (typeof extra !== 'object' || extra === null || Array.isArray(extra))
+      ) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['evidence', 'extra'],
+          message: 'custom finding evidence.extra must be a plain object when present',
+        });
+      }
+      return;
     }
-    return;
-  }
 
-  const parsed = extraSchema.safeParse(extra);
-  if (!parsed.success) {
-    for (const issue of parsed.error.issues) {
-      ctx.addIssue({
-        ...issue,
-        path: ['evidence', 'extra', ...issue.path],
-      });
+    const parsed = extraSchema.safeParse(extra);
+    if (!parsed.success) {
+      for (const issue of parsed.error.issues) {
+        ctx.addIssue({
+          ...issue,
+          path: ['evidence', 'extra', ...issue.path],
+        });
+      }
     }
-  }
-});
+  });
 
 // ---------------------------------------------------------------------------
 // Report section schemas — meta, summary, hotspots, stacks, gc, event-loop,
@@ -271,11 +273,7 @@ const summarySchema = z.object({
   gcRatio: z.number().finite(),
   idleRatio: z.number().finite(),
   topCategory: frameCategorySchema,
-  dominantBlockingKind: z.union([
-    z.literal('sync-crypto'),
-    z.literal('blocking-io'),
-    z.null(),
-  ]),
+  dominantBlockingKind: z.union([z.literal('sync-crypto'), z.literal('blocking-io'), z.null()]),
 });
 
 const hotspotRefSchema = z.object({
@@ -316,11 +314,13 @@ const gcReportSchema = z.object({
   totalPauseMs: z.number().finite(),
   count: gcCountSchema,
   longestPauseMs: z.number().finite(),
-  pausesOver10ms: z.array(z.object({
-    atMs: z.number().finite(),
-    kind: z.string(),
-    durationMs: z.number().finite(),
-  })),
+  pausesOver10ms: z.array(
+    z.object({
+      atMs: z.number().finite(),
+      kind: z.string(),
+      durationMs: z.number().finite(),
+    }),
+  ),
   correlatedHotspots: z.array(correlatedHotspotSchema).optional(),
 });
 

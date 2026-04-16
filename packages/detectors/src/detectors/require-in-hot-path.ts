@@ -1,13 +1,13 @@
-import type { BuiltinFinding, Finding, Hotspot, RequireInHotPathEvidenceExtra } from '@lanterna/core';
-import { defineBuiltinFinding } from '@lanterna/core';
+import type {
+  BuiltinFinding,
+  Finding,
+  Hotspot,
+  RequireInHotPathEvidenceExtra,
+} from '@lanterna/core';
+import { defineBuiltinFinding, stripOptPrefix } from '@lanterna/core';
+import { DETECTOR_THRESHOLDS, REQUIRE_PATTERNS } from '../config.js';
+import { buildAttributedFinding, buildAttributionEvidence, resolveAttribution } from './shared.js';
 import type { Detector, FindingContext } from './types.js';
-import { stripOptPrefix } from '@lanterna/core';
-import { REQUIRE_PATTERNS, DETECTOR_THRESHOLDS } from '../config.js';
-import {
-  buildAttributionEvidence,
-  buildAttributedFinding,
-  resolveAttribution,
-} from './shared.js';
 
 export const requireInHotPathDetector: Detector = {
   id: 'require-in-hot-path',
@@ -19,7 +19,8 @@ export const requireInHotPathDetector: Detector = {
       const normalizedFunctionName = stripOptPrefix(hotspot.function);
       if (!REQUIRE_PATTERNS.some((pattern) => pattern.test(normalizedFunctionName))) continue;
       if (hotspot.category !== 'node:builtin' && hotspot.category !== 'node_modules') continue;
-      if (hotspot.selfPct < thresholds.minSelfPct && hotspot.totalPct < thresholds.minTotalPct) continue;
+      if (hotspot.selfPct < thresholds.minSelfPct && hotspot.totalPct < thresholds.minTotalPct)
+        continue;
       findings.push(buildFinding(hotspot, context));
     }
     return findings;
@@ -35,19 +36,20 @@ function buildFinding(
     callee: hotspot.function,
     ...buildAttributionEvidence(attribution, caller),
   };
-  return defineBuiltinFinding(buildAttributedFinding({
-    id: `require-in-hot-path`,
-    severity: hotspot.selfPct > DETECTOR_THRESHOLDS.requireInHotPath.warningSelfPct ? 'warning' : 'info',
-    category: 'require-in-hot-path',
-    title: 'Module loading on hot path',
-    hotspot,
-    caller,
-    selfPct: hotspot.selfPct,
-    extra: evidenceExtra,
-    why: `\`${hotspot.function}\` is being called during request handling. Module resolution and graph loading are expensive and normally only happen once at startup; hitting them per request implies a lazy require/import inside a hot function.`,
-    suggestion: `Hoist the \`require(...)\` / \`await import(...)\` to module top-level (or to an init hook called once at boot). If you truly need lazy loading, memoise the result yourself.`,
-    references: [
-      'https://nodejs.org/api/modules.html#modulerequireid',
-    ],
-  }));
+  return defineBuiltinFinding(
+    buildAttributedFinding({
+      id: `require-in-hot-path`,
+      severity:
+        hotspot.selfPct > DETECTOR_THRESHOLDS.requireInHotPath.warningSelfPct ? 'warning' : 'info',
+      category: 'require-in-hot-path',
+      title: 'Module loading on hot path',
+      hotspot,
+      caller,
+      selfPct: hotspot.selfPct,
+      extra: evidenceExtra,
+      why: `\`${hotspot.function}\` is being called during request handling. Module resolution and graph loading are expensive and normally only happen once at startup; hitting them per request implies a lazy require/import inside a hot function.`,
+      suggestion: `Hoist the \`require(...)\` / \`await import(...)\` to module top-level (or to an init hook called once at boot). If you truly need lazy loading, memoise the result yourself.`,
+      references: ['https://nodejs.org/api/modules.html#modulerequireid'],
+    }),
+  );
 }

@@ -1,10 +1,6 @@
 import type { ChildProcess } from 'node:child_process';
 import { attachControlChannel } from '../../runtime-signals/control-channel.js';
-import type {
-  CaptureIntegrity,
-  EventLoopSample,
-  RawGcEvent,
-} from '../core/types.js';
+import type { CaptureIntegrity, EventLoopSample, RawGcEvent } from '../core/types.js';
 
 export interface SpawnLifecycleState {
   captureIntegrity: CaptureIntegrity;

@@ -71,7 +71,7 @@ lanterna run --detectors @acme/lanterna-detectors-prisma -- node app.js
 # From a local file (relative to the current working directory)
 lanterna run --detectors ./scripts/lanterna-plugin.mjs -- node app.js
 
-# Multiple plugins — the flag is repeatable
+# Multiple plugins - the flag is repeatable
 lanterna run \
   --detectors @acme/lanterna-detectors-prisma \
   --detectors ./scripts/lanterna-plugin.mjs \
@@ -104,5 +104,5 @@ If you need programmatic access, prefer `runProfile` / `attachProfile` from `@la
 
 ## Related packages
 
-- [`@lanterna/core`](../core) — headless capture + pipeline primitives.
-- [`@lanterna/detectors`](../detectors) — default detector pack + programmatic facades.
+- [`@lanterna/core`](../core) - headless capture + pipeline primitives.
+- [`@lanterna/detectors`](../detectors) - default detector pack + programmatic facades.

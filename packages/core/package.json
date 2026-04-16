@@ -17,7 +17,10 @@
   "scripts": {
     "prebuild": "node scripts/generate-version.js",
     "build": "tsc -b && node scripts/copy-assets.js",
-    "dev": "tsc -b --watch"
+    "dev": "tsc -b --watch",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "clean": "rm -rf dist .turbo .tsbuildinfo src/report/version.generated.ts"
   },
   "dependencies": {
     "chrome-remote-interface": "^0.34.0",
@@ -25,7 +28,7 @@
     "zod": "^4.3.6"
   },
   "engines": {
-    "node": "^24.0.0"
+    "node": ">=22.0.0"
   },
   "license": "MIT"
 }

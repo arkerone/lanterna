@@ -135,7 +135,8 @@ try {
     for (const entry of list.getEntries()) {
       const event = {
         atMs: entry.startTime,
-        kind: entry.detail && entry.detail.kind !== undefined ? gcKindName(entry.detail.kind) : 'other',
+        kind:
+          entry.detail && entry.detail.kind !== undefined ? gcKindName(entry.detail.kind) : 'other',
         durationMs: entry.duration,
       };
       gcEvents.push(event);
@@ -145,8 +146,12 @@ try {
   observer.observe({ entryTypes: ['gc'], buffered: false });
 
   globalThis.__LANTERNA_GC__ = {
-    read() { return gcEvents.slice(); },
-    clear() { gcEvents.length = 0; },
+    read() {
+      return gcEvents.slice();
+    },
+    clear() {
+      gcEvents.length = 0;
+    },
   };
 } catch {
   globalThis.__LANTERNA_GC__ = null;

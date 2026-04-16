@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
 import { buildLanternaReport } from '@lanterna/core';
+import { describe, expect, it } from 'vitest';
 import {
   createDefaultAnalysisPipeline,
   createFindingAnalyzerFromDetector,
@@ -16,22 +16,24 @@ const defaultOptions = {
 const alwaysDetector: Detector = {
   id: 'custom-test:always',
   detect() {
-    return [{
-      id: 'custom-test:always',
-      severity: 'info',
-      category: 'custom-test',
-      title: 'Custom always-on finding',
-      evidence: {
-        file: 'plugin-test',
-        line: 0,
-        function: 'always',
-        selfPct: 0,
-        extra: { source: 'plugin-test' },
+    return [
+      {
+        id: 'custom-test:always',
+        severity: 'info',
+        category: 'custom-test',
+        title: 'Custom always-on finding',
+        evidence: {
+          file: 'plugin-test',
+          line: 0,
+          function: 'always',
+          selfPct: 0,
+          extra: { source: 'plugin-test' },
+        },
+        why: 'Exercises the plugin pipeline.',
+        suggestion: 'No action required.',
+        references: [],
       },
-      why: 'Exercises the plugin pipeline.',
-      suggestion: 'No action required.',
-      references: [],
-    }];
+    ];
   },
 };
 

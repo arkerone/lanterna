@@ -4,17 +4,19 @@ import type {
   MeasurementBasis,
   MeasurementConfidence,
 } from '../../report/types.js';
-import { percentile } from '../../shared/percentile.js';
 import { HEARTBEAT_RESOLUTION_MS } from '../../shared/config.js';
+import { percentile } from '../../shared/percentile.js';
 
 export function buildEventLoopReport(raw: RawCapture): EventLoopReport {
   const hasTimedHeartbeats = raw.captureIntegrity.eventLoopTimed && raw.eventLoopSamples.length > 0;
-  const histogram = raw.eventLoopHistogram ? {
-    maxLagMs: raw.eventLoopHistogram.maxMs,
-    p99LagMs: raw.eventLoopHistogram.p99Ms,
-    p50LagMs: raw.eventLoopHistogram.p50Ms,
-    meanLagMs: raw.eventLoopHistogram.meanMs,
-  } : undefined;
+  const histogram = raw.eventLoopHistogram
+    ? {
+        maxLagMs: raw.eventLoopHistogram.maxMs,
+        p99LagMs: raw.eventLoopHistogram.p99Ms,
+        p50LagMs: raw.eventLoopHistogram.p50Ms,
+        meanLagMs: raw.eventLoopHistogram.meanMs,
+      }
+    : undefined;
   const measurementBasis = deriveMeasurementBasis(hasTimedHeartbeats, Boolean(histogram));
   const confidence = deriveMeasurementConfidence(measurementBasis);
 
@@ -33,12 +35,13 @@ export function buildEventLoopReport(raw: RawCapture): EventLoopReport {
   }
 
   const heartbeatSummary = hasTimedHeartbeats ? summarizeHeartbeatLag(raw) : undefined;
-  const metrics = histogram ?? heartbeatSummary ?? {
-    maxLagMs: 0,
-    p99LagMs: 0,
-    p50LagMs: 0,
-    meanLagMs: 0,
-  };
+  const metrics = histogram ??
+    heartbeatSummary ?? {
+      maxLagMs: 0,
+      p99LagMs: 0,
+      p50LagMs: 0,
+      meanLagMs: 0,
+    };
 
   return {
     maxLagMs: metrics.maxLagMs,
@@ -46,7 +49,9 @@ export function buildEventLoopReport(raw: RawCapture): EventLoopReport {
     p50LagMs: metrics.p50LagMs,
     meanLagMs: metrics.meanLagMs,
     sampleCount: raw.eventLoopSamples.length,
-    stallIntervals: hasTimedHeartbeats ? deriveStallIntervals(raw, raw.eventLoopResolutionMs ?? HEARTBEAT_RESOLUTION_MS) : [],
+    stallIntervals: hasTimedHeartbeats
+      ? deriveStallIntervals(raw, raw.eventLoopResolutionMs ?? HEARTBEAT_RESOLUTION_MS)
+      : [],
     available: true,
     measurementBasis,
     confidence,
@@ -82,12 +87,14 @@ function deriveStallIntervals(
   return mergeIntervals(intervals);
 }
 
-function summarizeHeartbeatLag(raw: RawCapture): {
-  maxLagMs: number;
-  p99LagMs: number;
-  p50LagMs: number;
-  meanLagMs: number;
-} | undefined {
+function summarizeHeartbeatLag(raw: RawCapture):
+  | {
+      maxLagMs: number;
+      p99LagMs: number;
+      p50LagMs: number;
+      meanLagMs: number;
+    }
+  | undefined {
   const trailingLagMs = inferTrailingLag(raw);
   const lagValues = raw.eventLoopSamples.map((sample) => sample.lagMs);
   if (trailingLagMs > 0) {
@@ -111,10 +118,7 @@ function inferTrailingLag(raw: RawCapture): number {
   return Math.max(0, raw.durationMs - lastSampleAtMs - resolutionMs);
 }
 
-function deriveMeasurementBasis(
-  hasHeartbeats: boolean,
-  hasHistogram: boolean,
-): MeasurementBasis {
+function deriveMeasurementBasis(hasHeartbeats: boolean, hasHistogram: boolean): MeasurementBasis {
   if (hasHeartbeats && hasHistogram) return 'both';
   if (hasHeartbeats) return 'heartbeats';
   if (hasHistogram) return 'histogram';

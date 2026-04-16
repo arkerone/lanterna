@@ -1,5 +1,5 @@
-import ora from 'ora';
 import chalk from 'chalk';
+import ora from 'ora';
 
 export interface ActivityIndicator {
   update(message: string): void;

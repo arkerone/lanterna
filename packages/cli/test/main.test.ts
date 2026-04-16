@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { ATTACH_HELP, GLOBAL_HELP, RUN_HELP, main } from '../src/main.js';
+import { ATTACH_HELP, GLOBAL_HELP, main, RUN_HELP } from '../src/main.js';
 
 describe('main help routing', () => {
   let stdoutWrite: ReturnType<typeof vi.spyOn>;

@@ -1,7 +1,7 @@
-import { describe, expect, it } from 'vitest';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { describe, expect, it } from 'vitest';
 import { loadLanternaConfig } from '../src/config.js';
 
 async function withTempDir<T>(fn: (dir: string) => Promise<T>): Promise<T> {
@@ -51,10 +51,7 @@ describe('loadLanternaConfig', () => {
 
   it('throws on invalid schema', async () => {
     await withTempDir(async (dir) => {
-      await writeFile(
-        join(dir, '.lanterna.json'),
-        JSON.stringify({ detectors: [1, 2, 3] }),
-      );
+      await writeFile(join(dir, '.lanterna.json'), JSON.stringify({ detectors: [1, 2, 3] }));
       await expect(loadLanternaConfig(dir)).rejects.toThrow(/Invalid .lanterna.json/);
     });
   });

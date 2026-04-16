@@ -1,11 +1,11 @@
-import { describe, it } from 'vitest';
 import assert from 'node:assert/strict';
-import { execFile, spawn, type ChildProcess } from 'node:child_process';
-import { tmpdir } from 'node:os';
-import { promisify } from 'node:util';
-import { fileURLToPath } from 'node:url';
-import { dirname, resolve, join } from 'node:path';
+import { type ChildProcess, execFile, spawn } from 'node:child_process';
 import { mkdtemp, readFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { promisify } from 'node:util';
+import { describe, it } from 'vitest';
 
 const execFileAsync = promisify(execFile);
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -29,11 +29,11 @@ async function inspectorSupported(): Promise<boolean> {
 
 async function detectInspectorSupport(): Promise<boolean> {
   try {
-    const { stderr } = await execFileAsync(
-      'node',
-      ['--inspect=0', '-e', ''],
-      { cwd: repoRoot, timeout: 5_000, maxBuffer: 1024 * 1024 },
-    );
+    const { stderr } = await execFileAsync('node', ['--inspect=0', '-e', ''], {
+      cwd: repoRoot,
+      timeout: 5_000,
+      maxBuffer: 1024 * 1024,
+    });
     return /Debugger listening on ws:\/\//.test(stderr);
   } catch (err) {
     return /Debugger listening on ws:\/\//.test(String((err as ExecFileFailure).stderr ?? ''));
@@ -44,11 +44,11 @@ async function expectInspectorFailure(args: string[]): Promise<void> {
   let failure: ExecFileFailure | undefined;
   const startedAt = Date.now();
   try {
-    await execFileAsync(
-      'node',
-      [binPath, ...args],
-      { cwd: repoRoot, timeout: 10_000, maxBuffer: 1024 * 1024 * 4 },
-    );
+    await execFileAsync('node', [binPath, ...args], {
+      cwd: repoRoot,
+      timeout: 10_000,
+      maxBuffer: 1024 * 1024 * 4,
+    });
   } catch (err) {
     failure = err as ExecFileFailure;
   }
@@ -56,7 +56,10 @@ async function expectInspectorFailure(args: string[]): Promise<void> {
   assert.ok(failure, 'expected lanterna run to fail when inspector is unavailable');
   assert.equal(failure.code, 1);
   assert.equal(failure.killed, false);
-  assert.ok(Date.now() - startedAt < 8_000, 'unsupported inspector runs should fail within the inspector startup window');
+  assert.ok(
+    Date.now() - startedAt < 8_000,
+    'unsupported inspector runs should fail within the inspector startup window',
+  );
   const stderr = String(failure.stderr ?? '');
   if (stderr.length > 0) {
     assert.match(
@@ -74,7 +77,7 @@ async function pidAttachSupportedInEnvironment(): Promise<boolean> {
   try {
     const response = await fetch('http://127.0.0.1:9229/json/list');
     if (!response.ok) return true;
-    const targets = await response.json() as Array<{ webSocketDebuggerUrl?: string }>;
+    const targets = (await response.json()) as Array<{ webSocketDebuggerUrl?: string }>;
     return targets.length === 0;
   } catch {
     return true;
@@ -129,7 +132,9 @@ async function waitForInspectorUrl(child: ChildProcess, timeoutMs = 5_000): Prom
     };
 
     const onExit = (code: number | null, signal: NodeJS.Signals | null) => {
-      rejectOnce(new Error(`fixture exited before inspector was ready (code=${code}, signal=${signal})`));
+      rejectOnce(
+        new Error(`fixture exited before inspector was ready (code=${code}, signal=${signal})`),
+      );
     };
 
     const onError = (err: Error) => rejectOnce(err);
@@ -212,8 +217,15 @@ function isPidAlive(pid: number | undefined): boolean {
 
 describe('live profiling', () => {
   it('supports the no-duration path on a short-lived process', async () => {
-    if (!await inspectorSupported()) {
-      await expectInspectorFailure(['run', '--pretty', '--', 'node', '-e', 'let x=0; for (let i=0;i<5e6;i++) x+=i;']);
+    if (!(await inspectorSupported())) {
+      await expectInspectorFailure([
+        'run',
+        '--pretty',
+        '--',
+        'node',
+        '-e',
+        'let x=0; for (let i=0;i<5e6;i++) x+=i;',
+      ]);
       return;
     }
 
@@ -230,14 +242,31 @@ describe('live profiling', () => {
   });
 
   it('captures real event-loop stalls and correlated hotspots', async () => {
-    if (!await inspectorSupported()) {
-      await expectInspectorFailure(['run', '--duration', '1200ms', '--pretty', '--', 'node', resolve(fixturesDir, 'event-loop-stall-app.mjs')]);
+    if (!(await inspectorSupported())) {
+      await expectInspectorFailure([
+        'run',
+        '--duration',
+        '1200ms',
+        '--pretty',
+        '--',
+        'node',
+        resolve(fixturesDir, 'event-loop-stall-app.mjs'),
+      ]);
       return;
     }
 
     const { stdout } = await execFileAsync(
       'node',
-      [binPath, 'run', '--duration', '1200ms', '--pretty', '--', 'node', resolve(fixturesDir, 'event-loop-stall-app.mjs')],
+      [
+        binPath,
+        'run',
+        '--duration',
+        '1200ms',
+        '--pretty',
+        '--',
+        'node',
+        resolve(fixturesDir, 'event-loop-stall-app.mjs'),
+      ],
       { cwd: repoRoot, timeout: 10_000, maxBuffer: 1024 * 1024 * 4 },
     );
 
@@ -250,36 +279,58 @@ describe('live profiling', () => {
   });
 
   it('attributes sync crypto findings to the user caller on live runs', async () => {
-    if (!await inspectorSupported()) {
-      await expectInspectorFailure(['run', '--duration', '1200ms', '--pretty', '--', 'node', resolve(fixturesDir, 'sync-crypto-app.mjs')]);
+    if (!(await inspectorSupported())) {
+      await expectInspectorFailure([
+        'run',
+        '--duration',
+        '1200ms',
+        '--pretty',
+        '--',
+        'node',
+        resolve(fixturesDir, 'sync-crypto-app.mjs'),
+      ]);
       return;
     }
 
     const { stdout } = await execFileAsync(
       'node',
-      [binPath, 'run', '--duration', '1200ms', '--pretty', '--', 'node', resolve(fixturesDir, 'sync-crypto-app.mjs')],
+      [
+        binPath,
+        'run',
+        '--duration',
+        '1200ms',
+        '--pretty',
+        '--',
+        'node',
+        resolve(fixturesDir, 'sync-crypto-app.mjs'),
+      ],
       { cwd: repoRoot, timeout: 10_000, maxBuffer: 1024 * 1024 * 4 },
     );
 
     const report = JSON.parse(stdout);
-    const finding = report.findings.find((candidate: { id: string }) => candidate.id === 'sync-crypto-on-hot-path');
+    const finding = report.findings.find(
+      (candidate: { id: string }) => candidate.id === 'sync-crypto-on-hot-path',
+    );
     assert.ok(finding, 'expected sync-crypto-on-hot-path finding');
     assert.match(finding.evidence.function, /hashPassword/);
     assert.equal(finding.evidence.extra.attributionConfidence, 'high');
     assert.equal(finding.evidence.extra.proofLevel, 'attributed-caller');
     assert.ok(
-      report.eventLoop.measurementBasis === 'none'
-      || report.eventLoop.measurementBasis === 'histogram'
-      || report.eventLoop.measurementBasis === 'both',
+      report.eventLoop.measurementBasis === 'none' ||
+        report.eventLoop.measurementBasis === 'histogram' ||
+        report.eventLoop.measurementBasis === 'both',
     );
   });
 
   it('attaches to an existing inspector URL', async () => {
-    if (!await inspectorSupported()) {
+    if (!(await inspectorSupported())) {
       return;
     }
 
-    const child = await spawnFixture(['--inspect=0', resolve(fixturesDir, 'event-loop-stall-app.mjs')]);
+    const child = await spawnFixture([
+      '--inspect=0',
+      resolve(fixturesDir, 'event-loop-stall-app.mjs'),
+    ]);
     const wsUrl = await waitForInspectorUrl(child);
 
     try {
@@ -302,7 +353,7 @@ describe('live profiling', () => {
   });
 
   it('attaches to an existing pid via SIGUSR1', async () => {
-    if (!await inspectorSupported() || !await pidAttachSupportedInEnvironment()) {
+    if (!(await inspectorSupported()) || !(await pidAttachSupportedInEnvironment())) {
       return;
     }
 
@@ -327,7 +378,7 @@ describe('live profiling', () => {
   });
 
   it('writes a report and stops the spawned target on SIGINT', async () => {
-    if (!await inspectorSupported()) {
+    if (!(await inspectorSupported())) {
       return;
     }
 
@@ -345,7 +396,7 @@ describe('live profiling', () => {
   });
 
   it('loads an external detector plugin via --detectors', async () => {
-    if (!await inspectorSupported()) {
+    if (!(await inspectorSupported())) {
       return;
     }
 
@@ -374,11 +425,14 @@ describe('live profiling', () => {
   });
 
   it('writes a single JSON file on SIGTERM in attach mode and keeps the target alive', async () => {
-    if (!await inspectorSupported()) {
+    if (!(await inspectorSupported())) {
       return;
     }
 
-    const child = await spawnFixture(['--inspect=0', resolve(fixturesDir, 'event-loop-stall-app.mjs')]);
+    const child = await spawnFixture([
+      '--inspect=0',
+      resolve(fixturesDir, 'event-loop-stall-app.mjs'),
+    ]);
     const wsUrl = await waitForInspectorUrl(child);
     const outputDir = await mkdtemp(join(tmpdir(), 'lanterna-live-'));
     const outputPath = join(outputDir, 'attach-report.json');

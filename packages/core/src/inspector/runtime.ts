@@ -1,6 +1,6 @@
 import type { TargetInfo } from '../capture/core/types.js';
-import type { CdpClient } from './client.js';
 import { targetInfoSchema } from '../runtime-signals/schemas.js';
+import type { CdpClient } from './client.js';
 
 const MARK_CAPTURE_START_EXPRESSION = 'globalThis.__LANTERNA_EVENT_LOOP__?.markCaptureStart?.()';
 const READ_RUNTIME_CLOCK_EXPRESSION = 'performance.now()';

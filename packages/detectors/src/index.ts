@@ -1,33 +1,33 @@
 export { analyzeCapture, createDefaultAnalysisPipeline } from './analyze-capture.js';
-export { runProfile, attachProfile } from './profile.js';
 export type {
-  RunProfileOptions,
-  AttachProfileOptions,
-  RunProgressEvent,
-  AttachProgressEvent,
-} from './profile.js';
+  BlockingThresholds,
+  DetectorThresholds,
+  EventLoopThresholds,
+  GcThresholds,
+} from './config.js';
+export { DETECTOR_THRESHOLDS } from './config.js';
 export {
-  DETECTORS as defaultDetectors,
   createBuiltInFindingAnalyzers,
+  DETECTORS as defaultDetectors,
 } from './detectors/index.js';
-export type { Detector, FindingContext } from './detectors/types.js';
 export {
-  createFindingAnalyzerFromDetector,
-  buildFindingContext,
-} from './plugin.js';
+  buildAttributedFinding,
+  buildAttributionEvidence,
+  resolveAttribution,
+} from './detectors/shared.js';
+export type { Detector, FindingContext } from './detectors/types.js';
 export type {
   LanternaDetectorPlugin,
   LanternaPluginContext,
 } from './plugin.js';
 export {
-  buildAttributedFinding,
-  resolveAttribution,
-  buildAttributionEvidence,
-} from './detectors/shared.js';
-export { DETECTOR_THRESHOLDS } from './config.js';
+  buildFindingContext,
+  createFindingAnalyzerFromDetector,
+} from './plugin.js';
 export type {
-  DetectorThresholds,
-  BlockingThresholds,
-  GcThresholds,
-  EventLoopThresholds,
-} from './config.js';
+  AttachProfileOptions,
+  AttachProgressEvent,
+  RunProfileOptions,
+  RunProgressEvent,
+} from './profile.js';
+export { attachProfile, runProfile } from './profile.js';
