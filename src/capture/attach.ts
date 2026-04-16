@@ -25,8 +25,25 @@ interface InstallAttachRuntimeResult {
 
 export class AttachSource implements ProfileSource<AttachStartOptions> {
   async start(options: AttachStartOptions): Promise<CaptureHandle> {
+    options.onProgress?.({
+      stage: 'resolve-target',
+      message: options.inspectUrl
+        ? 'Using the inspector endpoint provided via --inspect-url.'
+        : `Resolving an attachable inspector endpoint for pid ${options.pid ?? 'unknown'}...`,
+    });
+
     const webSocketDebuggerUrl = options.inspectUrl
-      ?? await openInspectorForPid(options.pid ?? -1);
+      ?? await openInspectorForPid(options.pid ?? -1, (message) => {
+        options.onProgress?.({
+          stage: 'inspector-ready',
+          message,
+        });
+      });
+
+    options.onProgress?.({
+      stage: 'connect-cdp',
+      message: 'Connecting to the Chrome DevTools Protocol endpoint...',
+    });
     const cdp = await connectCdp(webSocketDebuggerUrl);
 
     let stopPromise: Promise<RawCapture> | null = null;
@@ -39,7 +56,15 @@ export class AttachSource implements ProfileSource<AttachStartOptions> {
     });
 
     try {
+      options.onProgress?.({
+        stage: 'install-hooks',
+        message: 'Installing Lanterna runtime hooks on the target process...',
+      });
       await installAttachRuntimeHook(cdp);
+      options.onProgress?.({
+        stage: 'start-capture',
+        message: 'Starting CPU capture and synchronizing runtime clocks...',
+      });
       const session = await startCaptureSession(cdp, options.sampleIntervalMicros, {
         pid: options.pid,
       });

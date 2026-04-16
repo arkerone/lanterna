@@ -1,5 +1,9 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { parseAttachArgs, parseRunArgs } from '../src/cli/parse.js';
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 describe('parseRunArgs', () => {
   it('parses the target command after `--` and preserves profiling options', () => {
@@ -28,6 +32,16 @@ describe('parseRunArgs', () => {
     expect(() => parseRunArgs(['--watch', 'node', 'server.mjs'])).toThrow(
       'unknown option "--watch" (did you forget "--" before the target command?)',
     );
+  });
+
+  it('does not leak commander stderr output for unknown options', () => {
+    const stderrWrite = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+
+    expect(() => parseRunArgs(['--watch', 'node', 'server.mjs'])).toThrow(
+      'unknown option "--watch" (did you forget "--" before the target command?)',
+    );
+
+    expect(stderrWrite).not.toHaveBeenCalled();
   });
 
   it('rejects missing target commands', () => {
@@ -82,13 +96,36 @@ describe('parseAttachArgs', () => {
       'ws://127.0.0.1:9229/test',
       '--duration',
       '1s',
-    ])).toThrow('`lanterna attach` requires exactly one of --pid or --inspect-url');
+    ])).toThrow('`lanterna attach` accepts at most one of --pid or --inspect-url');
   });
 
-  it('rejects attach without duration', () => {
-    expect(() => parseAttachArgs(['--pid', '42'])).toThrow(
-      '`lanterna attach` requires --duration so the capture can stop without controlling the target process',
-    );
+  it('accepts attach without an explicit target so the CLI can prompt interactively', () => {
+    expect(
+      parseAttachArgs(['--pid', '--pretty']),
+    ).toEqual({
+      promptForTarget: true,
+      pretty: true,
+      sampleIntervalMicros: 1000,
+    });
+  });
+
+  it('accepts attach without duration for manual-stop mode', () => {
+    expect(
+      parseAttachArgs(['--pid', '42']),
+    ).toEqual({
+      pid: 42,
+      pretty: false,
+      sampleIntervalMicros: 1000,
+    });
+  });
+
+  it('does not prompt interactively for bare attach anymore', () => {
+    expect(
+      parseAttachArgs([]),
+    ).toEqual({
+      pretty: false,
+      sampleIntervalMicros: 1000,
+    });
   });
 
   it('rejects invalid pid values and unsupported deep mode', () => {

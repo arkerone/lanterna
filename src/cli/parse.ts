@@ -13,7 +13,8 @@ export interface RunProfileOptions {
 export interface AttachProfileOptions {
   pid?: number;
   inspectUrl?: string;
-  durationMs: number;
+  promptForTarget?: boolean;
+  durationMs?: number;
   output?: string;
   pretty: boolean;
   sampleIntervalMicros: number;
@@ -56,31 +57,29 @@ export function parseAttachArgs(args: string[]): AttachProfileOptions {
     output?: string;
     pretty?: boolean;
     sampleInterval?: number;
-    pid?: number;
+    pid?: number | true;
     inspectUrl?: string;
   }>();
 
-  if (parsed.duration === undefined) {
-    throw new Error('`lanterna attach` requires --duration so the capture can stop without controlling the target process');
-  }
-
-  const targetCount = Number(parsed.pid !== undefined) + Number(Boolean(parsed.inspectUrl));
-  if (targetCount !== 1) {
-    throw new Error('`lanterna attach` requires exactly one of --pid or --inspect-url');
+  const promptForTarget = parsed.pid === true;
+  const targetCount = Number(parsed.pid !== undefined && parsed.pid !== true) + Number(Boolean(parsed.inspectUrl));
+  if (targetCount > 1) {
+    throw new Error('`lanterna attach` accepts at most one of --pid or --inspect-url');
   }
 
   return {
-    durationMs: parsed.duration,
+    ...(parsed.duration !== undefined ? { durationMs: parsed.duration } : {}),
     pretty: Boolean(parsed.pretty),
     sampleIntervalMicros: parsed.sampleInterval ?? DEFAULT_SAMPLE_INTERVAL_MICROS,
-    ...(parsed.pid !== undefined ? { pid: parsed.pid } : {}),
+    ...(parsed.pid !== undefined && parsed.pid !== true ? { pid: parsed.pid } : {}),
+    ...(promptForTarget ? { promptForTarget: true } : {}),
     ...(parsed.inspectUrl ? { inspectUrl: parsed.inspectUrl } : {}),
     ...(parsed.output ? { output: parsed.output } : {}),
   };
 }
 
 function createRunParser(): Command {
-  return new Command('run')
+  return createBaseParser('run')
     .allowUnknownOption(false)
     .option('--duration <value>', 'Profiling duration', parseDuration)
     .option('--output, -o <path>', 'Write JSON report to path')
@@ -90,15 +89,23 @@ function createRunParser(): Command {
 }
 
 function createAttachParser(): Command {
-  return new Command('attach')
+  return createBaseParser('attach')
     .allowUnknownOption(false)
     .option('--duration <value>', 'Profiling duration', parseDuration)
     .option('--output, -o <path>', 'Write JSON report to path')
     .option('--pretty', 'Pretty-print JSON')
     .option('--sample-interval <us>', 'V8 sample interval in microseconds', parseSampleInterval, DEFAULT_SAMPLE_INTERVAL_MICROS)
-    .option('--pid <pid>', 'Attach to an existing Node.js pid', parsePid)
+    .option('--pid [pid]', 'Attach to an existing Node.js pid, or open the interactive picker if no pid is provided', parseOptionalPid)
     .option('--inspect-url <url>', 'Attach to an existing inspector WebSocket URL')
     .option('--deep', 'Unsupported in attach mode');
+}
+
+function createBaseParser(name: string): Command {
+  return new Command(name).configureOutput({
+    writeErr() {
+      // Lanterna normalizes parser failures itself.
+    },
+  });
 }
 
 function parseCommand(command: Command, args: string[]): void {
@@ -163,6 +170,11 @@ function parsePid(value: string): number {
     throw new CommanderError(1, 'lanterna.invalidPid', `invalid --pid: ${value}`);
   }
   return parsed;
+}
+
+function parseOptionalPid(value: string | undefined): number | true {
+  if (value === undefined) return true;
+  return parsePid(value);
 }
 
 export type RunOptions = RunProfileOptions;

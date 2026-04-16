@@ -7,6 +7,7 @@ const INSPECTOR_DISCOVERY_TIMEOUT_MS = 5_000;
 const INSPECTOR_DISCOVERY_INTERVAL_MS = 100;
 const DEFAULT_INSPECTOR_DISCOVERY_PORT = 9229;
 const INSPECTOR_DISCOVERY_PORT_RANGE = 10;
+const INSPECTOR_DISCOVERY_PORT_END = DEFAULT_INSPECTOR_DISCOVERY_PORT + INSPECTOR_DISCOVERY_PORT_RANGE - 1;
 
 const inspectorTargetSchema = z.object({
   id: z.string().optional(),
@@ -24,7 +25,10 @@ export interface InspectorTargetDescriptor {
   url?: string;
 }
 
-export async function openInspectorForPid(pid: number): Promise<string> {
+export async function openInspectorForPid(
+  pid: number,
+  onProgress?: (message: string) => void,
+): Promise<string> {
   if (!Number.isInteger(pid) || pid <= 0) {
     throw new Error(`invalid --pid: ${pid}`);
   }
@@ -32,12 +36,15 @@ export async function openInspectorForPid(pid: number): Promise<string> {
     throw new Error('`lanterna attach --pid` is not supported on Windows; use --inspect-url instead');
   }
 
+  onProgress?.(`Checking whether pid ${pid} already exposes a CDP inspector endpoint...`);
   const existingTargets = await readInspectorTargets();
   const existingTarget = await findInspectorTargetByPid(existingTargets, pid);
   if (existingTarget?.webSocketDebuggerUrl) {
+    onProgress?.(`Found an existing CDP inspector endpoint for pid ${pid}.`);
     return existingTarget.webSocketDebuggerUrl;
   }
 
+  onProgress?.(`No inspector endpoint found in the default scan range for pid ${pid}. Requesting Node to open one via SIGUSR1...`);
   try {
     process.kill(pid, 'SIGUSR1');
   } catch (error) {
@@ -46,9 +53,11 @@ export async function openInspectorForPid(pid: number): Promise<string> {
 
   const startedAt = Date.now();
   while (Date.now() - startedAt < INSPECTOR_DISCOVERY_TIMEOUT_MS) {
+    onProgress?.(`Waiting for pid ${pid} to expose its CDP inspector endpoint...`);
     const targets = await readInspectorTargets();
     const target = await findInspectorTargetByPid(targets, pid);
     if (target?.webSocketDebuggerUrl) {
+      onProgress?.(`Inspector endpoint is ready for pid ${pid}.`);
       return target.webSocketDebuggerUrl;
     }
     await sleep(INSPECTOR_DISCOVERY_INTERVAL_MS);
@@ -56,8 +65,32 @@ export async function openInspectorForPid(pid: number): Promise<string> {
 
   throw new Error(
     `timed out waiting for inspector on pid ${pid}. `
-    + 'Ensure the process is Node.js and that port 9229 is available, or pass --inspect-url.',
+    + `Ensure the process is Node.js and that an inspector can bind within ${DEFAULT_INSPECTOR_DISCOVERY_PORT}-${INSPECTOR_DISCOVERY_PORT_END}, or pass --inspect-url.`,
   );
+}
+
+export async function findExistingInspectorTargetByPid(
+  pid: number,
+): Promise<InspectorTargetDescriptor | undefined> {
+  const targets = await readInspectorTargets();
+  return findInspectorTargetByPid(targets, pid);
+}
+
+export async function readInspectableTargetsByPid(): Promise<Map<number, InspectorTargetDescriptor>> {
+  const targets = await readInspectorTargets();
+  const targetsByPid = new Map<number, InspectorTargetDescriptor>();
+
+  for (const target of targets) {
+    const webSocketDebuggerUrl = target.webSocketDebuggerUrl;
+    if (!webSocketDebuggerUrl) continue;
+
+    const targetPid = await readPidForInspectorUrl(webSocketDebuggerUrl);
+    if (targetPid !== undefined) {
+      targetsByPid.set(targetPid, target);
+    }
+  }
+
+  return targetsByPid;
 }
 
 export async function readInspectorTargets(): Promise<InspectorTargetDescriptor[]> {
@@ -96,13 +129,20 @@ async function inspectorUrlMatchesPid(
   webSocketDebuggerUrl: string,
   pid: number,
 ): Promise<boolean> {
+  const targetPid = await readPidForInspectorUrl(webSocketDebuggerUrl);
+  return targetPid === pid;
+}
+
+async function readPidForInspectorUrl(
+  webSocketDebuggerUrl: string,
+): Promise<number | undefined> {
   let cdp;
   try {
     cdp = await connectCdp(webSocketDebuggerUrl);
     const targetInfo = await fetchTargetInfo(cdp);
-    return targetInfo.pid === pid;
+    return targetInfo.pid;
   } catch {
-    return false;
+    return undefined;
   } finally {
     await cdp?.close().catch(() => {});
   }

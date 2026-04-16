@@ -8,12 +8,34 @@ export interface SpawnStartOptions {
   command: string[];
   sampleIntervalMicros: number;
   deep: boolean;
+  onProgress?: (event: {
+    stage:
+      | 'spawn-target'
+      | 'wait-inspector'
+      | 'connect-cdp'
+      | 'prepare-runtime'
+      | 'start-capture'
+      | 'capture-running'
+      | 'finalize-capture';
+    message: string;
+  }) => void;
 }
 
 export interface AttachStartOptions {
   pid?: number;
   inspectUrl?: string;
   sampleIntervalMicros: number;
+  onProgress?: (event: {
+    stage:
+      | 'resolve-target'
+      | 'inspector-ready'
+      | 'connect-cdp'
+      | 'install-hooks'
+      | 'start-capture'
+      | 'capture-running'
+      | 'finalize-capture';
+    message: string;
+  }) => void;
 }
 
 export type TargetInfo = ParsedTargetInfo & { pid: number };

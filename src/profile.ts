@@ -18,21 +18,54 @@ export interface RunProfileOptions {
 export interface AttachProfileOptions {
   pid?: number;
   inspectUrl?: string;
-  durationMs: number;
+  promptForTarget?: boolean;
+  durationMs?: number;
   output?: string;
   pretty: boolean;
   sampleIntervalMicros: number;
 }
 
-export async function runProfile(options: RunProfileOptions): Promise<LanternaReport> {
+export type AttachProgressEvent =
+  | { stage: 'resolve-target'; message: string }
+  | { stage: 'inspector-ready'; message: string }
+  | { stage: 'connect-cdp'; message: string }
+  | { stage: 'install-hooks'; message: string }
+  | { stage: 'start-capture'; message: string }
+  | { stage: 'capture-running'; message: string }
+  | { stage: 'finalize-capture'; message: string };
+
+export type RunProgressEvent =
+  | { stage: 'spawn-target'; message: string }
+  | { stage: 'wait-inspector'; message: string }
+  | { stage: 'connect-cdp'; message: string }
+  | { stage: 'prepare-runtime'; message: string }
+  | { stage: 'start-capture'; message: string }
+  | { stage: 'capture-running'; message: string }
+  | { stage: 'finalize-capture'; message: string };
+
+export async function runProfile(
+  options: RunProfileOptions,
+  onProgress?: (event: RunProgressEvent) => void,
+): Promise<LanternaReport> {
   const handle = await startSpawnCapture({
     command: options.command,
     sampleIntervalMicros: options.sampleIntervalMicros,
     deep: options.deep,
+    onProgress,
   });
 
+  onProgress?.({
+    stage: 'capture-running',
+    message: options.durationMs === undefined
+      ? 'CPU profiling is running until the child exits...'
+      : `CPU profiling is running for ${options.durationMs}ms...`,
+  });
   const stopReason = await waitForStopReason(handle, options.durationMs);
 
+  onProgress?.({
+    stage: 'finalize-capture',
+    message: 'Stopping the profiler and collecting the final samples...',
+  });
   const rawCapture = await handle.stop();
   const analysis = analyzeCapture(rawCapture, {
     sampleIntervalMicros: options.sampleIntervalMicros,
@@ -55,15 +88,30 @@ export async function runProfile(options: RunProfileOptions): Promise<LanternaRe
   return report;
 }
 
-export async function attachProfile(options: AttachProfileOptions): Promise<LanternaReport> {
+export async function attachProfile(
+  options: AttachProfileOptions,
+  onProgress?: (event: AttachProgressEvent) => void,
+): Promise<LanternaReport> {
   const handle = await startAttachCapture({
     pid: options.pid,
     inspectUrl: options.inspectUrl,
     sampleIntervalMicros: options.sampleIntervalMicros,
+    onProgress,
+  });
+
+  onProgress?.({
+    stage: 'capture-running',
+    message: options.durationMs === undefined
+      ? 'CPU profiling is running. Stop with Ctrl+C or wait for the process to exit.'
+      : `CPU profiling is running for ${options.durationMs}ms...`,
   });
 
   const stopReason = await waitForStopReason(handle, options.durationMs);
 
+  onProgress?.({
+    stage: 'finalize-capture',
+    message: 'Stopping the profiler and collecting the final samples...',
+  });
   const rawCapture = await handle.stop();
   const analysis = analyzeCapture(rawCapture, {
     sampleIntervalMicros: options.sampleIntervalMicros,
