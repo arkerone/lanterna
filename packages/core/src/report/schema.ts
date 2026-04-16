@@ -1,5 +1,9 @@
 import { z } from 'zod';
 
+// ---------------------------------------------------------------------------
+// Shared primitives — enums and value types reused across the schema
+// ---------------------------------------------------------------------------
+
 const findingSeveritySchema = z.enum(['info', 'warning', 'critical']);
 const measurementBasisSchema = z.enum(['none', 'heartbeats', 'histogram', 'both']);
 const measurementConfidenceSchema = z.enum(['none', 'low', 'high']);
@@ -14,6 +18,10 @@ const frameCategorySchema = z.enum([
   'unknown',
 ]);
 const optimizationStateSchema = z.enum(['optimized', 'interpreted', 'unknown']);
+
+// ---------------------------------------------------------------------------
+// Attribution & correlation building blocks
+// ---------------------------------------------------------------------------
 
 const hotspotAttributionSchema = z.object({
   hotspotId: z.string().min(1),
@@ -74,6 +82,10 @@ const stallIntervalSchema = z.object({
   endMs: z.number().finite(),
   maxLagMs: z.number().finite(),
 });
+
+// ---------------------------------------------------------------------------
+// Finding evidence extras — one schema per builtin finding category
+// ---------------------------------------------------------------------------
 
 const blockingIoExtraSchema = attributionEvidenceSchema.extend({
   api: z.string().min(1),
@@ -147,6 +159,10 @@ const nodeModulesHotspotExtraSchema = attributionEvidenceSchema.extend({
   alternativeHotspots: z.array(alternativeHotspotEvidenceSchema).optional(),
 });
 
+// ---------------------------------------------------------------------------
+// Finding schema — validates category-extra consistency via superRefine
+// ---------------------------------------------------------------------------
+
 const builtinFindingExtraSchema = z.union([
   blockingIoExtraSchema,
   syncCryptoExtraSchema,
@@ -216,6 +232,11 @@ const findingSchema = z.object({
     }
   }
 });
+
+// ---------------------------------------------------------------------------
+// Report section schemas — meta, summary, hotspots, stacks, gc, event-loop,
+// deopts. Combined into the root schema at the bottom.
+// ---------------------------------------------------------------------------
 
 const metaSchema = z.object({
   nodeVersion: z.string().min(1),
@@ -326,6 +347,10 @@ const deoptEntrySchema = z.object({
   count: z.number().int().nonnegative(),
   explanation: z.string(),
 });
+
+// ---------------------------------------------------------------------------
+// Root schema — validates the complete LanternaReport JSON
+// ---------------------------------------------------------------------------
 
 export const lanternaReportSchema = z.object({
   meta: metaSchema,
