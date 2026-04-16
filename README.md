@@ -34,7 +34,7 @@
 
 | Environment | Minimum version | Why |
 | --- | --- | --- |
-| Node.js running Lanterna itself | `>= 24` | Matches `engines.node` on every `@lanterna/*` package. |
+| Node.js running Lanterna itself | `>= 22` | Current LTS lines (22, 24). `engines.node` is `>=22.0.0` on every `@lanterna/*` package. |
 | Node.js running the **profiled program** | `>= 12` | Needs `monitorEventLoopDelay` (≥ 11.10) and `PerformanceObserver` with `gc` entries (≥ 11.13). Any active LTS works. |
 
 The profiled target must run on Node.js with inspector support.

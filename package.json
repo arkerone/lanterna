@@ -16,7 +16,7 @@
     "prepare": "husky"
   },
   "engines": {
-    "node": "^24.0.0"
+    "node": ">=22.0.0"
   },
   "lint-staged": {
     "*.{ts,js,cjs,mjs,json,jsonc,md}": [
