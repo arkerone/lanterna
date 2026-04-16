@@ -76,6 +76,8 @@ lanterna attach --inspect-url ws://127.0.0.1:9229/<uuid> --duration 15s --pretty
 
 `--duration` accepts `ms`, `s`, or `m`. If omitted, Lanterna profiles until the child process exits. In `attach` mode, `--duration` is required.
 
+While a capture is running, `Ctrl+C` or `SIGTERM` stops profiling early and still produces the final JSON report. In `run` mode Lanterna also stops the spawned target process; in `attach` mode it only stops the profiling session and leaves the target running.
+
 ## CLI Reference
 
 ```text
@@ -101,6 +103,7 @@ Notes:
 - `lanterna attach` requires exactly one of `--pid` or `--inspect-url`.
 - `lanterna attach` requires `--duration`.
 - `lanterna attach` does not support `--deep`; attach mode cannot enable V8 deopt tracing on a process that is already running.
+- `SIGINT` and `SIGTERM` stop the capture early and still emit the report. A successful manual stop exits with code `0`.
 
 ## `lanterna attach`
 
@@ -115,6 +118,7 @@ Behavior:
 - `meta.command` is `[]` because Lanterna did not launch the process itself.
 - `meta.captureIntegrity.controlChannel` is `false` by design because attach mode does not have the spawn-mode FD 3 control pipe.
 - `deopts[]` remains empty because attach mode does not enable `--trace-deopt` on the target.
+- If Lanterna itself receives `SIGINT` or `SIGTERM`, it finalizes the capture and exits, but it does not stop the attached target process.
 
 ## `lanterna run`
 
@@ -124,6 +128,8 @@ Behavior:
 4. Lanterna starts the V8 sampling CPU profiler, then releases the process with `Runtime.runIfWaitingForDebugger`.
 5. When the requested duration expires, or when the child finishes, Lanterna stops profiling, reads the final event-loop summary, and normalizes the capture into a raw session.
 6. The analysis pipeline classifies frames, aggregates hotspots, computes hot stacks, correlates user-code hotspots with GC and event-loop stall windows, runs detectors, and emits the final JSON report.
+
+If Lanterna receives `SIGINT` or `SIGTERM` while `run` is active, it still finalizes the report and then terminates the spawned target process.
 
 The detailed architecture and degradation modes are documented in [docs/how-lanterna-works.md](docs/how-lanterna-works.md).
 

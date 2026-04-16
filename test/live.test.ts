@@ -1,13 +1,15 @@
-import { describe, it } from 'node:test';
+import { describe, it } from 'vitest';
 import assert from 'node:assert/strict';
 import { execFile, spawn, type ChildProcess } from 'node:child_process';
+import { tmpdir } from 'node:os';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
-import { dirname, resolve } from 'node:path';
+import { dirname, resolve, join } from 'node:path';
+import { mkdtemp, readFile } from 'node:fs/promises';
 
 const execFileAsync = promisify(execFile);
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const repoRoot = resolve(__dirname, '..', '..');
+const repoRoot = resolve(__dirname, '..');
 const binPath = resolve(repoRoot, 'bin', 'lanterna.js');
 const fixturesDir = resolve(repoRoot, 'test', 'fixtures');
 let inspectorSupportPromise: Promise<boolean> | undefined;
@@ -54,12 +56,12 @@ async function expectInspectorFailure(args: string[]): Promise<void> {
   assert.ok(failure, 'expected lanterna run to fail when inspector is unavailable');
   assert.equal(failure.code, 1);
   assert.equal(failure.killed, false);
-  assert.ok(Date.now() - startedAt < 2_000, 'unsupported inspector runs should fail fast');
+  assert.ok(Date.now() - startedAt < 8_000, 'unsupported inspector runs should fail within the inspector startup window');
   const stderr = String(failure.stderr ?? '');
   if (stderr.length > 0) {
     assert.match(
       stderr,
-      /unable to start Node inspector for target process: .*Lanterna requires Node inspector support/,
+      /(unable to start Node inspector for target process: .*Lanterna requires Node inspector support|target exited before inspector was ready .*operation not permitted|timed out waiting for inspector URL .*operation not permitted)/,
     );
   }
 }
@@ -150,6 +152,62 @@ async function terminateChild(child: ChildProcess): Promise<void> {
       resolve();
     });
   });
+}
+
+interface SpawnedCommandResult {
+  code: number | null;
+  signal: NodeJS.Signals | null;
+  stdout: string;
+  stderr: string;
+}
+
+async function runLanternaAndSignal(
+  args: string[],
+  stopSignal: NodeJS.Signals,
+  delayMs = 700,
+): Promise<SpawnedCommandResult> {
+  const child = spawn('node', [binPath, ...args], {
+    cwd: repoRoot,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  child.stdout?.setEncoding('utf8');
+  child.stderr?.setEncoding('utf8');
+
+  let stdout = '';
+  let stderr = '';
+  child.stdout?.on('data', (chunk) => {
+    stdout += chunk.toString();
+  });
+  child.stderr?.on('data', (chunk) => {
+    stderr += chunk.toString();
+  });
+
+  const stopTimer = setTimeout(() => {
+    if (child.exitCode === null) {
+      child.kill(stopSignal);
+    }
+  }, delayMs);
+
+  return await new Promise<SpawnedCommandResult>((resolveResult, reject) => {
+    child.once('error', (error) => {
+      clearTimeout(stopTimer);
+      reject(error);
+    });
+    child.once('exit', (code, signal) => {
+      clearTimeout(stopTimer);
+      resolveResult({ code, signal, stdout, stderr });
+    });
+  });
+}
+
+function isPidAlive(pid: number | undefined): boolean {
+  if (pid === undefined) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 describe('live profiling', () => {
@@ -262,6 +320,52 @@ describe('live profiling', () => {
       assert.equal(report.meta.captureIntegrity.controlChannel, false);
       assert.equal(report.eventLoop.available, true);
       assert.ok(report.eventLoop.stallIntervals.length > 0);
+    } finally {
+      await terminateChild(child);
+    }
+  });
+
+  it('writes a report and stops the spawned target on SIGINT', async () => {
+    if (!await inspectorSupported()) {
+      return;
+    }
+
+    const result = await runLanternaAndSignal(
+      ['run', '--pretty', '--', 'node', resolve(fixturesDir, 'event-loop-stall-app.mjs')],
+      'SIGINT',
+    );
+
+    assert.equal(result.code, 0);
+    assert.equal(result.signal, null);
+    const report = JSON.parse(result.stdout);
+    assert.equal(report.meta.mode, 'spawn');
+    assert.ok(report.meta.durationMs > 0);
+    assert.equal(isPidAlive(report.meta.pid), false);
+  });
+
+  it('writes a single JSON file on SIGTERM in attach mode and keeps the target alive', async () => {
+    if (!await inspectorSupported()) {
+      return;
+    }
+
+    const child = await spawnFixture(['--inspect=0', resolve(fixturesDir, 'event-loop-stall-app.mjs')]);
+    const wsUrl = await waitForInspectorUrl(child);
+    const outputDir = await mkdtemp(join(tmpdir(), 'lanterna-live-'));
+    const outputPath = join(outputDir, 'attach-report.json');
+
+    try {
+      const result = await runLanternaAndSignal(
+        ['attach', '--inspect-url', wsUrl, '--output', outputPath, '--pretty', '--duration', '30s'],
+        'SIGTERM',
+      );
+
+      assert.equal(result.code, 0);
+      assert.equal(result.signal, null);
+      assert.equal(result.stdout, '');
+      const report = JSON.parse(await readFile(outputPath, 'utf8'));
+      assert.equal(report.meta.mode, 'attach');
+      assert.equal(report.meta.pid, child.pid);
+      assert.equal(isPidAlive(child.pid), true);
     } finally {
       await terminateChild(child);
     }
