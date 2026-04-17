@@ -1,5 +1,5 @@
-import type { BuiltinFinding, EventLoopStallEvidenceExtra, Finding } from '@lanterna/core';
-import { defineBuiltinFinding } from '@lanterna/core';
+import type { BuiltinFinding, EventLoopStallEvidenceExtra, Finding } from '@lanterna-profiler/core';
+import { defineBuiltinFinding } from '@lanterna-profiler/core';
 import { DETECTOR_THRESHOLDS } from '../config.js';
 import type { Detector } from './types.js';
 

@@ -4,8 +4,8 @@ import type {
   Hotspot,
   JsonHotPathEvidenceExtra,
   LanternaReport,
-} from '@lanterna/core';
-import { defineBuiltinFinding, stripOptPrefix } from '@lanterna/core';
+} from '@lanterna-profiler/core';
+import { defineBuiltinFinding, stripOptPrefix } from '@lanterna-profiler/core';
 import { DETECTOR_THRESHOLDS, JSON_FUNCTION_PATTERNS } from '../config.js';
 import {
   buildAttributedFinding,

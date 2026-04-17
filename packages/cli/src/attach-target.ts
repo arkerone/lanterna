@@ -1,7 +1,7 @@
 import { readlink } from 'node:fs/promises';
 import { basename } from 'node:path';
 import { cancel, intro, isCancel, log, outro, select } from '@clack/prompts';
-import { readInspectableTargetsByPid } from '@lanterna/core';
+import { readInspectableTargetsByPid } from '@lanterna-profiler/core';
 import chalk from 'chalk';
 import Table from 'cli-table3';
 import psList from 'ps-list';

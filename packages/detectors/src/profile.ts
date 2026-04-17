@@ -8,7 +8,7 @@ import {
   sleep,
   startAttachCapture,
   startSpawnCapture,
-} from '@lanterna/core';
+} from '@lanterna-profiler/core';
 import { createDefaultAnalysisPipeline } from './analyze-capture.js';
 import type { Detector } from './detectors/types.js';
 import type { LanternaDetectorPlugin, LanternaPluginContext } from './plugin.js';

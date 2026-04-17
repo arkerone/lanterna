@@ -4,7 +4,7 @@ import {
   type AnalysisResult,
   createAnalysisPipeline,
   type RawCapture,
-} from '@lanterna/core';
+} from '@lanterna-profiler/core';
 import { createBuiltInFindingAnalyzers } from './detectors/index.js';
 
 let defaultPipeline: AnalysisPipeline | undefined;

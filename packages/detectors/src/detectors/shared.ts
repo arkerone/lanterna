@@ -12,7 +12,7 @@ import type {
   RequireInHotPathEvidenceExtra,
   StallCorrelation,
   SyncCryptoEvidenceExtra,
-} from '@lanterna/core';
+} from '@lanterna-profiler/core';
 import type { FindingContext } from './types.js';
 
 export interface ResolvedAttribution {

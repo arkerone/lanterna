@@ -3,8 +3,8 @@ import type {
   Finding,
   Hotspot,
   RequireInHotPathEvidenceExtra,
-} from '@lanterna/core';
-import { defineBuiltinFinding, stripOptPrefix } from '@lanterna/core';
+} from '@lanterna-profiler/core';
+import { defineBuiltinFinding, stripOptPrefix } from '@lanterna-profiler/core';
 import { DETECTOR_THRESHOLDS, REQUIRE_PATTERNS } from '../config.js';
 import { buildAttributedFinding, buildAttributionEvidence, resolveAttribution } from './shared.js';
 import type { Detector, FindingContext } from './types.js';

@@ -4,8 +4,8 @@ import type {
   Finding,
   Hotspot,
   LanternaReport,
-} from '@lanterna/core';
-import { defineBuiltinFinding, stripOptPrefix } from '@lanterna/core';
+} from '@lanterna-profiler/core';
+import { defineBuiltinFinding, stripOptPrefix } from '@lanterna-profiler/core';
 import { BLOCKING_IO_PATTERNS, DETECTOR_THRESHOLDS } from '../config.js';
 import {
   buildAttributedFinding,
