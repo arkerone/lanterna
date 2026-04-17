@@ -1,17 +1,6 @@
 ---
 name: lanterna-profile
-description: Use when profiling a Node.js program with Lanterna to investigate CPU bottlenecks, event-loop stalls, GC pressure, slow endpoints, hot paths, or deoptimisation signals.
-triggers:
-  - "profile"
-  - "cpu profiling"
-  - "why is my endpoint slow"
-  - "find bottleneck"
-  - "performance issue"
-  - "what is blocking the event loop"
-  - "gc pressure"
-  - "high latency"
-  - "deopt"
-  - "lanterna"
+description: Use when profiling a Node.js program with Lanterna to investigate CPU bottlenecks, slow endpoints, hot paths, event-loop stalls, GC pressure, blocking sync I/O, sync crypto, or deopt loops — or when interpreting a Lanterna JSON report.
 ---
 
 # lanterna-profile
@@ -39,15 +28,48 @@ Do not use when:
 ## Quick Reference
 
 - Default duration: `15s` with load, `5s` without load
-- Prefer `--deep` when deopts or type instability are plausible
+- Prefer `--deep` when deopts or type instability are plausible (spawn mode only)
 - For HTTP servers, profile with load rather than idle traffic
 - If `summary.idleRatio > 0.8`, the run is mostly idle and should usually be repeated with load
 - If `eventLoop.available` is `false`, avoid strong latency attribution
 - If `meta.captureIntegrity.*` contains `false`, call out degraded signal quality
+- When `lanterna` is not installed globally, substitute `npx -y @lanterna-profiler/cli` in every command
+- Only Node.js targets are supported — other runtimes (Python, Rust, Go) will fail fast
 
-## Stop and Ask First
+## Red Flags — Stop and Restart
 
-Do not improvise when core inputs are missing.
+If any of these is true, stop what you are doing:
+
+- You are about to propose a patch without opening `evidence.file` first
+- You are about to run `lanterna run -- node server.js` (or similar) without confirming the start command
+- You are about to cite `eventLoop.maxLagMs` / `p99LagMs` while `eventLoop.available === false`
+- You are about to attach to the first PID returned by `ps` without asking which program matters
+- You are about to recommend `--deep` on an `attach` session (not supported)
+- You are about to draw conclusions from a report where `summary.idleRatio > 0.8`
+- You are about to infer a number that is not present in the report (totalSamples, ratios, pauses)
+
+When any of these fire: go back to the matching workflow step and collect the missing input.
+
+## Common Rationalizations
+
+| Excuse | Reality |
+|---|---|
+| "User is in a hurry, I'll just guess the command" | Wrong target = wrong conclusions. Asking once costs seconds; a fabricated diagnosis wastes the session. |
+| "The finding already tells me what to fix" | `finding.suggestion` is generic; the cited file may already have changed. Open `evidence.file` before patching. |
+| "`eventLoop.available` is false but the lag must be bad" | No histogram, no claim. Say the signal is unavailable. |
+| "Only one Node process is running, it must be the right one" | Not if it's a dev watcher, test runner, or language server. Confirm with the user. |
+| "The report is mostly idle but I can still pick a hotspot" | Idle profiles surface startup noise, not steady-state work. Recommend a rerun. |
+| "User asked for `--deep` in attach mode, I'll still try" | Attach cannot enable `--trace-deopt`. Redirect to `lanterna run --deep --` instead. |
+| "The skill shows `lanterna ...`, so I'll assume it is installed" | If the binary is absent, use `npx -y @lanterna-profiler/cli` instead of guessing install state. |
+
+## Workflow
+
+### 1. Confirm the profiling target (or stop and ask)
+
+Collect the minimum information needed:
+- Start command for the target program, or whether the target is already running
+- Whether there is already traffic or load
+- Whether the user wants a quick run or deeper analysis
 
 Stop and ask the user when:
 - There is no runnable command and no existing Lanterna report
@@ -55,53 +77,44 @@ Stop and ask the user when:
 - The target is an HTTP service but the relevant route or traffic shape is unclear
 - The user asks for code changes but you have not read the implicated source file yet
 
-## Workflow
-
-### 1. Confirm the profiling target
-
-Collect the minimum information needed:
-- Start command for the target program, or whether the target is already running
-- Whether there is already traffic or load
-- Whether the user wants a quick run or deeper analysis
-
-If the target is an HTTP server and no load generator is active, offer to run one in parallel. Do not assume `autocannon` is installed until you verify it or install it intentionally.
+If the target is an HTTP server and no load generator is active, offer to run one in parallel. Do not assume `autocannon`, `hey`, or `k6` is installed until you verify it.
 
 If there is no reliable start command but there are already-running Node processes, prefer proposing `attach` instead of guessing a launch command.
 
-### 2. If the target may already be running, list candidate processes and ask
+### 2. If the target may already be running, list candidates and ask
 
 When the user implies the program is already up, or when they do not know the command, prefer Lanterna's built-in interactive picker before falling back to a manual process list.
 
 Preferred flow:
 
 ```bash
-node ./packages/cli/bin/lanterna.js attach --pid
+npx -y @lanterna-profiler/cli attach --pid
 ```
 
-That picker already narrows the list to plausible app processes and shows:
+The picker narrows the list to plausible app processes and shows:
 - `CDP ready` when an inspector target is already detected
 - `PID attach*` for best-effort attach via `SIGUSR1` on a live, signalable process
 
-Use a verified process listing command and show only plausible app processes. Prefer a compact command such as:
+If the picker is not usable, list candidates with a verified command:
 
 ```bash
 ps -Ao pid=,command= | rg 'node|npm|pnpm|yarn|tsx|vite|next|nest'
 ```
 
-Then ask a direct question that includes the candidates, for example:
+Then ask the user which PID to profile, quoting a short list back to them. Example (adapt language to the user):
 
 ```text
-Je peux m'attacher à un process déjà lancé. J’ai trouvé:
+I can attach to a process that's already running. Candidates:
 - 4242 node server.js
 - 4310 node dist/worker.js
 - 4478 npm run dev
 
-Lequel veux-tu que je profile avec `lanterna attach --pid <pid>` ?
+Which one should I profile with `lanterna attach --pid <pid>`?
 ```
 
 Rules:
 - Never invent a PID or assume the first process is the right one
-- Prefer the built-in picker over manually pasting `ps` output when Lanterna is available locally
+- Prefer the built-in picker (via `lanterna` or `npx -y @lanterna-profiler/cli`) over manually pasting `ps` output
 - If the list is noisy, narrow it before asking
 - If there are no plausible Node targets, fall back to asking for the start command or an existing report
 - If the user identifies a running process, prefer `attach` over respawning unless they explicitly want a fresh run
@@ -109,29 +122,24 @@ Rules:
 
 ### 3. Run Lanterna with environment-aware commands
 
-Prefer a local checkout or installed `lanterna` binary over hardcoded paths.
+Prefer an installed `lanterna` binary; fall back to `npx -y @lanterna-profiler/cli` when the binary is not available. Avoid hardcoded paths.
 
-Examples:
+Cheatsheet (substitute `npx -y @lanterna-profiler/cli` for `lanterna` when not installed):
 
-```bash
-# Local checkout
-node ./packages/cli/bin/lanterna.js run --duration 15s --output /tmp/lanterna-report.json -- node server.js
+| Intent | Command |
+|---|---|
+| Run with duration + output | `lanterna run --duration 15s --output /tmp/lanterna-report.json -- node server.js` |
+| Run until child exits, pretty-print | `lanterna run --pretty -- node script.js` |
+| Deep (deopts, spawn only) | add `--deep` to any `run` command |
+| Attach by PID | `lanterna attach --pid 4242 --duration 15s --output /tmp/lanterna-report.json` |
+| Interactive PID picker | `lanterna attach --pid` |
+| Attach by inspector URL | `lanterna attach --inspect-url ws://127.0.0.1:9229/<uuid> --duration 15s` |
+| Lower sampling interval | add `--sample-interval 500` (halves default; `50` minimum) |
+| Load external detector | add `--detectors <package-or-path>` (repeatable) |
 
-# Installed binary
-lanterna run --duration 15s --output /tmp/lanterna-report.json -- npm start
-
-# Deeper run when deopts are relevant
-node ./packages/cli/bin/lanterna.js run --deep --duration 15s --output /tmp/lanterna-report.json -- node server.js
-
-# Attach to an already-running process
-node ./packages/cli/bin/lanterna.js attach --pid 4242 --duration 15s --output /tmp/lanterna-report.json
-
-# Open the interactive picker
-node ./packages/cli/bin/lanterna.js attach --pid
-
-# Attach directly to an existing inspector URL
-lanterna attach --inspect-url ws://127.0.0.1:9229/<uuid> --duration 15s --output /tmp/lanterna-report.json
-```
+Flag notes:
+- `--sample-interval <us>` — default `1000`. Lower it (e.g. `250`) only when sub-millisecond hotspots are suspected; it inflates the profile size.
+- `--output <path>` — always prefer writing to a file when the report will be post-processed with `jq` or read in multiple passes.
 
 For HTTP servers, pair the profile with real traffic. Use a verified command rather than a fixed `sleep` recipe. If you need load, start the app, wait until it is reachable, then run the load generator during most of the capture window.
 
@@ -143,13 +151,13 @@ When using `attach`, explicitly call out before profiling:
 
 ### 4. Read the report in two passes
 
-First pass: get a compact summary.
+First pass — compact summary:
 
 ```bash
 jq '{meta, summary, topHotspot: .hotspots[0], findingsCount: (.findings | length)}' /tmp/lanterna-report.json
 ```
 
-Second pass: inspect only the sections you need:
+Second pass — inspect only the sections you need:
 - `findings[]` for priority issues
 - `hotspots[]` for raw hot code
 - `eventLoop` for lag signal
@@ -174,26 +182,26 @@ Usually rerun instead of over-interpreting when:
 Produce the analysis in this order:
 
 1. Executive summary
-State the command, duration, top CPU consumer, and the overall signal from `summary.topCategory` and `summary.onCpuRatio`.
+   State the command (or PID for attach), duration, top CPU consumer, and the overall signal from `summary.topCategory` and `summary.onCpuRatio`.
 
 2. Findings
-For each entry in `findings[]`, include:
-- Title with severity
-- Location from `evidence.file:evidence.line`
-- Why it matters in this run
-- Concrete fix direction
+   For each entry in `findings[]`, include:
+   - Title with severity
+   - Location from `evidence.file:evidence.line`
+   - Why it matters in this run
+   - Concrete fix direction
 
 3. Top hotspots
-List the top user-relevant hotspots even if there is no finding. If a user-code hotspot has high `selfPct` without a finding, note that detector coverage may not explain everything.
+   List the top user-relevant hotspots even if there is no finding. If a user-code hotspot has high `selfPct` without a finding, note that detector coverage may not explain everything.
 
 4. GC and event loop
-- Flag GC when pauses or ratios are materially high
-- Flag event-loop impact only when `eventLoop.available` is true
-- Prefer `eventLoop.correlatedHotspots[]` over generic hotspot guesses
-- If capture integrity is degraded, say so explicitly
+   - Flag GC when pauses or ratios are materially high
+   - Flag event-loop impact only when `eventLoop.available` is true
+   - Prefer `eventLoop.correlatedHotspots[]` over generic hotspot guesses
+   - If capture integrity is degraded, say so explicitly
 
 5. Deopts
-When `meta.deep` is true, surface repeated deopts and explain them using `references/common-pitfalls.md`
+   When `meta.deep` is true, surface repeated deopts and explain them using `references/common-pitfalls.md`.
 
 ### 7. Read code before proposing patches
 
@@ -210,7 +218,7 @@ Only then propose a patch. Prefer:
 
 ## Output Format
 
-Use this structure:
+For spawn (`lanterna run`):
 
 ```md
 ## Lanterna Profile — <command> (<durationMs>ms)
@@ -234,6 +242,13 @@ Use this structure:
 <relevant summary or "event-loop signal unavailable/degraded">
 ```
 
+For attach (`lanterna attach`), `meta.command` is empty — use the PID or inspector URL instead:
+
+```md
+## Lanterna Profile — pid <N> (<durationMs>ms)
+...
+```
+
 If `findings[]` is empty, say that clearly and explain what the hotspots suggest instead.
 
 ## Common Mistakes
@@ -247,3 +262,5 @@ If `findings[]` is empty, say that clearly and explain what the hotspots suggest
 - Patching a dependency or Node builtin directly instead of identifying the user-code caller that drives it
 - Guessing the target command when an already-running process could have been listed and confirmed first
 - Attaching blindly to the first Node PID without asking the user which running program matters
+- Trying to attach to a non-Node runtime (Python, Rust, Go) — Lanterna will fail fast
+- Inventing field values not present in the JSON report

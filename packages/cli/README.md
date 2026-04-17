@@ -24,6 +24,9 @@ Spawns the command with the inspector enabled, injects a preload hook, runs the 
 
 ```bash
 lanterna run --duration 30s --output report.json -- node app.js
+# or, without installing:
+npx -y @lanterna-profiler/cli run --duration 30s --output report.json -- node app.js
+
 lanterna run --deep --duration 15s -- node server.js
 lanterna run --pretty -- node script.js
 ```

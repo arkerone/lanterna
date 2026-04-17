@@ -245,13 +245,93 @@ Failure signs:
 - writes a patch immediately from the finding text alone
 - assumes imports, function signature, or surrounding control flow
 
+### Scenario 7: `lanterna` binary not installed
+
+Prompt:
+
+```text
+Use lanterna-profile. My Node API is slow. The `lanterna` command is not on my PATH and I don't want to install it globally. Here is the start command: `node server.js`.
+```
+
+Expected behavior:
+
+- proposes `npx -y @lanterna-profiler/cli run ...` instead of a raw `lanterna ...` command
+- does not fall back to a hardcoded `node ./packages/cli/bin/lanterna.js` path
+- does not ask the user to install the binary globally first
+
+Failure signs:
+
+- issues a `lanterna run ...` command that will fail because the binary is absent
+- assumes a local repo checkout
+- prompts the user to `npm install -g @lanterna-profiler/cli` instead of using `npx`
+
+### Scenario 8: `--deep` requested on attach mode
+
+Prompt:
+
+```text
+Use lanterna-profile. Attach to pid 4242 with `--deep` so I can see deopts.
+```
+
+Expected behavior:
+
+- explicitly states `--deep` is not supported in attach mode and `deopts[]` will stay empty
+- proposes `lanterna run --deep -- <command>` as the alternative if the target can be respawned
+- does not silently ignore the flag and produce a report that looks healthy
+
+Failure signs:
+
+- runs `lanterna attach --pid 4242 --deep ...` without flagging the incompatibility
+- claims deopts are available from the attach capture
+- does not offer the spawn alternative
+
+### Scenario 9: Non-Node target
+
+Prompt:
+
+```text
+Use lanterna-profile on my Python service (`python app.py`). It's eating CPU.
+```
+
+Expected behavior:
+
+- says Lanterna only supports Node.js targets
+- does not run `lanterna run -- python app.py` (it will fail at inspector timeout)
+- redirects the user to a Python-appropriate tool (py-spy, cProfile) or asks for a Node.js component to profile
+
+Failure signs:
+
+- attempts to run `lanterna` against a Python / Rust / Go target
+- blames a generic inspector timeout without identifying the root cause (wrong runtime)
+
 ## Regression Notes
 
 If an agent fails one of these scenarios:
 
 1. Capture the exact rationalization.
-2. Add the missing guardrail to `SKILL.md`.
+2. Add the missing guardrail to `SKILL.md` (Red Flags or Rationalizations table).
 3. Re-run the same scenario.
 4. Only keep the skill change if it closes the actual failure.
 
 Do not add speculative guidance that is not tied to an observed failure mode.
+
+## RED Baseline + Run Log
+
+`writing-skills` requires that each guardrail be justified by a documented failure *without* the skill. Keep this log honest: run each scenario against a fresh subagent without the skill loaded, record the rationalization verbatim, then re-run with the skill and confirm compliance.
+
+| Scenario                      | Last run   | Without skill (RED)                              | With skill (GREEN) | Notes                              |
+| ----------------------------- | ---------- | ------------------------------------------------ | ------------------ | ---------------------------------- |
+| 1  — missing command          | 2026-04-17 | invented `lanterna run -- node server.js`        | PASS               |                                    |
+| 1b — running program, attach  | 2026-04-17 | picked first PID from `ps aux \| grep node`      | PASS               |                                    |
+| 2  — HTTP unclear load        | 2026-04-17 | assumed port 3000 and `autocannon` installed     | PASS               |                                    |
+| 3  — idle capture             | 2026-04-17 | declared system healthy from empty findings      | PASS               |                                    |
+| 4  — event-loop unavailable   | 2026-04-17 | fabricated stall ms ("tens to hundreds of ms")   | PASS               |                                    |
+| 5  — builtin hotspot          | 2026-04-17 | proposed generic async-fs fixes, no callers read | PASS               |                                    |
+| 6  — patch without source     | 2026-04-17 | wrote async patch from finding text alone        | PASS               |                                    |
+| 7  — npx fallback             | 2026-04-17 | told user to `npm i -g lanterna`                 | PASS               | Added 2026-04-17 after npm publish |
+| 8  — `--deep` on attach       | 2026-04-17 | passed `--deep` through to attach silently       | PASS               | Added 2026-04-17                   |
+| 9  — non-Node target          | 2026-04-17 | ran `lanterna run -- python app.py`              | PASS               | Added 2026-04-17                   |
+
+Methodology caveat: the 2026-04-17 runs used a general-purpose subagent in "testing mode" (aware it was being evaluated). This softens the RED baseline. Re-run periodically with a naive subagent prompt (no meta-framing) to keep the baseline honest.
+
+Fill in the date (`YYYY-MM-DD`), a one-line excerpt of the RED rationalization, and `PASS` / `FAIL` for GREEN. A `FAIL` in the GREEN column means the skill has a hole to close before the row can be considered solid.
