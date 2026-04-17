@@ -1,16 +1,16 @@
-# @lanterna/detectors
+# @lanterna-profiler/detectors
 
 Default detector pack + ready-to-use profiling facades for [Lanterna](https://github.com/arkerone/lanterna), the agent-first Node.js CPU profiler.
 
-This is the **batteries-included** package: one function call captures a profile, runs the built-in detectors, and returns a structured `LanternaReport`. If you want the low-level primitives without the defaults, use [`@lanterna/core`](../core) directly.
+This is the **batteries-included** package: one function call captures a profile, runs the built-in detectors, and returns a structured `LanternaReport`. If you want the low-level primitives without the defaults, use [`@lanterna-profiler/core`](../core) directly.
 
 ## Install
 
 ```bash
-npm install @lanterna/detectors
+npm install @lanterna-profiler/detectors
 ```
 
-`@lanterna/core` is a direct dependency and comes along automatically.
+`@lanterna-profiler/core` is a direct dependency and comes along automatically.
 
 ## Built-in detectors
 
@@ -31,7 +31,7 @@ Thresholds live in `DETECTOR_THRESHOLDS` (exported from this package, not core).
 ## Usage - one-shot profile
 
 ```ts
-import { runProfile } from '@lanterna/detectors';
+import { runProfile } from '@lanterna-profiler/detectors';
 
 const report = await runProfile({
   command: ['node', 'app.js'],
@@ -47,8 +47,8 @@ console.log(report.findings);
 ## Usage - analyze an existing capture
 
 ```ts
-import { analyzeCapture } from '@lanterna/detectors';
-import { buildLanternaReport, type RawCapture } from '@lanterna/core';
+import { analyzeCapture } from '@lanterna-profiler/detectors';
+import { buildLanternaReport, type RawCapture } from '@lanterna-profiler/core';
 
 const raw: RawCapture = /* from startSpawnCapture / startAttachCapture */;
 const options = { sampleIntervalMicros: 1000, deep: false, command: ['node', 'app.js'], mode: 'spawn' as const };
@@ -74,8 +74,8 @@ const report = buildLanternaReport(raw, analysis, options);
 A detector plugin is an ES module whose `default` export is a function that registers analyzers on a pipeline:
 
 ```ts
-import type { Detector, LanternaDetectorPlugin } from '@lanterna/detectors';
-import { createFindingAnalyzerFromDetector } from '@lanterna/detectors';
+import type { Detector, LanternaDetectorPlugin } from '@lanterna-profiler/detectors';
+import { createFindingAnalyzerFromDetector } from '@lanterna-profiler/detectors';
 
 // Flag a Prisma client frame that eats too much CPU on the request path.
 const prismaHotspotDetector: Detector = {
@@ -114,7 +114,7 @@ const register: LanternaDetectorPlugin = (pipeline) => {
 export default register;
 ```
 
-Publish that module (e.g. `@acme/lanterna-detectors-prisma`) and users can load it from the CLI with `--detectors @acme/lanterna-detectors-prisma` or through `.lanterna.json`. See [`@lanterna/cli`](../cli) for CLI loading details, and [`@lanterna/core`](../core) for the pipeline / analyzer primitives.
+Publish that module (e.g. `@acme/lanterna-detectors-prisma`) and users can load it from the CLI with `--detectors @acme/lanterna-detectors-prisma` or through `.lanterna.json`. See [`@lanterna-profiler/cli`](../cli) for CLI loading details, and [`@lanterna-profiler/core`](../core) for the pipeline / analyzer primitives.
 
 Programmatically, `runProfile` / `attachProfile` also accept custom detectors directly:
 
@@ -135,5 +135,5 @@ await runProfile({
 
 ## Related packages
 
-- [`@lanterna/core`](../core) - headless capture + pipeline primitives (no defaults).
-- [`@lanterna/cli`](../cli) - `lanterna` binary built on top of this package.
+- [`@lanterna-profiler/core`](../core) - headless capture + pipeline primitives (no defaults).
+- [`@lanterna-profiler/cli`](../cli) - `lanterna` binary built on top of this package.
