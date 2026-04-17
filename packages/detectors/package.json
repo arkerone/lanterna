@@ -1,5 +1,5 @@
 {
-  "name": "@lanterna/detectors",
+  "name": "@lanterna-profiler/detectors",
   "version": "0.1.0",
   "description": "Lanterna default detector pack — blocking I/O, GC, event loop, deopts, hotspots",
   "type": "module",
@@ -22,7 +22,7 @@
     "clean": "rm -rf dist .turbo .tsbuildinfo"
   },
   "dependencies": {
-    "@lanterna/core": "*"
+    "@lanterna-profiler/core": "*"
   },
   "engines": {
     "node": ">=22.0.0"
