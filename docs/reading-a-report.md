@@ -7,7 +7,7 @@ Lanterna emits a structured `LanternaReport`. This guide walks through each sect
 | # | Section | What it tells you | When to distrust it |
 | --- | --- | --- | --- |
 | 1 | `meta` | What was captured (mode, duration, integrity flags). | `durationMs` very short, or `captureIntegrity.*` flags `false`. |
-| 2 | `summary` | Where CPU time went (ratios, top category). | `idleRatio` > 0.95 - the profile is mostly idle. |
+| 2 | `summary` | Where CPU time went (ratios, top category). | `idleRatio` > 0.8 - the profile is mostly idle. |
 | 3 | `findings` | Prioritized hypotheses backed by the capture. | Empty `findings[]` does not prove a healthy profile. |
 | 4 | `hotspots` | Where CPU is actually spent (self + inclusive). | A hot leaf in `node_modules` is usually a symptom, not a cause. |
 | 5 | `eventLoop` | Latency signal + stall windows. | `confidence = low` or `measurementBasis = histogram` alone. |

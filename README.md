@@ -72,6 +72,8 @@ npm install @lanterna-profiler/core
 ```bash
 # Profile for 30s and write the JSON report to disk
 lanterna run --duration 30s --output report.json -- node app.js
+# or, without installing:
+npx -y @lanterna-profiler/cli run --duration 30s --output report.json -- node app.js
 
 # Attach to a running Node process
 lanterna attach --pid 4242 --duration 15s --output report.json
