@@ -6,7 +6,7 @@ import {
   type RawCapture,
   type RawCpuProfile,
   serializeReport,
-} from '@lanterna/core';
+} from '@lanterna-profiler/core';
 import { describe, it } from 'vitest';
 import { analyzeCapture } from '../src/analyze-capture.js';
 import { CWD, loadProfile, makeRaw } from './helpers.js';

@@ -1,4 +1,4 @@
-# @lanterna/cli
+# @lanterna-profiler/cli
 
 The `lanterna` command-line binary for [Lanterna](https://github.com/arkerone/lanterna), the agent-first Node.js CPU profiler.
 
@@ -7,9 +7,9 @@ Profile a Node process (spawn or attach), capture a V8 CPU profile plus runtime 
 ## Install
 
 ```bash
-npm install -g @lanterna/cli
+npm install -g @lanterna-profiler/cli
 # or, without installing:
-npx @lanterna/cli --help
+npx @lanterna-profiler/cli --help
 ```
 
 ## Commands
@@ -89,20 +89,20 @@ You can also list detectors in a `.lanterna.json` (or `.lanterna.config.json`) f
 }
 ```
 
-See [`@lanterna/detectors`](../detectors) for the plugin contract and helpers used to author detectors.
+See [`@lanterna-profiler/detectors`](../detectors) for the plugin contract and helpers used to author detectors.
 
 ## What's inside
 
-The CLI is a thin wrapper around [`@lanterna/detectors`](../detectors) (which wraps [`@lanterna/core`](../core)). It adds:
+The CLI is a thin wrapper around [`@lanterna-profiler/detectors`](../detectors) (which wraps [`@lanterna-profiler/core`](../core)). It adds:
 
 - argument parsing (`commander`)
 - interactive process picker (`@clack/prompts`, `ps-list`, `cli-table3`)
 - progress indicator (`ora`, `chalk`)
 - report output (stdout or file)
 
-If you need programmatic access, prefer `runProfile` / `attachProfile` from `@lanterna/detectors`.
+If you need programmatic access, prefer `runProfile` / `attachProfile` from `@lanterna-profiler/detectors`.
 
 ## Related packages
 
-- [`@lanterna/core`](../core) - headless capture + pipeline primitives.
-- [`@lanterna/detectors`](../detectors) - default detector pack + programmatic facades.
+- [`@lanterna-profiler/core`](../core) - headless capture + pipeline primitives.
+- [`@lanterna-profiler/detectors`](../detectors) - default detector pack + programmatic facades.

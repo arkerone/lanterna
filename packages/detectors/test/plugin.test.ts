@@ -1,4 +1,4 @@
-import { buildLanternaReport } from '@lanterna/core';
+import { buildLanternaReport } from '@lanterna-profiler/core';
 import { describe, expect, it } from 'vitest';
 import {
   createDefaultAnalysisPipeline,

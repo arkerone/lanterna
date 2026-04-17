@@ -1,5 +1,5 @@
 {
-  "name": "@lanterna/cli",
+  "name": "@lanterna-profiler/cli",
   "version": "0.1.0",
   "description": "Agent-first Node.js CPU profiler — CLI",
   "type": "module",
@@ -19,8 +19,8 @@
   },
   "dependencies": {
     "@clack/prompts": "^1.2.0",
-    "@lanterna/core": "*",
-    "@lanterna/detectors": "*",
+    "@lanterna-profiler/core": "^0.1.0",
+    "@lanterna-profiler/detectors": "^0.1.0",
     "chalk": "^5.6.2",
     "cli-table3": "^0.6.5",
     "commander": "^14.0.3",
@@ -30,5 +30,11 @@
   },
   "engines": {
     "node": ">=22.0.0"
-  }
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/arkerone/lanterna.git",
+    "directory": "packages/cli"
+  },
+  "license": "MIT"
 }

@@ -1,4 +1,7 @@
-import { DEFAULT_SAMPLE_INTERVAL_MICROS, MIN_SAMPLE_INTERVAL_MICROS } from '@lanterna/core';
+import {
+  DEFAULT_SAMPLE_INTERVAL_MICROS,
+  MIN_SAMPLE_INTERVAL_MICROS,
+} from '@lanterna-profiler/core';
 import { Command, CommanderError } from 'commander';
 
 export interface RunProfileOptions {

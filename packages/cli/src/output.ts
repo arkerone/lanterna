@@ -1,6 +1,6 @@
 import { writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import { type LanternaReport, logger, serializeReport } from '@lanterna/core';
+import { type LanternaReport, logger, serializeReport } from '@lanterna-profiler/core';
 
 export async function writeReportOutput(
   report: LanternaReport,

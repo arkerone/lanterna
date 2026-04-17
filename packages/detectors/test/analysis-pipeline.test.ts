@@ -3,7 +3,7 @@ import {
   defineFindingAnalyzer,
   defineSectionAnalyzer,
   serializeReport,
-} from '@lanterna/core';
+} from '@lanterna-profiler/core';
 import { describe, expect, it } from 'vitest';
 import { analyzeCapture, createDefaultAnalysisPipeline } from '../src/index.js';
 import { loadProfile, makeRaw } from './helpers.js';

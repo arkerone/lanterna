@@ -11,8 +11,8 @@
 </p>
 
 <p align="center">
-  <a href="https://www.npmjs.com/package/@lanterna/cli"><img src="https://img.shields.io/npm/v/@lanterna/cli.svg" alt="npm version" /></a>
-  <img src="https://img.shields.io/node/v/@lanterna/cli.svg" alt="Node.js version" />
+  <a href="https://www.npmjs.com/package/@lanterna-profiler/cli"><img src="https://img.shields.io/npm/v/@lanterna-profiler/cli.svg" alt="npm version" /></a>
+  <img src="https://img.shields.io/node/v/@lanterna-profiler/cli.svg" alt="Node.js version" />
   <img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT" />
 </p>
 
@@ -34,7 +34,7 @@
 
 | Environment | Minimum version | Why |
 | --- | --- | --- |
-| Node.js running Lanterna itself | `>= 22` | Current LTS lines (22, 24). `engines.node` is `>=22.0.0` on every `@lanterna/*` package. |
+| Node.js running Lanterna itself | `>= 22` | Current LTS lines (22, 24). `engines.node` is `>=22.0.0` on every `@lanterna-profiler/*` package. |
 | Node.js running the **profiled program** | `>= 12` | Needs `monitorEventLoopDelay` (≥ 11.10) and `PerformanceObserver` with `gc` entries (≥ 11.13). Any active LTS works. |
 
 The profiled target must run on Node.js with inspector support.
@@ -46,25 +46,25 @@ The profiled target must run on Node.js with inspector support.
 
 | Package | What it is |
 | --- | --- |
-| [`@lanterna/cli`](packages/cli) | The `lanterna` binary - spawn/attach, argument parsing, interactive picker, report output. |
-| [`@lanterna/detectors`](packages/detectors) | Default detector pack + `runProfile` / `attachProfile` programmatic facades. |
-| [`@lanterna/core`](packages/core) | Headless capture + analysis pipeline primitives. No default detectors. |
+| [`@lanterna-profiler/cli`](packages/cli) | The `lanterna` binary - spawn/attach, argument parsing, interactive picker, report output. |
+| [`@lanterna-profiler/detectors`](packages/detectors) | Default detector pack + `runProfile` / `attachProfile` programmatic facades. |
+| [`@lanterna-profiler/core`](packages/core) | Headless capture + analysis pipeline primitives. No default detectors. |
 
-External detectors are first-class: publish a plugin (ES module with a default-exported register function) and load it via `--detectors <spec>` or `.lanterna.json`. See [`@lanterna/detectors`](packages/detectors#writing-a-detector-plugin) for the contract and [`@lanterna/cli`](packages/cli#loading-external-detectors) for loading.
+External detectors are first-class: publish a plugin (ES module with a default-exported register function) and load it via `--detectors <spec>` or `.lanterna.json`. See [`@lanterna-profiler/detectors`](packages/detectors#writing-a-detector-plugin) for the contract and [`@lanterna-profiler/cli`](packages/cli#loading-external-detectors) for loading.
 
 ## Installation
 
 ```bash
 # CLI binary
-npm install -g @lanterna/cli
+npm install -g @lanterna-profiler/cli
 # or, without installing:
-npx @lanterna/cli --help
+npx @lanterna-profiler/cli --help
 
 # Programmatic (batteries-included)
-npm install @lanterna/detectors
+npm install @lanterna-profiler/detectors
 
 # Programmatic (headless, bring-your-own detectors)
-npm install @lanterna/core
+npm install @lanterna-profiler/core
 ```
 
 ## Quick Start
@@ -246,8 +246,8 @@ Lanterna accepts third-party detectors as plugins. A plugin is an ES module whos
 
 ```ts
 // @acme/lanterna-detectors-prisma/src/index.ts
-import type { LanternaDetectorPlugin } from '@lanterna/detectors';
-import { createFindingAnalyzerFromDetector } from '@lanterna/detectors';
+import type { LanternaDetectorPlugin } from '@lanterna-profiler/detectors';
+import { createFindingAnalyzerFromDetector } from '@lanterna-profiler/detectors';
 import { prismaHotspotDetector } from './detectors/prisma-hotspot.js';
 
 const register: LanternaDetectorPlugin = (pipeline) => {
@@ -271,12 +271,12 @@ lanterna run --detectors @acme/lanterna-detectors-prisma --detectors ./my-plugin
 }
 ```
 
-Config entries load first, then any flag-specified plugins. See [`@lanterna/detectors`](packages/detectors#writing-a-detector-plugin) for the plugin contract, exposed helpers (`createFindingAnalyzerFromDetector`, `buildAttributedFinding`, `resolveAttribution`, `buildAttributionEvidence`, `buildFindingContext`), and the full list of built-in detectors you can use as templates.
+Config entries load first, then any flag-specified plugins. See [`@lanterna-profiler/detectors`](packages/detectors#writing-a-detector-plugin) for the plugin contract, exposed helpers (`createFindingAnalyzerFromDetector`, `buildAttributedFinding`, `resolveAttribution`, `buildAttributionEvidence`, `buildFindingContext`), and the full list of built-in detectors you can use as templates.
 
 ## Programmatic API
 
 <details>
-<summary><strong>Batteries-included (<code>@lanterna/detectors</code>)</strong></summary>
+<summary><strong>Batteries-included (<code>@lanterna-profiler/detectors</code>)</strong></summary>
 
 ```ts
 import {
@@ -284,8 +284,8 @@ import {
   attachProfile,
   runProfile,
   type LanternaReport,
-} from '@lanterna/detectors';
-import { serializeReport } from '@lanterna/core';
+} from '@lanterna-profiler/detectors';
+import { serializeReport } from '@lanterna-profiler/core';
 
 const report: LanternaReport = await runProfile({
   command: ['node', 'app.js'],
@@ -319,7 +319,7 @@ await runProfile({
 </details>
 
 <details>
-<summary><strong>Headless / plugin (<code>@lanterna/core</code>)</strong></summary>
+<summary><strong>Headless / plugin (<code>@lanterna-profiler/core</code>)</strong></summary>
 
 ```ts
 import {
@@ -334,7 +334,7 @@ import {
   type Hotspot,
   type LanternaReport,
   type RawCapture,
-} from '@lanterna/core';
+} from '@lanterna-profiler/core';
 ```
 
 Use core when you want full control over the pipeline - no default detectors are registered. Register your own analyzers with `pipeline.register(defineFindingAnalyzer({...}))` / `defineSectionAnalyzer({...})`.
@@ -353,9 +353,9 @@ Use core when you want full control over the pipeline - no default detectors are
 
 ```
 packages/
-  core/       @lanterna/core       - capture (spawn/attach), runtime signals, analysis pipeline, report
-  detectors/  @lanterna/detectors  - default detector pack, runProfile / attachProfile / analyzeCapture
-  cli/        @lanterna/cli        - `lanterna` binary, argument parsing, output, interactive picker
+  core/       @lanterna-profiler/core       - capture (spawn/attach), runtime signals, analysis pipeline, report
+  detectors/  @lanterna-profiler/detectors  - default detector pack, runProfile / attachProfile / analyzeCapture
+  cli/        @lanterna-profiler/cli        - `lanterna` binary, argument parsing, output, interactive picker
 skills/
   lanterna-profile/                - agent-oriented profiling workflow for Claude Code
 ```
@@ -372,6 +372,6 @@ npm run build       # builds all three packages (tsc -b + copy .cjs hook)
 npm test            # runs every package's vitest suite
 ```
 
-Per-package work: `npm run build -w @lanterna/core`, `npm test -w @lanterna/cli`, etc.
+Per-package work: `npm run build -w @lanterna-profiler/core`, `npm test -w @lanterna-profiler/cli`, etc.
 
 Tests use Vitest and cover frame classification, hotspot aggregation, detector evidence attribution, and live profiling paths - including short-lived processes and real event-loop stall correlation.

@@ -1,4 +1,4 @@
-import { attachProfile, type LanternaDetectorPlugin } from '@lanterna/detectors';
+import { attachProfile, type LanternaDetectorPlugin } from '@lanterna-profiler/detectors';
 import { startActivityIndicator } from '../activity-indicator.js';
 import { resolveAttachTarget } from '../attach-target.js';
 import { loadLanternaConfig } from '../config.js';

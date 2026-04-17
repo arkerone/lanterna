@@ -1,6 +1,6 @@
 import { isAbsolute, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import type { LanternaDetectorPlugin } from '@lanterna/detectors';
+import type { LanternaDetectorPlugin } from '@lanterna-profiler/detectors';
 
 export async function loadPlugins(specs: string[], cwd: string): Promise<LanternaDetectorPlugin[]> {
   const plugins: LanternaDetectorPlugin[] = [];

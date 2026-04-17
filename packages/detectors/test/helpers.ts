@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { RawCapture, RawCpuProfile } from '@lanterna/core';
+import type { RawCapture, RawCpuProfile } from '@lanterna-profiler/core';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 export const PROFILES_DIR = resolve(__dirname, 'fixtures-profiles');

@@ -1,13 +1,13 @@
-# @lanterna/core
+# @lanterna-profiler/core
 
 Headless capture + analysis primitives for [Lanterna](https://github.com/arkerone/lanterna), the agent-first Node.js CPU profiler.
 
-This package is **TTY-free**: no spinner, no prompts, no process listing. It exposes the building blocks you need to capture a V8 profile, run an analysis pipeline, and build a `LanternaReport`. Bring your own detectors, or install [`@lanterna/detectors`](../detectors) for the batteries-included pack.
+This package is **TTY-free**: no spinner, no prompts, no process listing. It exposes the building blocks you need to capture a V8 profile, run an analysis pipeline, and build a `LanternaReport`. Bring your own detectors, or install [`@lanterna-profiler/detectors`](../detectors) for the batteries-included pack.
 
 ## Install
 
 ```bash
-npm install @lanterna/core
+npm install @lanterna-profiler/core
 ```
 
 ## What's in the box
@@ -18,7 +18,7 @@ npm install @lanterna/core
 - **Types** - `RawCapture`, `LanternaReport`, `Finding`, `Hotspot`, `AnalysisContext`, `FindingAnalyzer`, etc.
 - **Runtime hook** - ships the `.cjs` preload hook at `dist/runtime-signals/hooks/event-loop-hook.cjs`.
 
-Default detectors (sync-crypto, blocking-io, excessive-gc, event-loop-stall, …) live in `@lanterna/detectors` so core stays minimal.
+Default detectors (sync-crypto, blocking-io, excessive-gc, event-loop-stall, …) live in `@lanterna-profiler/detectors` so core stays minimal.
 
 ## Example - custom detector
 
@@ -29,7 +29,7 @@ import {
   defineFindingAnalyzer,
   serializeReport,
   startSpawnCapture,
-} from '@lanterna/core';
+} from '@lanterna-profiler/core';
 
 const handle = await startSpawnCapture({
   command: ['node', 'app.js'],
@@ -67,5 +67,5 @@ process.stdout.write(serializeReport(report, { pretty: true }));
 
 ## Related packages
 
-- [`@lanterna/detectors`](../detectors) - default detector pack + `runProfile` / `attachProfile` facades.
-- [`@lanterna/cli`](../cli) - `lanterna` binary for humans.
+- [`@lanterna-profiler/detectors`](../detectors) - default detector pack + `runProfile` / `attachProfile` facades.
+- [`@lanterna-profiler/cli`](../cli) - `lanterna` binary for humans.

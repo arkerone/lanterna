@@ -1,4 +1,9 @@
-import type { AnalysisSnapshot, Finding, Hotspot, HotspotAttribution } from '@lanterna/core';
+import type {
+  AnalysisSnapshot,
+  Finding,
+  Hotspot,
+  HotspotAttribution,
+} from '@lanterna-profiler/core';
 
 export interface FindingContext {
   fullHotspots: Hotspot[];

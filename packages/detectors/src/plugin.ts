@@ -1,4 +1,4 @@
-import type { AnalysisContext, AnalysisPipeline, FindingAnalyzer } from '@lanterna/core';
+import type { AnalysisContext, AnalysisPipeline, FindingAnalyzer } from '@lanterna-profiler/core';
 import type { Detector, FindingContext } from './detectors/types.js';
 
 export interface LanternaPluginContext {

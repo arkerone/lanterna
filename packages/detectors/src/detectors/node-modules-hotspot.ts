@@ -4,8 +4,8 @@ import type {
   Hotspot,
   LanternaReport,
   NodeModulesHotspotEvidenceExtra,
-} from '@lanterna/core';
-import { defineBuiltinFinding } from '@lanterna/core';
+} from '@lanterna-profiler/core';
+import { defineBuiltinFinding } from '@lanterna-profiler/core';
 import { DETECTOR_THRESHOLDS } from '../config.js';
 import {
   buildAttributedFinding,

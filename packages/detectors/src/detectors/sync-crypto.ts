@@ -4,8 +4,8 @@ import type {
   Hotspot,
   LanternaReport,
   SyncCryptoEvidenceExtra,
-} from '@lanterna/core';
-import { defineBuiltinFinding, stripOptPrefix } from '@lanterna/core';
+} from '@lanterna-profiler/core';
+import { defineBuiltinFinding, stripOptPrefix } from '@lanterna-profiler/core';
 import { DETECTOR_THRESHOLDS, SYNC_CRYPTO_FNS } from '../config.js';
 import {
   buildAttributedFinding,

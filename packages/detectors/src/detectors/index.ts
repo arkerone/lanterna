@@ -1,4 +1,4 @@
-import type { FindingAnalyzer } from '@lanterna/core';
+import type { FindingAnalyzer } from '@lanterna-profiler/core';
 import { createFindingAnalyzerFromDetector } from '../plugin.js';
 import { blockingIoDetector } from './blocking-io.js';
 import { cpuBoundUserHotspotDetector } from './cpu-bound-user-hotspot.js';
