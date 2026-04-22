@@ -49,6 +49,15 @@ export const eventLoopStallDetector: Detector = {
           selfPct: strongCorrelation ? topCandidate.samplePct : 0,
           extra: evidenceExtra,
         },
+        measurements: {
+          observed: { p99LagMs, maxLagMs },
+          thresholds: {
+            p99: p99Threshold,
+            max: maxThreshold,
+            critical: thresholds.critical,
+            strongCorrelationOverlapPct: thresholds.strongCorrelationOverlapPct,
+          },
+        },
         why: strongCorrelation
           ? `The event loop spent up to ${maxLagMs.toFixed(0)}ms (p99 ${p99LagMs.toFixed(0)}ms) without being able to pick up tasks. During those measured stall windows, \`${topCandidate.function}\` accounted for ${topCandidate.overlapPct.toFixed(1)}% of the user-code CPU samples.`
           : `The event loop spent up to ${maxLagMs.toFixed(0)}ms (p99 ${p99LagMs.toFixed(0)}ms) without being able to pick up tasks. The report includes ranked correlated hotspots, but no single user frame dominated the measured stall windows strongly enough to blame it on its own.`,

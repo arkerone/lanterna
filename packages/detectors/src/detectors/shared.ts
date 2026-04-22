@@ -4,6 +4,8 @@ import type {
   BaseFinding,
   BlockingIoEvidenceExtra,
   BuiltinFindingCategory,
+  FindingMeasurements,
+  FindingRemediation,
   Hotspot,
   HotspotAttribution,
   JsonHotPathEvidenceExtra,
@@ -71,6 +73,52 @@ export function toAlternativeHotspotEvidence(hotspot: Hotspot): AlternativeHotsp
   };
 }
 
+/**
+ * Aggregates matching hotspots into a per-API breakdown and a category total.
+ *
+ * Why: individual frames may each sit below the per-API threshold while the
+ * cumulative CPU across a family (e.g. all sync fs APIs together) is
+ * significant. An agent should see that story, not miss it because no single
+ * frame crossed 1%. Callers use the per-API buckets to emit findings and
+ * `categoryTotalPct` as context in the finding's evidence.
+ */
+export function aggregateByPatterns<TPattern extends { re: RegExp; api: string }>(
+  hotspots: readonly Hotspot[],
+  patterns: ReadonlyArray<TPattern>,
+  options: {
+    /** Restrict to these hotspot categories (defaults to builtin+native). */
+    categories?: ReadonlyArray<Hotspot['category']>;
+    /** Pre-normalised function name (strips opt prefix). */
+    normalize?: (name: string) => string;
+  } = {},
+): {
+  readonly byApi: ReadonlyMap<string, { api: string; hotspots: Hotspot[]; totalPct: number }>;
+  readonly categoryTotalPct: number;
+  readonly categorySelfPct: number;
+} {
+  const categories = options.categories ?? (['node:builtin', 'native'] as const);
+  const normalize = options.normalize ?? ((name: string) => name);
+  const byApi = new Map<string, { api: string; hotspots: Hotspot[]; totalPct: number }>();
+  let categoryTotalPct = 0;
+  let categorySelfPct = 0;
+  for (const hotspot of hotspots) {
+    if (!categories.includes(hotspot.category)) continue;
+    const normalized = normalize(hotspot.function);
+    const match = patterns.find((p) => p.re.test(normalized));
+    if (!match) continue;
+    categoryTotalPct += hotspot.totalPct;
+    categorySelfPct += hotspot.selfPct;
+    const bucket = byApi.get(match.api);
+    if (bucket) {
+      bucket.hotspots.push(hotspot);
+      bucket.totalPct += hotspot.totalPct;
+    } else {
+      byApi.set(match.api, { api: match.api, hotspots: [hotspot], totalPct: hotspot.totalPct });
+    }
+  }
+  return { byApi, categoryTotalPct, categorySelfPct };
+}
+
 export function resolveEvidenceField<K extends 'file' | 'line' | 'function'>(
   caller: HotspotAttribution | undefined,
   hotspot: Hotspot,
@@ -117,6 +165,8 @@ export function buildAttributedFinding<
   suggestion: string;
   references: string[];
   extra: AttributedFindingExtra;
+  measurements?: FindingMeasurements;
+  remediation?: FindingRemediation;
 }): BaseFinding<
   C,
   C extends 'blocking-io'
@@ -141,6 +191,8 @@ export function buildAttributedFinding<
     suggestion,
     references,
     extra,
+    measurements,
+    remediation,
   } = options;
 
   return {
@@ -163,6 +215,8 @@ export function buildAttributedFinding<
               ? NodeModulesHotspotEvidenceExtra
               : RequireInHotPathEvidenceExtra,
     },
+    measurements,
+    remediation,
     why,
     suggestion,
     references,

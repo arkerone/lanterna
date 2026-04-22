@@ -36,17 +36,30 @@ function buildFinding(
     callee: hotspot.function,
     ...buildAttributionEvidence(attribution, caller),
   };
+  const thresholds = DETECTOR_THRESHOLDS.requireInHotPath;
   return defineBuiltinFinding(
     buildAttributedFinding({
       id: `require-in-hot-path`,
-      severity:
-        hotspot.selfPct > DETECTOR_THRESHOLDS.requireInHotPath.warningSelfPct ? 'warning' : 'info',
+      severity: hotspot.selfPct > thresholds.warningSelfPct ? 'warning' : 'info',
       category: 'require-in-hot-path',
       title: 'Module loading on hot path',
       hotspot,
       caller,
       selfPct: hotspot.selfPct,
       extra: evidenceExtra,
+      measurements: {
+        observed: { selfPct: hotspot.selfPct, totalPct: hotspot.totalPct },
+        thresholds: {
+          minSelfPct: thresholds.minSelfPct,
+          minTotalPct: thresholds.minTotalPct,
+          warningSelfPct: thresholds.warningSelfPct,
+        },
+      },
+      remediation: {
+        kind: 'lazy-import-hoist',
+        notes:
+          'Hoist the require()/await import() to module top-level or an init hook called once at boot. If lazy loading is required, memoise the loaded module yourself so subsequent calls are cheap.',
+      },
       why: `\`${hotspot.function}\` is being called during request handling. Module resolution and graph loading are expensive and normally only happen once at startup; hitting them per request implies a lazy require/import inside a hot function.`,
       suggestion: `Hoist the \`require(...)\` / \`await import(...)\` to module top-level (or to an init hook called once at boot). If you truly need lazy loading, memoise the result yourself.`,
       references: ['https://nodejs.org/api/modules.html#modulerequireid'],

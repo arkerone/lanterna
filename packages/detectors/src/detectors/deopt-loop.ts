@@ -32,6 +32,13 @@ export const deoptLoopDetector: Detector = {
           selfPct: 0,
           extra: evidenceExtra,
         },
+        measurements: {
+          observed: { count: deopt.count, hotspotTotalPct: matchingHotspot.totalPct },
+          thresholds: {
+            minCount: thresholds.minCount,
+            criticalCount: thresholds.criticalCount,
+          },
+        },
         why: `${deopt.function} was deoptimised ${deopt.count} times. ${deopt.explanation}`,
         suggestion: `Stabilise the types and shapes passed to \`${deopt.function}\`. Keep hidden classes consistent (initialise all properties in the constructor in the same order), avoid mixing number/string args, and don't mutate the function's arguments shape across calls.`,
         references: ['https://v8.dev/blog/hidden-classes', 'https://v8.dev/blog/elements-kinds'],
