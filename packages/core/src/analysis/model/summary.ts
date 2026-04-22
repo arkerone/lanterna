@@ -1,5 +1,15 @@
-import type { FrameCategory, LanternaReport, ReportSummary } from '../../report/types.js';
+import type {
+  CorrelatedHotspot,
+  FrameCategory,
+  Hotspot,
+  LanternaReport,
+  ReportSummary,
+  SummaryUserHotspot,
+} from '../../report/types.js';
 import type { EnrichedTree } from './hotspots.js';
+
+const TOP_USER_HOTSPOT_MIN_SELF_PCT = 10;
+const TOP_USER_HOTSPOT_MIN_TOTAL_PCT = 20;
 
 export function buildSummary(tree: EnrichedTree): ReportSummary {
   const totals = createFrameCategoryTotals();
@@ -36,6 +46,86 @@ export function deriveDominantBlockingKind(
     return 'blocking-io';
   }
   return null;
+}
+
+export function deriveTopUserHotspot(
+  hotspots: readonly Hotspot[],
+  correlatedHotspots: readonly CorrelatedHotspot[] = [],
+  findings: LanternaReport['findings'] = [],
+): SummaryUserHotspot | undefined {
+  const matches = hotspots
+    .filter(
+      (hotspot) =>
+        hotspot.category === 'user' &&
+        (hotspot.selfPct >= TOP_USER_HOTSPOT_MIN_SELF_PCT ||
+          hotspot.totalPct >= TOP_USER_HOTSPOT_MIN_TOTAL_PCT) &&
+        !isExplainedBySpecificFinding(hotspot, findings),
+    )
+    .sort((left, right) => {
+      const totalDelta = right.totalPct - left.totalPct;
+      if (totalDelta !== 0) return totalDelta;
+      return right.selfPct - left.selfPct;
+    });
+  const top = matches[0];
+  if (!top) return undefined;
+
+  const correlated = correlatedHotspots.find(
+    (candidate) =>
+      candidate.file === top.file &&
+      candidate.line === top.line &&
+      candidate.function === top.function,
+  );
+  const alternatives = matches.slice(1, 3).map((hotspot) => ({
+    id: hotspot.id,
+    function: hotspot.function,
+    file: hotspot.file,
+    line: hotspot.line,
+    selfPct: hotspot.selfPct,
+    totalPct: hotspot.totalPct,
+  }));
+
+  return {
+    function: top.function,
+    file: top.file,
+    line: top.line,
+    selfPct: top.selfPct,
+    totalPct: top.totalPct,
+    eventLoopCorrelation: correlated
+      ? { overlapPct: correlated.overlapPct, samplePct: correlated.samplePct }
+      : undefined,
+    alternativeHotspots: alternatives.length > 0 ? alternatives : undefined,
+  };
+}
+
+const SPECIFIC_FINDING_CATEGORIES = new Set([
+  'blocking-io',
+  'sync-crypto',
+  'json-on-hot-path',
+  'node-modules-hotspot',
+  'require-in-hot-path',
+]);
+
+function isExplainedBySpecificFinding(
+  hotspot: Hotspot,
+  findings: LanternaReport['findings'],
+): boolean {
+  return findings.some((finding) => {
+    if (!SPECIFIC_FINDING_CATEGORIES.has(finding.category)) return false;
+    if (matchesHotspot(finding.evidence, hotspot)) return true;
+    const userAttribution = (finding.evidence.extra as { userAttribution?: unknown } | undefined)
+      ?.userAttribution;
+    return matchesHotspot(userAttribution, hotspot);
+  });
+}
+
+function matchesHotspot(candidate: unknown, hotspot: Hotspot): boolean {
+  if (!candidate || typeof candidate !== 'object') return false;
+  const value = candidate as { file?: unknown; line?: unknown; function?: unknown };
+  return (
+    value.file === hotspot.file &&
+    value.line === hotspot.line &&
+    value.function === hotspot.function
+  );
 }
 
 function createFrameCategoryTotals(): Record<FrameCategory, number> {

@@ -1,5 +1,6 @@
 import type { ChildProcess } from 'node:child_process';
 import { attachControlChannel } from '../../runtime-signals/control-channel.js';
+import { mergeCaptureIntegrityCounters } from '../core/session.js';
 import type { CaptureIntegrity, EventLoopSample, RawGcEvent } from '../core/types.js';
 
 export interface SpawnLifecycleState {
@@ -51,6 +52,7 @@ export function createSpawnLifecycle(
             state.eventLoopAvailable = Boolean(event.capabilities?.eventLoop);
             state.eventLoopResolutionMs = event.eventLoopResolutionMs;
             state.captureIntegrity.gcObserverAvailable = Boolean(event.capabilities?.gc);
+            mergeCaptureIntegrityCounters(state.captureIntegrity, event.integrity);
             return;
           }
           if (event.type === 'capture-start') {
@@ -73,6 +75,7 @@ export function createSpawnLifecycle(
             return;
           }
           if (event.type === 'app-complete') {
+            mergeCaptureIntegrityCounters(state.captureIntegrity, event.integrity);
             state.appCompleted = true;
             resolveAppCompletion();
           }

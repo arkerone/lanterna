@@ -3,10 +3,12 @@ import { openInspectorForPid } from '../inspector/discovery.js';
 import { ATTACH_RUNTIME_HOOK_SOURCE } from '../runtime-signals/hooks/runtime-hook.js';
 import { readEventLoopSamples } from '../runtime-signals/readers/event-loop.js';
 import { readGcEvents } from '../runtime-signals/readers/gc.js';
+import { readRuntimeIntegrity } from '../runtime-signals/readers/integrity.js';
 import { sleep } from '../shared/sleep.js';
 import {
   createCaptureIntegrity,
   finishCaptureSession,
+  mergeCaptureIntegrityCounters,
   startCaptureSession,
 } from './core/session.js';
 import type { AttachStartOptions, CaptureHandle, ProfileSource, RawCapture } from './core/types.js';
@@ -20,6 +22,11 @@ interface InstallAttachRuntimeResult {
     eventLoop?: boolean;
     gc?: boolean;
     lifecycle?: boolean;
+  };
+  integrity?: {
+    controlChannelWriteErrors: number;
+    gcObserverSetupFailed: number;
+    heartbeatDropped: number;
   };
 }
 
@@ -101,6 +108,7 @@ export class AttachSource implements ProfileSource<AttachStartOptions> {
         const captureIntegrity = createCaptureIntegrity({
           controlChannelExpected: false,
           gcObserverAvailable: Boolean(hookResult.capabilities?.gc),
+          ...hookResult.integrity,
         });
         const gcEventsAbs = cdp.closed
           ? []
@@ -116,6 +124,16 @@ export class AttachSource implements ProfileSource<AttachStartOptions> {
 
         captureIntegrity.eventLoopTimed = eventLoopRead.samples.length > 0;
         captureIntegrity.gcTimed = gcEventsAbs.length > 0;
+        mergeCaptureIntegrityCounters(
+          captureIntegrity,
+          cdp.closed
+            ? undefined
+            : await withTimeout(
+                readRuntimeIntegrity(cdp),
+                ATTACH_FINALIZE_READ_TIMEOUT_MS,
+                undefined,
+              ),
+        );
 
         return finishCaptureSession({
           session,

@@ -12,7 +12,31 @@ interface AttachRuntimeResult {
     gc: boolean;
     lifecycle: boolean;
   };
+  integrity: RuntimeIntegrityCounters;
   resolutionMs?: number;
+}
+
+interface RuntimeIntegrityCounters {
+  controlChannelWriteErrors: number;
+  gcObserverSetupFailed: number;
+  heartbeatDropped: number;
+}
+
+interface PerfHooksBuiltin {
+  PerformanceObserver?: typeof PerformanceObserver;
+  performance?: typeof globalThis.performance;
+  monitorEventLoopDelay?: (options: { resolution: number }) => {
+    count: number;
+    max: number;
+    mean: number;
+    percentile: (value: number) => number;
+    reset?: () => void;
+    enable?: () => void;
+  };
+}
+
+interface FsBuiltin {
+  writeSync?: (fd: number, data: string) => unknown;
 }
 
 declare global {
@@ -54,28 +78,30 @@ export function installLanternaRuntimeHook(
     return existing.ensureInstalled();
   }
 
-  const getBuiltin = (name: string): any => {
-    if (typeof process.getBuiltinModule === 'function') {
-      return process.getBuiltinModule(name) || process.getBuiltinModule(`node:${name}`);
+  const getBuiltin = <T extends object>(name: string): T | null => {
+    const processWithBuiltins = process as typeof process & {
+      getBuiltinModule?: (name: string) => unknown;
+    };
+    let builtin: unknown;
+    if (typeof processWithBuiltins.getBuiltinModule === 'function') {
+      builtin =
+        processWithBuiltins.getBuiltinModule(name) ||
+        processWithBuiltins.getBuiltinModule(`node:${name}`);
+    } else if (typeof require === 'function') {
+      builtin = require(`node:${name}`) as unknown;
     }
-    if (typeof require === 'function') {
-      return require(`node:${name}`);
-    }
-    return null;
+    return builtin && typeof builtin === 'object' ? (builtin as T) : null;
   };
 
-  const perfHooks = getBuiltin('perf_hooks');
-  const fs = options.controlFd !== undefined && options.controlFd >= 0 ? getBuiltin('fs') : null;
+  const perfHooks = getBuiltin<PerfHooksBuiltin>('perf_hooks');
+  const fs =
+    options.controlFd !== undefined && options.controlFd >= 0 ? getBuiltin<FsBuiltin>('fs') : null;
   const PerformanceObserverCtor = globalThis.PerformanceObserver || perfHooks?.PerformanceObserver;
   const performanceApi = globalThis.performance || perfHooks?.performance;
   const monitorEventLoopDelay = perfHooks?.monitorEventLoopDelay;
   const heartbeatResolutionMs = Number(options.resolutionMs) || 20;
   const emitLifecycle = Boolean(options.emitLifecycle);
   const controlFd = Number.isInteger(options.controlFd) ? Number(options.controlFd) : -1;
-
-  if (!performanceApi) {
-    return { installed: false, reason: 'performance API unavailable' };
-  }
 
   const state = {
     heartbeatTimer: null as NodeJS.Timeout | null,
@@ -93,14 +119,33 @@ export function installLanternaRuntimeHook(
     gcObserver: null as PerformanceObserver | null,
     completionSent: false,
     completionHoldTimer: null as NodeJS.Timeout | null,
+    integrity: {
+      controlChannelWriteErrors: 0,
+      gcObserverSetupFailed: 0,
+      heartbeatDropped: 0,
+    } as RuntimeIntegrityCounters,
   };
 
+  if (!performanceApi) {
+    return {
+      installed: false,
+      reason: 'performance API unavailable',
+      integrity: { ...state.integrity },
+    };
+  }
+
+  const readIntegrity = (): RuntimeIntegrityCounters => ({ ...state.integrity });
+
   const emit = (event: object) => {
-    if (!fs || controlFd < 0) return;
+    if (!fs || controlFd < 0) return false;
+    if (typeof fs.writeSync !== 'function') return false;
     try {
       fs.writeSync(controlFd, `${JSON.stringify(event)}\n`);
+      return true;
     } catch {
       // Control events are best-effort only.
+      state.integrity.controlChannelWriteErrors += 1;
+      return false;
     }
   };
 
@@ -126,7 +171,8 @@ export function installLanternaRuntimeHook(
       const lagMs = Math.max(0, now - state.nextExpectedHeartbeatMs);
       const sample = { atMs: now, lagMs };
       state.heartbeatSamples.push(sample);
-      emit({ type: 'heartbeat', ...sample });
+      const sent = emit({ type: 'heartbeat', ...sample });
+      if (!sent && fs && controlFd >= 0) state.integrity.heartbeatDropped += 1;
       state.nextExpectedHeartbeatMs = now + heartbeatResolutionMs;
       scheduleHeartbeat();
     }, heartbeatResolutionMs);
@@ -147,7 +193,11 @@ export function installLanternaRuntimeHook(
   };
 
   const ensureGcObserver = () => {
-    if (state.gcObserver || typeof PerformanceObserverCtor !== 'function') return;
+    if (state.gcObserver) return;
+    if (typeof PerformanceObserverCtor !== 'function') {
+      state.integrity.gcObserverSetupFailed += 1;
+      return;
+    }
     try {
       // Node.js GC entries carry a `detail.kind` field not present on the base PerformanceEntry type.
       type GcEntry = PerformanceEntry & { detail?: { kind?: number } };
@@ -165,6 +215,7 @@ export function installLanternaRuntimeHook(
       observer.observe({ entryTypes: ['gc'], buffered: false });
       state.gcObserver = observer;
     } catch {
+      state.integrity.gcObserverSetupFailed += 1;
       state.gcObserver = null;
     }
   };
@@ -184,6 +235,7 @@ export function installLanternaRuntimeHook(
       atMs: relativeMs(performanceApi.now()),
       source,
       code: code ?? null,
+      integrity: readIntegrity(),
     });
     holdForProfilerShutdown();
   };
@@ -245,6 +297,7 @@ export function installLanternaRuntimeHook(
           gc: Boolean(state.gcObserver),
           lifecycle: emitLifecycle,
         },
+        integrity: readIntegrity(),
         resolutionMs: heartbeatResolutionMs,
       };
     },
@@ -258,6 +311,7 @@ export function installLanternaRuntimeHook(
       gc: Boolean(state.gcObserver),
       lifecycle: emitLifecycle,
     },
+    integrity: readIntegrity(),
   });
   startCapture();
 

@@ -19,6 +19,12 @@ const eventLoopSummarySchema = z.object({
   count: z.number().int().nonnegative(),
 });
 
+export const runtimeIntegrityCountersSchema = z.object({
+  controlChannelWriteErrors: z.number().int().nonnegative(),
+  gcObserverSetupFailed: z.number().int().nonnegative(),
+  heartbeatDropped: z.number().int().nonnegative(),
+});
+
 export const eventLoopReadSchema = z.object({
   samples: z.array(eventLoopSampleSchema).optional(),
   summary: eventLoopSummarySchema.nullish(),
@@ -44,6 +50,7 @@ export const controlHookReadySchema = z.object({
       lifecycle: z.boolean().optional(),
     })
     .optional(),
+  integrity: runtimeIntegrityCountersSchema.optional(),
 });
 
 export const controlCaptureStartSchema = z.object({
@@ -68,6 +75,7 @@ export const controlGcSchema = z.object({
 export const controlAppCompleteSchema = z.object({
   type: z.literal('app-complete'),
   atMs: z.number().finite().optional(),
+  integrity: runtimeIntegrityCountersSchema.optional(),
 });
 
 export const controlEventSchema = z.discriminatedUnion('type', [

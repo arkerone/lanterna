@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { LANTERNA_REPORT_SCHEMA_VERSION } from '../src/report/meta.js';
 import { lanternaReportSchema } from '../src/report/schema.js';
 import type { LanternaReport } from '../src/report/types.js';
 
@@ -9,7 +10,7 @@ import type { LanternaReport } from '../src/report/types.js';
 function makeReport(overrides: Partial<LanternaReport> = {}): unknown {
   const base: LanternaReport = {
     meta: {
-      schemaVersion: '1.0.0',
+      schemaVersion: LANTERNA_REPORT_SCHEMA_VERSION,
       nodeVersion: 'v24.0.0',
       v8Version: '12.0.0',
       platform: 'linux',
@@ -31,6 +32,9 @@ function makeReport(overrides: Partial<LanternaReport> = {}): unknown {
         gcTimed: false,
         cpuSamplesTimed: true,
         gcObserverAvailable: true,
+        controlChannelWriteErrors: 0,
+        gcObserverSetupFailed: 0,
+        heartbeatDropped: 0,
       },
     },
     summary: {
@@ -44,6 +48,7 @@ function makeReport(overrides: Partial<LanternaReport> = {}): unknown {
       idleRatio: 0.4,
       topCategory: 'user',
       dominantBlockingKind: null,
+      topUserHotspot: undefined,
     },
     hotspots: [],
     hotStacks: [],
@@ -75,6 +80,10 @@ function makeReport(overrides: Partial<LanternaReport> = {}): unknown {
 // ---------------------------------------------------------------------------
 
 describe('lanternaReportSchema', () => {
+  it('pins the report schema version constant', () => {
+    expect(LANTERNA_REPORT_SCHEMA_VERSION).toBe('1.0.0');
+  });
+
   describe('valid reports', () => {
     it('accepts a minimal valid report', () => {
       const result = lanternaReportSchema.safeParse(makeReport());
@@ -86,6 +95,39 @@ describe('lanternaReportSchema', () => {
         makeReport({ extensions: { myPlugin: { score: 42 } } }),
       );
       expect(result.success).toBe(true);
+    });
+
+    it('accepts summary topUserHotspot and finding priority metadata', () => {
+      const report = makeReport({
+        summary: {
+          ...(makeReport() as LanternaReport).summary,
+          topUserHotspot: {
+            function: 'computeRanking',
+            file: 'src/ranking.js',
+            line: 27,
+            selfPct: 42,
+            totalPct: 67,
+          },
+        },
+        findings: [
+          {
+            id: 'custom:priority',
+            severity: 'warning',
+            category: 'custom',
+            title: 'Prioritized finding',
+            evidence: { file: '/app/x.ts', line: 1, function: 'x', selfPct: 5 },
+            priority: { score: 250, actionConfidence: 'high', impactEstimateMs: 125 },
+            why: 'why',
+            suggestion: 'fix',
+            references: [],
+          },
+        ],
+      });
+      const result = lanternaReportSchema.safeParse(report);
+      expect(result.success).toBe(true);
+      if (!result.success) return;
+      expect(result.data.summary.topUserHotspot?.function).toBe('computeRanking');
+      expect(result.data.findings[0]?.priority?.score).toBe(250);
     });
 
     it('accepts a report with a custom (extension) finding', () => {

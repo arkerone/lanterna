@@ -87,6 +87,9 @@ export interface CaptureIntegrity {
   gcTimed: boolean;
   cpuSamplesTimed: boolean;
   gcObserverAvailable: boolean;
+  controlChannelWriteErrors: number;
+  gcObserverSetupFailed: number;
+  heartbeatDropped: number;
 }
 
 export interface RawCapture {
