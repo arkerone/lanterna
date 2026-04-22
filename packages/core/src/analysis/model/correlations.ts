@@ -1,5 +1,5 @@
 import type { RawCapture } from '../../capture/core/types.js';
-import type { CorrelatedHotspot, FrameCategory } from '../../report/types.js';
+import type { CorrelatedHotspot, CorrelationCoverage, FrameCategory } from '../../report/types.js';
 import { GC_CORRELATION_LOOKAROUND_MS } from '../../shared/config.js';
 import type { EnrichedTree, NodeEnriched } from './hotspots.js';
 
@@ -11,6 +11,11 @@ export interface TimedSample {
 export interface TimeWindow {
   startMs: number;
   endMs: number;
+}
+
+export interface CorrelationResult {
+  hotspots: CorrelatedHotspot[];
+  coverage: CorrelationCoverage;
 }
 
 export function buildTimedSamples(raw: RawCapture, sampleIntervalMicros: number): TimedSample[] {
@@ -41,16 +46,35 @@ export function correlateUserHotspots(
   windows: TimeWindow[],
   options: { topN?: number } = {},
 ): CorrelatedHotspot[] {
-  if (timedSamples.length === 0 || windows.length === 0) return [];
+  return correlateUserHotspotsWithCoverage(timedSamples, tree, windows, options).hotspots;
+}
+
+export function correlateUserHotspotsWithCoverage(
+  timedSamples: TimedSample[],
+  tree: EnrichedTree,
+  windows: TimeWindow[],
+  options: { topN?: number } = {},
+): CorrelationResult {
+  const emptyCoverage: CorrelationCoverage = {
+    samplesInWindows: 0,
+    samplesAttributed: 0,
+    windowCount: windows.length,
+    attributionRate: 0,
+  };
+  if (timedSamples.length === 0 || windows.length === 0) {
+    return { hotspots: [], coverage: emptyCoverage };
+  }
 
   const overlapCountsByNodeKey = new Map<string, { count: number; node: NodeEnriched }>();
-  let overlapSamples = 0;
+  let samplesInWindows = 0;
+  let samplesAttributed = 0;
 
   for (const sample of timedSamples) {
     if (!isInAnyWindow(sample.atMs, windows)) continue;
+    samplesInWindows += 1;
     const node = firstAncestorByCategory(sample.leafId, tree, 'user');
     if (!node) continue;
-    overlapSamples += 1;
+    samplesAttributed += 1;
     const nodeKey = makeNodeKey(node);
     const existing = overlapCountsByNodeKey.get(nodeKey);
     if (existing) {
@@ -60,20 +84,47 @@ export function correlateUserHotspots(
     }
   }
 
-  if (overlapSamples === 0) return [];
+  const coverage: CorrelationCoverage = {
+    samplesInWindows,
+    samplesAttributed,
+    windowCount: windows.length,
+    attributionRate: samplesInWindows === 0 ? 0 : samplesAttributed / samplesInWindows,
+  };
+
+  if (samplesAttributed === 0) return { hotspots: [], coverage };
 
   const totalSamples = Math.max(1, timedSamples.length);
-  return Array.from(overlapCountsByNodeKey.values())
-    .sort((a, b) => b.count - a.count)
-    .slice(0, options.topN ?? 3)
-    .map(({ count, node }) => ({
+  const sorted = Array.from(overlapCountsByNodeKey.values()).sort((a, b) => b.count - a.count);
+  const topN = options.topN ?? 3;
+  const limited = sorted.slice(0, topN);
+
+  const hotspots: CorrelatedHotspot[] = limited.map(({ count, node }, index) => {
+    const overlapPct = (count / samplesAttributed) * 100;
+    const next = limited[index + 1];
+    const nextOverlapPct = next ? (next.count / samplesAttributed) * 100 : 0;
+    return {
       id: `${node.file}:${node.line}:${node.function}`,
       function: node.function,
       file: node.file,
       line: node.line,
-      overlapPct: (count / overlapSamples) * 100,
+      overlapPct,
       samplePct: (count / totalSamples) * 100,
-    }));
+      rank: index + 1,
+      confidence: scoreConfidence(overlapPct, nextOverlapPct),
+    };
+  });
+
+  return { hotspots, coverage };
+}
+
+export function scoreConfidence(
+  overlapPct: number,
+  nextOverlapPct: number,
+): 'low' | 'medium' | 'high' {
+  if (overlapPct >= 60) return 'high';
+  if (overlapPct >= 30 && overlapPct - nextOverlapPct >= 15) return 'high';
+  if (overlapPct >= 25) return 'medium';
+  return 'low';
 }
 
 export function buildGcCorrelationWindows(

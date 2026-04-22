@@ -8,6 +8,7 @@ import type {
 import { defineBuiltinFinding, stripOptPrefix } from '@lanterna-profiler/core';
 import { DETECTOR_THRESHOLDS, JSON_FUNCTION_PATTERNS } from '../config.js';
 import {
+  aggregateByPatterns,
   buildAttributedFinding,
   buildAttributionEvidence,
   findStallCorrelation,
@@ -20,6 +21,10 @@ export const jsonOnHotPathDetector: Detector = {
   order: 20,
   detect(report, context): Finding[] {
     const thresholds = DETECTOR_THRESHOLDS.jsonHotPath;
+    const { categoryTotalPct } = aggregateByPatterns(context.fullHotspots, JSON_FUNCTION_PATTERNS, {
+      normalize: stripOptPrefix,
+    });
+    const familyExceeded = categoryTotalPct >= thresholds.categoryTotalPct;
     const findings: Finding[] = [];
     for (const hotspot of context.fullHotspots) {
       const normalizedFunctionName = stripOptPrefix(hotspot.function);
@@ -28,8 +33,8 @@ export const jsonOnHotPathDetector: Detector = {
       );
       if (!patternMatch) continue;
       if (hotspot.category !== 'node:builtin' && hotspot.category !== 'native') continue;
-      if (hotspot.totalPct < thresholds.minTotalPct) continue;
-      findings.push(buildFinding(hotspot, patternMatch.api, report, context));
+      if (hotspot.totalPct < thresholds.minTotalPct && !familyExceeded) continue;
+      findings.push(buildFinding(hotspot, patternMatch.api, categoryTotalPct, report, context));
     }
     return findings;
   },
@@ -38,6 +43,7 @@ export const jsonOnHotPathDetector: Detector = {
 function buildFinding(
   hotspot: Hotspot,
   api: string,
+  categoryTotalPct: number,
   report: LanternaReport,
   context: FindingContext,
 ): BuiltinFinding<'json-on-hot-path'> {
@@ -47,18 +53,31 @@ function buildFinding(
     calleeTotalPct: hotspot.totalPct,
     ...buildAttributionEvidence(attribution, caller),
     eventLoopCorrelation: findStallCorrelation(caller, report),
+    categoryTotalPct: categoryTotalPct > 0 ? categoryTotalPct : undefined,
   };
+  const thresholds = DETECTOR_THRESHOLDS.jsonHotPath;
   return defineBuiltinFinding(
     buildAttributedFinding({
       id: `json-on-hot-path:${api}`,
       category: 'json-on-hot-path',
-      severity:
-        hotspot.totalPct >= DETECTOR_THRESHOLDS.jsonHotPath.criticalPct ? 'critical' : 'warning',
+      severity: hotspot.totalPct >= thresholds.criticalPct ? 'critical' : 'warning',
       title: `${api} on hot path`,
       hotspot,
       caller,
       selfPct: hotspot.totalPct,
       extra: evidenceExtra,
+      measurements: {
+        observed: {
+          selfPct: hotspot.selfPct,
+          totalPct: hotspot.totalPct,
+          categoryTotalPct,
+        },
+        thresholds: {
+          minTotalPct: thresholds.minTotalPct,
+          criticalPct: thresholds.criticalPct,
+          categoryTotalPct: thresholds.categoryTotalPct,
+        },
+      },
       why: `\`${api}\` is consuming a meaningful share of on-CPU time on the main thread. Repeated JSON parse/stringify work is both CPU-heavy and allocation-heavy, so it often amplifies event-loop latency and GC pressure.`,
       suggestion: `Avoid repeated \`${api}\` work per request. Parse once at the edge, serialize once at the boundary, cache stable payloads, and prefer streaming JSON for large bodies instead of building huge objects/strings in memory.`,
       references: [

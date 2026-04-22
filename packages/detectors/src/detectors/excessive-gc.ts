@@ -57,6 +57,15 @@ export const excessiveGcDetector: Detector = {
           selfPct: topCandidate?.samplePct ?? 0,
           extra: evidenceExtra,
         },
+        measurements: {
+          observed: { gcRatio, longestPauseMs },
+          thresholds: {
+            ratioTrigger: thresholds.ratioTrigger,
+            longestPauseTrigger: thresholds.longestPauseTrigger,
+            ratioCritical: thresholds.ratioCritical,
+            longestPauseCritical: thresholds.longestPauseCritical,
+          },
+        },
         why: `${evidenceParts.join(' and ')}. High GC usually means too many short-lived allocations on hot paths: unbounded caches, per-request object churn, large Buffer concat, or repeated JSON parse/stringify.`,
         suggestion: `Look at the top user-code hotspots for allocation patterns: replace array/string concat in loops with pre-sized buffers or streams, use bounded caches (lru-cache), reuse objects where safe, avoid \`JSON.parse(JSON.stringify(x))\` for deep clone (use \`structuredClone\`). Check old-space growth with \`--trace-gc --trace-gc-verbose\`.`,
         references: [

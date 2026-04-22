@@ -31,7 +31,7 @@ export class SpawnSource implements ProfileSource<SpawnStartOptions> {
     });
 
     const stderrBuffer: string[] = [];
-    const captureIntegrity = createCaptureIntegrity();
+    const captureIntegrity = createCaptureIntegrity({ controlChannelExpected: true });
     const lifecycle = createSpawnLifecycle(
       child,
       child.stdio[3] as NodeJS.ReadableStream | null | undefined,

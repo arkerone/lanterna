@@ -9,6 +9,7 @@ import type { LanternaReport } from '../src/report/types.js';
 function makeReport(overrides: Partial<LanternaReport> = {}): unknown {
   const base: LanternaReport = {
     meta: {
+      schemaVersion: '1.0.0',
       nodeVersion: 'v24.0.0',
       v8Version: '12.0.0',
       platform: 'linux',
@@ -25,9 +26,11 @@ function makeReport(overrides: Partial<LanternaReport> = {}): unknown {
       deep: false,
       captureIntegrity: {
         controlChannel: true,
+        controlChannelExpected: true,
         eventLoopTimed: false,
         gcTimed: false,
         cpuSamplesTimed: true,
+        gcObserverAvailable: true,
       },
     },
     summary: {

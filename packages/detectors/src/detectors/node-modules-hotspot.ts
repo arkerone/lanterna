@@ -57,19 +57,25 @@ function buildFinding(
     eventLoopCorrelation: findStallCorrelation(caller, report),
     alternativeHotspots: alternatives.map(toAlternativeHotspotEvidence),
   };
+  const thresholds = DETECTOR_THRESHOLDS.nodeModulesHotspot;
   return defineBuiltinFinding(
     buildAttributedFinding({
       id: `node-modules-hotspot:${hotspot.package ?? hotspot.function}`,
       category: 'node-modules-hotspot',
-      severity:
-        hotspot.totalPct >= DETECTOR_THRESHOLDS.nodeModulesHotspot.criticalTotalPct
-          ? 'critical'
-          : 'warning',
+      severity: hotspot.totalPct >= thresholds.criticalTotalPct ? 'critical' : 'warning',
       title: `Dependency hotspot on hot path (${hotspot.package ?? hotspot.function})`,
       hotspot,
       caller,
       selfPct: hotspot.totalPct,
       extra: evidenceExtra,
+      measurements: {
+        observed: { selfPct: hotspot.selfPct, totalPct: hotspot.totalPct },
+        thresholds: {
+          minSelfPct: thresholds.minSelfPct,
+          minTotalPct: thresholds.minTotalPct,
+          criticalTotalPct: thresholds.criticalTotalPct,
+        },
+      },
       why: `A dependency frame from \`${hotspot.package ?? hotspot.file}\` is dominating the CPU profile. That usually means the main request path is paying for expensive library work rather than your own code directly.`,
       suggestion: `Inspect how often this dependency is called and whether you can reduce input size, cache results, switch to a cheaper code path, or replace the library for this workload. If the work is inherently heavy, move it off the main thread.`,
       references: ['https://nodejs.org/en/docs/guides/dont-block-the-event-loop'],

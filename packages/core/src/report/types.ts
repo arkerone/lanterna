@@ -33,6 +33,7 @@ export type BuiltinFindingCategory =
 export type FindingCategory = BuiltinFindingCategory | (string & {});
 
 export interface ReportMeta {
+  schemaVersion: string;
   nodeVersion: string;
   v8Version: string;
   platform: string;
@@ -49,9 +50,11 @@ export interface ReportMeta {
   deep: boolean;
   captureIntegrity: {
     controlChannel: boolean;
+    controlChannelExpected: boolean;
     eventLoopTimed: boolean;
     gcTimed: boolean;
     cpuSamplesTimed: boolean;
+    gcObserverAvailable: boolean;
   };
 }
 
@@ -102,6 +105,32 @@ export interface HotStack {
   frames: HotStackFrame[];
 }
 
+/**
+ * Group of hot stacks that share the same user-code anchor (the top-most
+ * user frame in the stack). Lets an agent reason about "the feature" behind
+ * several superficially-different stacks instead of treating each as isolated.
+ */
+export interface HotStackCluster {
+  anchor: {
+    function: string;
+    file: string;
+    line: number;
+  };
+  /** Sum of `weightPct` across all stacks in this cluster. */
+  weightPct: number;
+  /** Number of hot stacks grouped under this anchor. */
+  stackCount: number;
+  /** Indices into `hotStacks[]` of the member stacks. */
+  memberIndices: number[];
+}
+
+export interface CorrelationCoverage {
+  samplesInWindows: number;
+  samplesAttributed: number;
+  windowCount: number;
+  attributionRate: number;
+}
+
 export interface GcReport {
   totalPauseMs: number;
   count: {
@@ -113,6 +142,7 @@ export interface GcReport {
   longestPauseMs: number;
   pausesOver10ms: Array<{ atMs: number; kind: string; durationMs: number }>;
   correlatedHotspots?: CorrelatedHotspot[];
+  correlationCoverage?: CorrelationCoverage;
 }
 
 export interface EventLoopReport {
@@ -132,6 +162,7 @@ export interface EventLoopReport {
     meanLagMs: number;
   };
   correlatedHotspots?: CorrelatedHotspot[];
+  correlationCoverage?: CorrelationCoverage;
 }
 
 export interface CorrelatedHotspot {
@@ -141,6 +172,16 @@ export interface CorrelatedHotspot {
   line: number;
   overlapPct: number;
   samplePct: number;
+  /** 1-indexed rank within the correlation array (1 = strongest candidate). */
+  rank: number;
+  /**
+   * Qualitative confidence that this frame is the cause, derived from
+   * absolute overlap and the gap to the next-ranked candidate:
+   * - `high`: dominant alone (≥60%) or clearly ahead (≥30% with ≥15pp gap).
+   * - `medium`: meaningful share (≥25%) but not dominant.
+   * - `low`: weak signal — treat as hint only.
+   */
+  confidence: 'low' | 'medium' | 'high';
 }
 
 export interface DeoptEntry {
@@ -188,12 +229,21 @@ export interface BlockingIoEvidenceExtra extends AttributionEvidence {
   api: string;
   callee: string;
   eventLoopCorrelation?: StallCorrelation;
+  /**
+   * Sum of `totalPct` across every blocking-I/O frame in the capture.
+   * Populated so an agent can see the family-wide cost even when a single
+   * API crossed the per-API threshold (or when the finding was emitted only
+   * because the family aggregate crossed `categoryTotalPct`).
+   */
+  categoryTotalPct?: number;
 }
 
 export interface SyncCryptoEvidenceExtra extends AttributionEvidence {
   callee: string;
   calleeTotalPct: number;
   eventLoopCorrelation?: StallCorrelation;
+  /** Sum of `totalPct` across every sync-crypto frame in the capture. */
+  categoryTotalPct?: number;
 }
 
 export interface DeoptLoopEvidenceExtra {
@@ -241,6 +291,8 @@ export interface JsonHotPathEvidenceExtra extends AttributionEvidence {
   callee: string;
   calleeTotalPct: number;
   eventLoopCorrelation?: StallCorrelation;
+  /** Sum of `totalPct` across every JSON.parse/stringify frame in the capture. */
+  categoryTotalPct?: number;
 }
 
 export interface NodeModulesHotspotEvidenceExtra extends AttributionEvidence {
@@ -280,6 +332,41 @@ export interface FindingEvidence<TExtra = FindingEvidenceExtra> {
   extra?: TExtra;
 }
 
+export interface FindingRemediation {
+  /** Category of fix. Agents can branch on this to pick a transform. */
+  kind:
+    | 'async-variant'
+    | 'lazy-import-hoist'
+    | 'offload-worker'
+    | 'replace-library'
+    | 'cache'
+    | 'other';
+  /** Symbol or call signature to look for in user code. */
+  replace?: string;
+  /** Recommended replacement symbol or call signature. */
+  with?: string;
+  /** Source module of the replacement (e.g. `node:fs/promises`). */
+  module?: string;
+  /** Canonical reference URL. */
+  docs?: string;
+  /** Short, non-machine-actionable hint (e.g. edge-case notes). */
+  notes?: string;
+}
+
+export interface FindingMeasurements {
+  /**
+   * Raw observed values that caused the finding to fire (e.g.
+   * `{ totalPct: 12.4, categoryTotalPct: 18 }` for a blocking-io finding).
+   */
+  observed: Record<string, number>;
+  /**
+   * Threshold values the detector compared against (e.g.
+   * `{ minTotalPct: 1, criticalPct: 10 }`). Lets an agent re-reason about
+   * severity without parsing the `why` string.
+   */
+  thresholds: Record<string, number>;
+}
+
 export interface BaseFinding<
   TCategory extends FindingCategory = FindingCategory,
   TExtra = FindingEvidenceExtra,
@@ -289,6 +376,8 @@ export interface BaseFinding<
   category: TCategory;
   title: string;
   evidence: FindingEvidence<TExtra>;
+  measurements?: FindingMeasurements;
+  remediation?: FindingRemediation;
   why: string;
   suggestion: string;
   references: string[];
@@ -316,6 +405,7 @@ export interface LanternaReport {
   summary: ReportSummary;
   hotspots: Hotspot[];
   hotStacks: HotStack[];
+  hotStackClusters?: HotStackCluster[];
   gc: GcReport;
   eventLoop: EventLoopReport;
   deopts: DeoptEntry[];

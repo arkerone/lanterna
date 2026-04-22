@@ -35,9 +35,11 @@ export function makeRaw(
     eventLoopAvailable: false,
     captureIntegrity: {
       controlChannel: true,
+      controlChannelExpected: true,
       eventLoopTimed: false,
       gcTimed: false,
       cpuSamplesTimed: true,
+      gcObserverAvailable: true,
     },
     deopts: [],
     ...overrides,
