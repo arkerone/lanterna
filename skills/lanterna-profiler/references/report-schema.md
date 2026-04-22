@@ -137,15 +137,20 @@ Available only when Lanterna obtained a usable event-loop signal (`available: tr
 | Field | Type | Description |
 |---|---|---|
 | `available` | boolean | Whether event loop sampling was active |
+| `measurementBasis` | `"both"` \| `"heartbeats"` \| `"histogram"` \| `"none"` | Where the lag numbers came from. `both` = timed heartbeats *and* `monitorEventLoopDelay` histogram (strongest). `heartbeats` = timed preload samples only. `histogram` = histogram only (no temporal stall windows — `stallIntervals[]` will be empty or aggregate-only). `none` = no signal. |
+| `confidence` | `"high"` \| `"low"` \| `"none"` | Qualitative trust in the lag numbers. Degrade claims when `low`/`none`. |
 | `sampleCount` | number | Number of timed heartbeat samples collected |
 | `maxLagMs` | number | Maximum observed event loop delay (ms) |
 | `p99LagMs` | number | 99th percentile lag |
 | `p50LagMs` | number | Median lag |
 | `meanLagMs` | number | Mean lag |
-| `stallIntervals[]` | array | Intervals where lag exceeded 200ms |
-| `correlatedHotspots[]` | array | Top user hotspots whose CPU samples overlapped the stall windows |
+| `histogram` | object? | Raw `monitorEventLoopDelay` percentiles when available |
+| `stallIntervals[]` | array | Intervals where lag exceeded 200ms. Empty when `measurementBasis === "histogram"`. |
+| `correlatedHotspots[]` | array | Top user hotspots whose CPU samples overlapped the stall windows. Each entry carries `rank` (1-indexed), `overlapPct`, `samplePct`, and `confidence` (`low` / `medium` / `high`). Only treat as causal when `confidence === 'high'`. |
 
 **Threshold**: `maxLagMs > 200` or `p99LagMs > 100` → `event-loop-stall` finding.
+
+**Attribution rule**: if `measurementBasis === "histogram"`, `stallIntervals[]` is empty and `correlatedHotspots[].overlapPct` is aggregate — **not** temporal. Name a suspect but do not assert causation.
 
 ---
 
@@ -181,13 +186,40 @@ Only populated when `meta.deep = true` (`--deep` flag). Requires `--trace-deopt`
 | `evidence.line` | number | Source line |
 | `evidence.function` | string | Function name |
 | `evidence.selfPct` | number | CPU % attributed to this hotspot |
-| `evidence.extra` | object? | Category-specific additional data, including correlation candidates where available |
+| `evidence.extra` | object? | Category-specific additional data. See `evidence.extra` fields below. |
+| `measurements.observed` | object? | Raw observed values that caused the finding to fire, e.g. `{ totalPct: 12.4, categoryTotalPct: 18 }`. Compare against `thresholds` to rank findings without parsing `why`. |
+| `measurements.thresholds` | object? | Threshold values the detector used, e.g. `{ minTotalPct: 1, criticalPct: 10 }`. |
 | `priority.score` | number | Precomputed action priority; higher should be handled first |
 | `priority.impactEstimateMs` | number? | Estimated impact when available |
 | `priority.actionConfidence` | `"low"` \| `"medium"` \| `"high"` | Confidence that the suggested action targets the cause |
+| `remediation.kind` | `"async-variant"` \| `"lazy-import-hoist"` \| `"offload-worker"` \| `"replace-library"` \| `"cache"` \| `"other"` | Category of mechanical fix. Present on ★★★ detectors (blocking-io, sync-crypto, require-in-hot-path) when confidence is sufficient. |
+| `remediation.replace` | string? | Symbol or call signature to look for in user code |
+| `remediation.with` | string? | Recommended replacement symbol or call signature |
+| `remediation.module` | string? | Source module of the replacement, e.g. `node:fs/promises` |
+| `remediation.docs` | string? | Canonical reference URL |
+| `remediation.notes` | string? | Non-machine-actionable hint (edge-case notes) |
 | `why` | string | Why this is a problem in the context of this profile |
 | `suggestion` | string | Concrete, code-level remediation action |
 | `references[]` | string[] | URLs to Node.js / V8 documentation |
+
+### `evidence.extra` — shared fields
+
+Not every detector populates every field; read defensively.
+
+| Field | Type | Description |
+|---|---|---|
+| `proofLevel` | `"direct-builtin"` \| `"attributed-caller"` \| `"aggregate-correlation"` \| `"deopt-trace-only"` | How the detector reached this conclusion. `direct-builtin` / `attributed-caller` are actionable; `aggregate-correlation` / `deopt-trace-only` are hypotheses. |
+| `attributionBasis` | `"sample-path"` \| `"builtin-only"` | How `evidence.file:line` was resolved to user code (for attributed findings). |
+| `attributionConfidence` | `"low"` \| `"high"` | Trust that the user caller is the right place to patch. `"low"` → do not patch automatically. |
+| `userAttribution` | object? | Hot user-frame backing the attribution (id, function, file, line, samplePct, supportPct). |
+| `api` / `callee` | string? | The builtin or library entry point the detector locked onto. |
+| `calleeTotalPct` | number? | Inclusive CPU % for this specific callee. |
+| `categoryTotalPct` | number? | Sum of `totalPct` across every frame in the same detector family (all sync fs, all sync crypto, all JSON, all require…). If much larger than `calleeTotalPct`, the problem is structural — patching one line won't move the needle. |
+| `eventLoopCorrelation.overlapPct` | number? | % of measured stall windows overlapping this frame's samples. `≥50` is a causal lead; `0` is circumstantial. Always read alongside `eventLoop.measurementBasis` — `"histogram"` means overlap is aggregate, not temporal. |
+| `eventLoopCorrelation.samplePct` | number? | Sample share for this frame during stall windows. |
+| `candidateHotspots[]` | array? | For `excessive-gc` and `event-loop-stall`: ranked user-frame candidates with `rank`, `overlapPct`, `confidence` (`low`/`medium`/`high`). |
+| `alternativeHotspots[]` | array? | Runner-up user frames for `node-modules-hotspot` attribution. |
+| `hotStackClusters[]` | array? | Groups of hot stacks sharing a user-code anchor. When several findings point at the same anchor, treat them as one problem. |
 
 ### Built-in finding categories
 
