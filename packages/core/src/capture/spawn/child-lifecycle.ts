@@ -50,6 +50,7 @@ export function createSpawnLifecycle(
           if (event.type === 'hook-ready') {
             state.eventLoopAvailable = Boolean(event.capabilities?.eventLoop);
             state.eventLoopResolutionMs = event.eventLoopResolutionMs;
+            state.captureIntegrity.gcObserverAvailable = Boolean(event.capabilities?.gc);
             return;
           }
           if (event.type === 'capture-start') {

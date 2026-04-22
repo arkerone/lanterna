@@ -136,9 +136,11 @@ export function createCaptureIntegrity(
 ): CaptureIntegrity {
   return {
     controlChannel: false,
+    controlChannelExpected: false,
     eventLoopTimed: false,
     gcTimed: false,
     cpuSamplesTimed: false,
+    gcObserverAvailable: false,
     ...overrides,
   };
 }

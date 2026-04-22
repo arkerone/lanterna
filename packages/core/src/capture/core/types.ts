@@ -82,9 +82,11 @@ export interface EventLoopHistogram {
 
 export interface CaptureIntegrity {
   controlChannel: boolean;
+  controlChannelExpected: boolean;
   eventLoopTimed: boolean;
   gcTimed: boolean;
   cpuSamplesTimed: boolean;
+  gcObserverAvailable: boolean;
 }
 
 export interface RawCapture {

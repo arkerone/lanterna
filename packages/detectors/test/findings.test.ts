@@ -182,9 +182,11 @@ describe('findings – excessive-gc confidence gating', () => {
       durationMs: 50,
       captureIntegrity: {
         controlChannel: true,
+        controlChannelExpected: true,
         eventLoopTimed: false,
         gcTimed: false,
         cpuSamplesTimed: true,
+        gcObserverAvailable: true,
       },
     }),
     { sampleIntervalMicros: 1000, deep: false, command: ['node', 'app.js'] },
@@ -206,9 +208,11 @@ describe('findings – event-loop-stall', () => {
     eventLoopAvailable: true,
     captureIntegrity: {
       controlChannel: true,
+      controlChannelExpected: true,
       eventLoopTimed: true,
       gcTimed: false,
       cpuSamplesTimed: true,
+      gcObserverAvailable: true,
     },
   });
 
@@ -245,9 +249,11 @@ describe('event loop report – hook without usable timing signal', () => {
     eventLoopHistogram: undefined,
     captureIntegrity: {
       controlChannel: true,
+      controlChannelExpected: true,
       eventLoopTimed: false,
       gcTimed: false,
       cpuSamplesTimed: true,
+      gcObserverAvailable: true,
     },
   });
 

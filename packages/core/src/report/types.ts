@@ -49,9 +49,11 @@ export interface ReportMeta {
   deep: boolean;
   captureIntegrity: {
     controlChannel: boolean;
+    controlChannelExpected: boolean;
     eventLoopTimed: boolean;
     gcTimed: boolean;
     cpuSamplesTimed: boolean;
+    gcObserverAvailable: boolean;
   };
 }
 

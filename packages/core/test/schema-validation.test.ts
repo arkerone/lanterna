@@ -25,9 +25,11 @@ function makeReport(overrides: Partial<LanternaReport> = {}): unknown {
       deep: false,
       captureIntegrity: {
         controlChannel: true,
+        controlChannelExpected: true,
         eventLoopTimed: false,
         gcTimed: false,
         cpuSamplesTimed: true,
+        gcObserverAvailable: true,
       },
     },
     summary: {

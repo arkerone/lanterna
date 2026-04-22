@@ -257,9 +257,11 @@ const metaSchema = z.object({
   deep: z.boolean(),
   captureIntegrity: z.object({
     controlChannel: z.boolean(),
+    controlChannelExpected: z.boolean(),
     eventLoopTimed: z.boolean(),
     gcTimed: z.boolean(),
     cpuSamplesTimed: z.boolean(),
+    gcObserverAvailable: z.boolean(),
   }),
 });
 

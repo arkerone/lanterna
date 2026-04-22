@@ -16,6 +16,11 @@ const ATTACH_FINALIZE_READ_TIMEOUT_MS = 1_500;
 interface InstallAttachRuntimeResult {
   installed?: boolean;
   reason?: string;
+  capabilities?: {
+    eventLoop?: boolean;
+    gc?: boolean;
+    lifecycle?: boolean;
+  };
 }
 
 export class AttachSource implements ProfileSource<AttachStartOptions> {
@@ -56,7 +61,7 @@ export class AttachSource implements ProfileSource<AttachStartOptions> {
         stage: 'install-hooks',
         message: 'Installing Lanterna runtime hooks on the target process...',
       });
-      await installAttachRuntimeHook(cdp);
+      const hookResult = await installAttachRuntimeHook(cdp);
       options.onProgress?.({
         stage: 'start-capture',
         message: 'Starting CPU capture and synchronizing runtime clocks...',
@@ -93,7 +98,10 @@ export class AttachSource implements ProfileSource<AttachStartOptions> {
         detachContextHandler();
         detachCloseHandler();
 
-        const captureIntegrity = createCaptureIntegrity();
+        const captureIntegrity = createCaptureIntegrity({
+          controlChannelExpected: false,
+          gcObserverAvailable: Boolean(hookResult.capabilities?.gc),
+        });
         const gcEventsAbs = cdp.closed
           ? []
           : await withTimeout(readGcEvents(cdp), ATTACH_FINALIZE_READ_TIMEOUT_MS, []);
@@ -141,10 +149,10 @@ export async function startAttachCapture(options: AttachStartOptions): Promise<C
   return new AttachSource().start(options);
 }
 
-async function installAttachRuntimeHook(cdp: CdpClient): Promise<void> {
+async function installAttachRuntimeHook(cdp: CdpClient): Promise<InstallAttachRuntimeResult> {
   const value = await cdp.evaluate(ATTACH_RUNTIME_HOOK_SOURCE);
   const result = (value ?? {}) as InstallAttachRuntimeResult;
-  if (result.installed) return;
+  if (result.installed) return result;
   throw new Error(
     result.reason
       ? `failed to install attach runtime hook: ${result.reason}`
