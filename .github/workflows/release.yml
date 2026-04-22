@@ -43,7 +43,7 @@ jobs:
 
       - name: Create Release PR or Publish to npm
         id: changesets
-        uses: changesets/action@935fe876b0054dfc962ac86bcddf028460040d46 # v1.5.3
+        uses: changesets/action@6a0a831ff30acef54f2c6aa1cbbc1096b066edaf # v1.7.0
         with:
           publish: npm run release
           version: npm run version-packages
