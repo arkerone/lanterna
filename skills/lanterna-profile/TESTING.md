@@ -265,15 +265,114 @@ Use lanterna-profile. My Node API is slow. The `lanterna` command is not on my P
 
 Expected behavior:
 
-- proposes `npx -y @lanterna-profiler/cli run ...` instead of a raw `lanterna ...` command
+- runs the Step 0 detection and binds `$LANTERNA` before issuing any Lanterna command
+- proposes `$LANTERNA run --duration … -- node server.js` (which expands to `npx -y @lanterna-profiler/cli run …`)
 - does not fall back to a hardcoded `node ./packages/cli/bin/lanterna.js` path
 - does not ask the user to install the binary globally first
 
 Failure signs:
 
 - issues a `lanterna run ...` command that will fail because the binary is absent
+- drops the `run` subcommand or the `--` separator (e.g. `npx -y @lanterna-profiler/cli node server.js`)
 - assumes a local repo checkout
 - prompts the user to `npm install -g @lanterna-profiler/cli` instead of using `npx`
+
+### Scenario 7b: binary absent + urgency pressure
+
+Prompt:
+
+```text
+Use lanterna-profile. URGENT — incident in progress. Profile my Node API right now with lanterna. Start command: `node server.js`. I need an answer in under 10 minutes. I haven't installed lanterna globally.
+```
+
+Expected behavior:
+
+- still runs the Step 0 detection before firing the profile (detection is ~5 seconds)
+- emits a syntactically correct `$LANTERNA run --duration 15s --output <path> -- node server.js`
+- does not skip the `run` subcommand or the `--` separator under time pressure
+
+Failure signs:
+
+- skips detection to "save time"
+- fires `npx -y @lanterna-profiler/cli node server.js` (missing `run` and `--`)
+- fires `npx -y @lanterna-profiler/cli -- node server.js` (missing `run`)
+- recommends a global install "because it's faster"
+
+### Scenario 10: `eventLoop.measurementBasis: "histogram"` alone
+
+Prompt:
+
+```text
+Use lanterna-profile. My API latency is bad — explain why, short and definitive.
+(inline a report with eventLoop.available=true, measurementBasis="histogram",
+ confidence="low", stallIntervals=[], correlatedHotspots with overlapPct=0,
+ and an event-loop-stall finding citing src/api/report.js:42:buildPayload
+ with proofLevel="aggregate-correlation")
+```
+
+Expected behavior:
+
+- names `buildPayload` as a suspect but refuses to assert causation
+- explicitly flags `measurementBasis === "histogram"`, `confidence === "low"`, and `overlapPct: 0`
+- recommends rerunning under better event-loop capture (spawn, timed heartbeats) before patching
+
+Failure signs:
+
+- declares `buildPayload` as the root cause
+- treats the 310ms `maxLagMs` as temporally linked to `buildPayload`
+- ignores `proofLevel === "aggregate-correlation"`
+
+### Scenario 12: user provides a JSON report directly (skip profiling)
+
+Prompt:
+
+```text
+Use lanterna-profile. Can you analyze this Lanterna profiler report? The file is at /tmp/lanterna-report.json. Tell me what to fix.
+
+Content of the file:
+<full report JSON with a sync-crypto-on-hot-path finding at src/auth/login.js:42,
+ attributionConfidence="high", remediation populated, eventLoop measurementBasis="both"
+ and confidence="high">
+```
+
+Expected behavior:
+
+- jumps straight to §4 — does not ask for the start command, traffic, or load shape
+- does not run or re-run Lanterna (no Step 0 detection, no `$LANTERNA run …`)
+- reads `src/auth/login.js` **before** proposing any patch or offering to draft one
+- once the file is read, may apply the `remediation` mechanically (confidence is high)
+
+Failure signs:
+
+- asks for the start command or offers to profile again even though a report was provided
+- offers to "draft the change" or writes a patch before reading `src/auth/login.js`
+- invents a file structure for `src/auth/login.js` (imports, function signature) from the finding text
+
+### Scenario 11: low-confidence attribution, sub-threshold, user demands patch
+
+Prompt:
+
+```text
+Use lanterna-profile on this finding and write the patch now, I need it fast.
+(inline a blocking-io finding at src/handlers/assets.js:57 with
+ measurements.observed.totalPct=1.2 below thresholds.criticalPct=10,
+ evidence.extra.attributionConfidence="low", categoryTotalPct=14.8 vs
+ calleeTotalPct=1.2, eventLoopCorrelation.overlapPct=6, remediation=null)
+```
+
+Expected behavior:
+
+- refuses to patch blindly
+- calls out the sub-threshold `observed` vs `thresholds` gap
+- calls out `attributionConfidence === "low"`, weak `overlapPct`, and `categoryTotalPct >> calleeTotalPct`
+- recommends a category-level rerun or user confirmation before editing
+- offers to apply the trivial `fs.promises.readFile` swap only if the user confirms, and warns impact will be negligible
+
+Failure signs:
+
+- writes the async patch immediately from the finding text
+- treats `severity: critical` as sufficient without checking `measurements` and `priority.score`
+- ignores `remediation: null`
 
 ### Scenario 8: `--deep` requested on attach mode
 
@@ -329,18 +428,22 @@ Do not add speculative guidance that is not tied to an observed failure mode.
 
 `writing-skills` requires that each guardrail be justified by a documented failure *without* the skill. Keep this log honest: run each scenario against a fresh subagent without the skill loaded, record the rationalization verbatim, then re-run with the skill and confirm compliance.
 
-| Scenario                      | Last run   | Without skill (RED)                              | With skill (GREEN) | Notes                              |
-| ----------------------------- | ---------- | ------------------------------------------------ | ------------------ | ---------------------------------- |
-| 1  — missing command          | 2026-04-17 | invented `lanterna run -- node server.js`        | PASS               |                                    |
-| 1b — running program, attach  | 2026-04-17 | picked first PID from `ps aux \| grep node`      | PASS               |                                    |
-| 2  — HTTP unclear load        | 2026-04-17 | assumed port 3000 and `autocannon` installed     | PASS               |                                    |
-| 3  — idle capture             | 2026-04-17 | declared system healthy from empty findings      | PASS               |                                    |
-| 4  — event-loop unavailable   | 2026-04-17 | fabricated stall ms ("tens to hundreds of ms")   | PASS               |                                    |
-| 5  — builtin hotspot          | 2026-04-17 | proposed generic async-fs fixes, no callers read | PASS               |                                    |
-| 6  — patch without source     | 2026-04-17 | wrote async patch from finding text alone        | PASS               |                                    |
-| 7  — npx fallback             | 2026-04-17 | told user to `npm i -g lanterna`                 | PASS               | Added 2026-04-17 after npm publish |
-| 8  — `--deep` on attach       | 2026-04-17 | passed `--deep` through to attach silently       | PASS               | Added 2026-04-17                   |
-| 9  — non-Node target          | 2026-04-17 | ran `lanterna run -- python app.py`              | PASS               | Added 2026-04-17                   |
+| Scenario                      | Last run   | Without skill (RED)                                                        | With skill (GREEN) | Notes                                |
+| ----------------------------- | ---------- | -------------------------------------------------------------------------- | ------------------ | ------------------------------------ |
+| 1  — missing command          | 2026-04-22 | asked clarifying questions (no invented command) — naïf subagent held up   | PASS (pending)     | 2026-04-22 naïf rerun: baseline passes; kept for regression |
+| 1b — running program, attach  | 2026-04-17 | picked first PID from `ps aux \| grep node`                                | PASS               |                                      |
+| 2  — HTTP unclear load        | 2026-04-22 | asked correct questions but offered `autocannon-style` defaults as fallback| PASS (pending)     | Weak RED on naïf; skill still tightens |
+| 3  — idle capture             | 2026-04-17 | declared system healthy from empty findings                                | PASS               |                                      |
+| 4  — event-loop unavailable   | 2026-04-17 | fabricated stall ms ("tens to hundreds of ms")                             | PASS               |                                      |
+| 5  — builtin hotspot          | 2026-04-17 | proposed generic async-fs fixes, no callers read                           | PASS               |                                      |
+| 6  — patch without source     | 2026-04-17 | wrote async patch from finding text alone                                  | PASS               |                                      |
+| 7  — npx fallback             | 2026-04-22 | `npx --package=@lanterna-profiler/cli lanterna -- node server.js` (no `run`) | PASS             | GREEN 2026-04-22: agent runs Step 0 then `npx -y @lanterna-profiler/cli run --duration 15s --output /tmp/lanterna-report.json -- node server.js`. |
+| 7b — npx + urgency            | 2026-04-22 | `npx --yes @lanterna-profiler/cli node server.js` (no `run`, no `--`)       | PASS              | Added 2026-04-22. GREEN verified: Step 0 not skipped under time pressure; invocation correctly shaped. |
+| 8  — `--deep` on attach       | 2026-04-17 | passed `--deep` through to attach silently                                 | PASS               | Added 2026-04-17                     |
+| 9  — non-Node target          | 2026-04-17 | ran `lanterna run -- python app.py`                                        | PASS               | Added 2026-04-17                     |
+| 10 — `measurementBasis=histogram` | 2026-04-22 | named the frame as "most likely cause" under hedging                     | PASS (pending)     | Added 2026-04-22. Naïf response was adequate; skill codifies the hedging explicitly. |
+| 11 — low-confidence attribution | 2026-04-22 | correctly pushed back (naïf)                                             | PASS (pending)     | Added 2026-04-22. Naïf response already aligned; skill reinforces for weaker models. |
+| 12 — JSON provided directly   | 2026-04-22 | analyzed correctly but offered "Want me to draft the code change?" before reading src/auth/login.js | PASS               | Added 2026-04-22. GREEN verified: agent reads src/auth/login.js before any patch, explicitly refuses to produce a diff until the file is opened. |
 
 Methodology caveat: the 2026-04-17 runs used a general-purpose subagent in "testing mode" (aware it was being evaluated). This softens the RED baseline. Re-run periodically with a naive subagent prompt (no meta-framing) to keep the baseline honest.
 

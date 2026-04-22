@@ -27,24 +27,34 @@ Do not use when:
 
 ## Quick Reference
 
+- **Step 0 — detect the binary before any Lanterna command**. Run this once:
+  ```bash
+  command -v lanterna >/dev/null 2>&1 && echo installed || echo use-npx
+  ```
+  If the output is `installed`, set `LANTERNA=lanterna`. Otherwise set `LANTERNA="npx -y @lanterna-profiler/cli"`. Every `lanterna …` command in this skill is written as `$LANTERNA …`, so the exact binary is substituted once and never mentally re-typed. Never recommend `npm i -g @lanterna-profiler/cli` as a precondition.
+- **Every Lanterna invocation needs a subcommand** (`run` or `attach`) *before* the rest. With `npx`, that means `npx -y @lanterna-profiler/cli run -- node server.js`, **not** `npx -y @lanterna-profiler/cli node server.js`. Forgetting `run`/`attach` or the `--` separator is the most common invocation bug.
 - Default duration: `15s` with load, `5s` without load
-- Prefer `--deep` when deopts or type instability are plausible (spawn mode only)
+- Prefer `--deep` when deopts or type instability are plausible (spawn mode only — `--deep` is rejected by `attach`)
 - For HTTP servers, profile with load rather than idle traffic
 - If `summary.idleRatio > 0.8`, the run is mostly idle and should usually be repeated with load
 - If `eventLoop.available` is `false`, avoid strong latency attribution
+- If `eventLoop.measurementBasis` is `"histogram"` or `eventLoop.confidence` is `"low"`/`"none"`, stall intervals are absent or weak — name suspects but do not assert causal attribution
 - If `meta.captureIntegrity.*` contains `false`, call out degraded signal quality (see §5b for gating rules)
 - Use `measurements.observed` vs `measurements.thresholds` to rank findings — do not rely on severity alone (see §5b)
-- Only patch mechanically when `evidence.extra.attributionConfidence === 'high'` and `remediation` is populated; otherwise explain and ask (see §5b)
-- When `lanterna` is not installed globally, substitute `npx -y @lanterna-profiler/cli` in every command
+- Only patch mechanically when `evidence.extra.attributionConfidence === 'high'` (or `evidence.extra.proofLevel === 'direct-builtin' | 'attributed-caller'` on findings lacking `attributionConfidence`) and `remediation` is populated; otherwise explain and ask (see §5b)
 - Only Node.js targets are supported — other runtimes (Python, Rust, Go) will fail fast
 
 ## Red Flags — Stop and Restart
 
 If any of these is true, stop what you are doing:
 
-- You are about to propose a patch without opening `evidence.file` first
+- You are about to run any Lanterna command without first executing the Step 0 binary detection and binding `$LANTERNA`
+- You are about to invoke `$LANTERNA` without a `run` or `attach` subcommand, or without the `--` separator before the user's command
+- You are about to propose `npm i -g @lanterna-profiler/cli` instead of using the `npx` form already in the cheatsheet
+- You are about to propose a patch without opening `evidence.file` first (this includes offering "want me to draft the change?" before reading the file — offering still counts as proposing)
+- You are about to re-run Lanterna when the user already provided a report, instead of jumping straight to §4
 - You are about to run `lanterna run -- node server.js` (or similar) without confirming the start command
-- You are about to cite `eventLoop.maxLagMs` / `p99LagMs` while `eventLoop.available === false`
+- You are about to cite `eventLoop.maxLagMs` / `p99LagMs` while `eventLoop.available === false`, or while `measurementBasis === "histogram"` alone without calling out that stalls are aggregate-only
 - You are about to attach to the first PID returned by `ps` without asking which program matters
 - You are about to recommend `--deep` on an `attach` session (not supported)
 - You are about to draw conclusions from a report where `summary.idleRatio > 0.8`
@@ -62,9 +72,20 @@ When any of these fire: go back to the matching workflow step and collect the mi
 | "Only one Node process is running, it must be the right one" | Not if it's a dev watcher, test runner, or language server. Confirm with the user. |
 | "The report is mostly idle but I can still pick a hotspot" | Idle profiles surface startup noise, not steady-state work. Recommend a rerun. |
 | "User asked for `--deep` in attach mode, I'll still try" | Attach cannot enable `--trace-deopt`. Redirect to `lanterna run --deep --` instead. |
-| "The skill shows `lanterna ...`, so I'll assume it is installed" | If the binary is absent, use `npx -y @lanterna-profiler/cli` instead of guessing install state. |
+| "The skill shows `lanterna ...`, so I'll assume it is installed" | Step 0 detection takes five seconds. A mangled invocation costs a full profiling pass. |
+| "`npx -y @lanterna-profiler/cli node server.js` will work" | No. Lanterna always needs the `run` or `attach` subcommand, then `--`, then the target. Correct form: `npx -y @lanterna-profiler/cli run --duration 15s -- node server.js`. |
+| "`measurementBasis` is `"histogram"` but the lag number is high, so I'll still blame this frame" | Histogram-only means no temporal stall intervals exist. `correlatedHotspots[].overlapPct: 0` and `stallIntervals: []` confirm it. Name the suspect with explicit hedging, do not assert cause. |
 
 ## Workflow
+
+### Entry point — did the user already provide a report?
+
+Before anything else, determine which branch applies:
+
+- **Report already in hand** — the user pasted JSON inline, referenced a saved file (e.g. `/tmp/lanterna-report.json`), or uploaded one. Skip §1–§3 entirely. Do **not** run or re-run Lanterna. Jump to §4 and read the provided report. Do not ask for the start command, traffic, or load shape. Still run Step 0 detection only if you later need to produce a fresh capture at the user's request.
+- **No report yet** — you need a capture. Continue with §1.
+
+If both are true (a report exists but is stale / idle / degraded per §5), finish analyzing what you have before proposing a rerun — and name exactly what the rerun should change (duration, load, `--deep`, spawn vs attach).
 
 ### 1. Confirm the profiling target (or stop and ask)
 
@@ -87,10 +108,10 @@ If there is no reliable start command but there are already-running Node process
 
 When the user implies the program is already up, or when they do not know the command, prefer Lanterna's built-in interactive picker before falling back to a manual process list.
 
-Preferred flow:
+Preferred flow (after Step 0 binding):
 
 ```bash
-npx -y @lanterna-profiler/cli attach --pid
+$LANTERNA attach --pid
 ```
 
 The picker narrows the list to plausible app processes and shows:
@@ -116,7 +137,7 @@ Which one should I profile with `lanterna attach --pid <pid>`?
 
 Rules:
 - Never invent a PID or assume the first process is the right one
-- Prefer the built-in picker (via `lanterna` or `npx -y @lanterna-profiler/cli`) over manually pasting `ps` output
+- Prefer the built-in picker (`$LANTERNA attach --pid`) over manually pasting `ps` output
 - If the list is noisy, narrow it before asking
 - If there are no plausible Node targets, fall back to asking for the start command or an existing report
 - If the user identifies a running process, prefer `attach` over respawning unless they explicitly want a fresh run
@@ -124,20 +145,29 @@ Rules:
 
 ### 3. Run Lanterna with environment-aware commands
 
-Prefer an installed `lanterna` binary; fall back to `npx -y @lanterna-profiler/cli` when the binary is not available. Avoid hardcoded paths.
+First, run the Step 0 detection from Quick Reference and bind `$LANTERNA`:
 
-Cheatsheet (substitute `npx -y @lanterna-profiler/cli` for `lanterna` when not installed):
+```bash
+if command -v lanterna >/dev/null 2>&1; then LANTERNA=lanterna; else LANTERNA="npx -y @lanterna-profiler/cli"; fi
+```
+
+After that, every command below uses `$LANTERNA` verbatim — **no mental substitution, no guessing the install state, no `npm i -g`**.
 
 | Intent | Command |
 |---|---|
-| Run with duration + output | `lanterna run --duration 15s --output /tmp/lanterna-report.json -- node server.js` |
-| Run until child exits, pretty-print | `lanterna run --pretty -- node script.js` |
-| Deep (deopts, spawn only) | add `--deep` to any `run` command |
-| Attach by PID | `lanterna attach --pid 4242 --duration 15s --output /tmp/lanterna-report.json` |
-| Interactive PID picker | `lanterna attach --pid` |
-| Attach by inspector URL | `lanterna attach --inspect-url ws://127.0.0.1:9229/<uuid> --duration 15s` |
+| Run with duration + output | `$LANTERNA run --duration 15s --output /tmp/lanterna-report.json -- node server.js` |
+| Run until child exits, pretty-print | `$LANTERNA run --pretty -- node script.js` |
+| Deep (deopts, spawn only) | add `--deep` to any `$LANTERNA run …` command |
+| Attach by PID | `$LANTERNA attach --pid 4242 --duration 15s --output /tmp/lanterna-report.json` |
+| Interactive PID picker | `$LANTERNA attach --pid` |
+| Attach by inspector URL | `$LANTERNA attach --inspect-url ws://127.0.0.1:9229/<uuid> --duration 15s` |
 | Lower sampling interval | add `--sample-interval 500` (halves default; `50` minimum) |
 | Load external detector | add `--detectors <package-or-path>` (repeatable) |
+
+Invocation rules that agents mangle most often:
+- `run` or `attach` is **mandatory** before any user command. `$LANTERNA node server.js` does nothing useful.
+- The `--` separator is **mandatory** between Lanterna flags and the target command when using `run`. Without it, Lanterna interprets the target as its own flag.
+- `attach` never takes a trailing `-- <command>`; it takes `--pid` or `--inspect-url`.
 
 Flag notes:
 - `--sample-interval <us>` — default `1000`. Lower it (e.g. `250`) only when sub-millisecond hotspots are suspected; it inflates the profile size.
@@ -186,6 +216,7 @@ Findings are sorted by `priority.score`, then severity and `evidence.selfPct`. U
 - `measurements.observed` vs `measurements.thresholds` — always check the gap. A `blocking-io` finding where `observed.totalPct = 18` and `thresholds.criticalPct = 10` is a much stronger lead than one at `1.2 / 1.0`. Prefer the larger ratio, all else equal.
 - `priority.score` is the report producer's precomputed ordering signal. Start with the highest-priority finding unless the surrounding evidence is clearly degraded.
 - `evidence.extra.attributionConfidence` — on attributed findings (`blocking-io`, `sync-crypto`, `require-in-hot-path`, `node-modules-hotspot`, `json-on-hot-path`), **do not patch the user caller** when `attributionConfidence === 'low'`. Describe the symptom and recommend the user confirm the call site manually.
+- `evidence.extra.proofLevel` — the same confidence axis for findings that don't carry `attributionConfidence` (`excessive-gc`, `event-loop-stall`, `deopt-loop`). `direct-builtin` / `attributed-caller` are actionable; `aggregate-correlation` / `deopt-trace-only` are hypotheses that need corroboration (e.g. a hot `candidateHotspots[0]` with `confidence === 'high'`).
 - `evidence.extra.eventLoopCorrelation.overlapPct` — a finding whose caller shows ≥50% overlap during measured stalls is a *causal* lead. One with no correlation at all is circumstantial.
 - Correlated hotspots now carry `rank` and `confidence` (`low`/`medium`/`high`). Only attribute stall/GC pressure to a specific frame when `confidence === 'high'` (top-1 with a clear gap to top-2). Otherwise, report the ranked list and let the user choose.
 - `categoryTotalPct` in `evidence.extra` is the family-wide cost (e.g. all sync fs APIs together). If it's much larger than the single-API `calleeTotalPct`, the fix is structural (get the family off the hot path) — not "replace this one call".
