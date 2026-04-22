@@ -28,7 +28,7 @@
 - **Enriched `LanternaReport`** - categorized hotspots, hot call stacks, ratios, capture-integrity flags.
 - **Built-in findings** - sync crypto, blocking I/O, CPU-bound user code, JSON on the hot path, dependency hotspots, excessive GC, event-loop stalls, deopt loops, module loading on the hot path.
 - **Actionable evidence** - each finding ships with file/line, severity, rationale, and remediation hints.
-- **Agent-ready** - stable JSON schema, `skills/lanterna-profile/` workflow for Claude Code.
+- **Agent-ready** - stable JSON schema, `skills/lanterna-profiler/` workflow for Claude Code.
 
 ## Requirements
 
@@ -352,7 +352,7 @@ Use core when you want full control over the pipeline - no default detectors are
 - [docs/how-lanterna-works.md](docs/how-lanterna-works.md) - runtime flow, architecture, degradation modes
 - [docs/reading-a-report.md](docs/reading-a-report.md) - how to interpret the JSON report
 - [docs/troubleshooting.md](docs/troubleshooting.md) - common problems and fixes
-- [skills/lanterna-profile/SKILL.md](skills/lanterna-profile/SKILL.md) - agent-oriented profiling workflow for Claude Code
+- [skills/lanterna-profiler/SKILL.md](skills/lanterna-profiler/SKILL.md) - agent-oriented profiling workflow for Claude Code
 
 <details>
 <summary><strong>Repository layout</strong></summary>
@@ -363,7 +363,7 @@ packages/
   detectors/  @lanterna-profiler/detectors  - default detector pack, runProfile / attachProfile / analyzeCapture
   cli/        @lanterna-profiler/cli        - `lanterna` binary, argument parsing, output, interactive picker
 skills/
-  lanterna-profile/                - agent-oriented profiling workflow for Claude Code
+  lanterna-profiler/               - agent-oriented profiling workflow for Claude Code
 ```
 
 Dependency direction: `cli → detectors → core`.

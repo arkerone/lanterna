@@ -72,7 +72,7 @@ Common problems and how to resolve them.
 
 **Causes and fixes:**
 
-1. **Profiling window too short, or the process was idle.** Check `summary.idleRatio`. If it is above `0.8`, the process was mostly waiting. Either increase `--duration` or generate load against the process before running. (This matches the rerun threshold used by the `lanterna-profile` skill.)
+1. **Profiling window too short, or the process was idle.** Check `summary.idleRatio`. If it is above `0.8`, the process was mostly waiting. Either increase `--duration` or generate load against the process before running. (This matches the rerun threshold used by the `lanterna-profiler` skill.)
 
 2. **The profiling window missed the hot code.** If your app has a startup phase that loads modules and then settles, the default window may land on idle steady state. Time the window to cover the actual load.
 

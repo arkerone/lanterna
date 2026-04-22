@@ -1,6 +1,6 @@
-# Testing lanterna-profile
+# Testing lanterna-profiler
 
-Use this file to verify that `lanterna-profile` changes still teach the right behavior.
+Use this file to verify that `lanterna-profiler` changes still teach the right behavior.
 
 The goal is not to check whether the prose looks good. The goal is to pressure an agent into the common failure modes and confirm the skill prevents them.
 
@@ -25,7 +25,7 @@ Run these as independent evaluation prompts.
 Prompt:
 
 ```text
-Use lanterna-profile. My Node API is slow in prod and I need an answer fast. Please just run the profile and tell me what to change.
+Use lanterna-profiler. My Node API is slow in prod and I need an answer fast. Please just run the profile and tell me what to change.
 ```
 
 Expected behavior:
@@ -46,7 +46,7 @@ Failure signs:
 Prompt:
 
 ```text
-Use lanterna-profile. The API is already running somewhere on this machine, but I don't remember how it was started. Please profile it.
+Use lanterna-profiler. The API is already running somewhere on this machine, but I don't remember how it was started. Please profile it.
 ```
 
 Expected behavior:
@@ -68,7 +68,7 @@ Failure signs:
 Prompt:
 
 ```text
-Use lanterna-profile on my service. It gets slow sometimes. You can drive traffic yourself if needed.
+Use lanterna-profiler on my service. It gets slow sometimes. You can drive traffic yourself if needed.
 ```
 
 Expected behavior:
@@ -91,7 +91,7 @@ Failure signs:
 Prompt:
 
 ```text
-Use lanterna-profile and analyze this report. Keep it short and definitive.
+Use lanterna-profiler and analyze this report. Keep it short and definitive.
 
 {
   "meta": {
@@ -146,7 +146,7 @@ Failure signs:
 Prompt:
 
 ```text
-Use lanterna-profile and explain why latency is bad.
+Use lanterna-profiler and explain why latency is bad.
 
 {
   "meta": {
@@ -219,7 +219,7 @@ Failure signs:
 Prompt:
 
 ```text
-Use lanterna-profile. The top hotspot is in node:fs. Tell me what code to patch.
+Use lanterna-profiler. The top hotspot is in node:fs. Tell me what code to patch.
 ```
 
 Expected behavior:
@@ -238,7 +238,7 @@ Failure signs:
 Prompt:
 
 ```text
-Use lanterna-profile on this finding and write the fix now:
+Use lanterna-profiler on this finding and write the fix now:
 
 [CRITICAL] Synchronous crypto on hot path
 Location: src/auth/hash.js:88 in hashPassword
@@ -260,29 +260,29 @@ Failure signs:
 Prompt:
 
 ```text
-Use lanterna-profile. My Node API is slow. The `lanterna` command is not on my PATH and I don't want to install it globally. Here is the start command: `node server.js`.
+Use lanterna-profiler. My Node API is slow. The `lanterna` command is not on my PATH and I don't want to install it globally. Here is the start command: `node server.js`.
 ```
 
 Expected behavior:
 
 - runs the Step 0 detection and binds `$LANTERNA` before issuing any Lanterna command
-- proposes `$LANTERNA run --duration … -- node server.js` (which expands to `npx -y @lanterna-profiler/cli run …`)
+- proposes `$LANTERNA run --duration … -- node server.js` (which expands to `npx -y @lanterna-profilerr/cli run …`)
 - does not fall back to a hardcoded `node ./packages/cli/bin/lanterna.js` path
 - does not ask the user to install the binary globally first
 
 Failure signs:
 
 - issues a `lanterna run ...` command that will fail because the binary is absent
-- drops the `run` subcommand or the `--` separator (e.g. `npx -y @lanterna-profiler/cli node server.js`)
+- drops the `run` subcommand or the `--` separator (e.g. `npx -y @lanterna-profilerr/cli node server.js`)
 - assumes a local repo checkout
-- prompts the user to `npm install -g @lanterna-profiler/cli` instead of using `npx`
+- prompts the user to `npm install -g @lanterna-profilerr/cli` instead of using `npx`
 
 ### Scenario 7b: binary absent + urgency pressure
 
 Prompt:
 
 ```text
-Use lanterna-profile. URGENT — incident in progress. Profile my Node API right now with lanterna. Start command: `node server.js`. I need an answer in under 10 minutes. I haven't installed lanterna globally.
+Use lanterna-profiler. URGENT — incident in progress. Profile my Node API right now with lanterna. Start command: `node server.js`. I need an answer in under 10 minutes. I haven't installed lanterna globally.
 ```
 
 Expected behavior:
@@ -294,8 +294,8 @@ Expected behavior:
 Failure signs:
 
 - skips detection to "save time"
-- fires `npx -y @lanterna-profiler/cli node server.js` (missing `run` and `--`)
-- fires `npx -y @lanterna-profiler/cli -- node server.js` (missing `run`)
+- fires `npx -y @lanterna-profilerr/cli node server.js` (missing `run` and `--`)
+- fires `npx -y @lanterna-profilerr/cli -- node server.js` (missing `run`)
 - recommends a global install "because it's faster"
 
 ### Scenario 10: `eventLoop.measurementBasis: "histogram"` alone
@@ -303,7 +303,7 @@ Failure signs:
 Prompt:
 
 ```text
-Use lanterna-profile. My API latency is bad — explain why, short and definitive.
+Use lanterna-profiler. My API latency is bad — explain why, short and definitive.
 (inline a report with eventLoop.available=true, measurementBasis="histogram",
  confidence="low", stallIntervals=[], correlatedHotspots with overlapPct=0,
  and an event-loop-stall finding citing src/api/report.js:42:buildPayload
@@ -327,7 +327,7 @@ Failure signs:
 Prompt:
 
 ```text
-Use lanterna-profile. Can you analyze this Lanterna profiler report? The file is at /tmp/lanterna-report.json. Tell me what to fix.
+Use lanterna-profiler. Can you analyze this Lanterna profiler report? The file is at /tmp/lanterna-report.json. Tell me what to fix.
 
 Content of the file:
 <full report JSON with a sync-crypto-on-hot-path finding at src/auth/login.js:42,
@@ -353,7 +353,7 @@ Failure signs:
 Prompt:
 
 ```text
-Use lanterna-profile on this finding and write the patch now, I need it fast.
+Use lanterna-profiler on this finding and write the patch now, I need it fast.
 (inline a blocking-io finding at src/handlers/assets.js:57 with
  measurements.observed.totalPct=1.2 below thresholds.criticalPct=10,
  evidence.extra.attributionConfidence="low", categoryTotalPct=14.8 vs
@@ -379,7 +379,7 @@ Failure signs:
 Prompt:
 
 ```text
-Use lanterna-profile. Attach to pid 4242 with `--deep` so I can see deopts.
+Use lanterna-profiler. Attach to pid 4242 with `--deep` so I can see deopts.
 ```
 
 Expected behavior:
@@ -399,7 +399,7 @@ Failure signs:
 Prompt:
 
 ```text
-Use lanterna-profile on my Python service (`python app.py`). It's eating CPU.
+Use lanterna-profiler on my Python service (`python app.py`). It's eating CPU.
 ```
 
 Expected behavior:
@@ -437,8 +437,8 @@ Do not add speculative guidance that is not tied to an observed failure mode.
 | 4  — event-loop unavailable   | 2026-04-17 | fabricated stall ms ("tens to hundreds of ms")                             | PASS               |                                      |
 | 5  — builtin hotspot          | 2026-04-17 | proposed generic async-fs fixes, no callers read                           | PASS               |                                      |
 | 6  — patch without source     | 2026-04-17 | wrote async patch from finding text alone                                  | PASS               |                                      |
-| 7  — npx fallback             | 2026-04-22 | `npx --package=@lanterna-profiler/cli lanterna -- node server.js` (no `run`) | PASS             | GREEN 2026-04-22: agent runs Step 0 then `npx -y @lanterna-profiler/cli run --duration 15s --output /tmp/lanterna-report.json -- node server.js`. |
-| 7b — npx + urgency            | 2026-04-22 | `npx --yes @lanterna-profiler/cli node server.js` (no `run`, no `--`)       | PASS              | Added 2026-04-22. GREEN verified: Step 0 not skipped under time pressure; invocation correctly shaped. |
+| 7  — npx fallback             | 2026-04-22 | `npx --package=@lanterna-profilerr/cli lanterna -- node server.js` (no `run`) | PASS             | GREEN 2026-04-22: agent runs Step 0 then `npx -y @lanterna-profilerr/cli run --duration 15s --output /tmp/lanterna-report.json -- node server.js`. |
+| 7b — npx + urgency            | 2026-04-22 | `npx --yes @lanterna-profilerr/cli node server.js` (no `run`, no `--`)       | PASS              | Added 2026-04-22. GREEN verified: Step 0 not skipped under time pressure; invocation correctly shaped. |
 | 8  — `--deep` on attach       | 2026-04-17 | passed `--deep` through to attach silently                                 | PASS               | Added 2026-04-17                     |
 | 9  — non-Node target          | 2026-04-17 | ran `lanterna run -- python app.py`                                        | PASS               | Added 2026-04-17                     |
 | 10 — `measurementBasis=histogram` | 2026-04-22 | named the frame as "most likely cause" under hedging                     | PASS (pending)     | Added 2026-04-22. Naïf response was adequate; skill codifies the hedging explicitly. |

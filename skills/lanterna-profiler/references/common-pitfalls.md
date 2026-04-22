@@ -1,6 +1,6 @@
 # Node.js Common Performance Pitfalls
 
-Reference for the lanterna-profile skill. Use when interpreting findings and writing suggestions.
+Reference for the lanterna-profiler skill. Use when interpreting findings and writing suggestions.
 
 ---
 

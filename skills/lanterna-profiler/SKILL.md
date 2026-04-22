@@ -1,9 +1,9 @@
 ---
-name: lanterna-profile
+name: lanterna-profiler
 description: Use when profiling a Node.js program with Lanterna to investigate CPU bottlenecks, slow endpoints, hot paths, event-loop stalls, GC pressure, blocking sync I/O, sync crypto, or deopt loops — or when interpreting a Lanterna JSON report.
 ---
 
-# lanterna-profile
+# lanterna-profiler
 
 ## Overview
 
