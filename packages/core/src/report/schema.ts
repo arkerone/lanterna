@@ -61,6 +61,15 @@ const correlatedHotspotSchema = z.object({
   line: z.number().int(),
   overlapPct: z.number().finite(),
   samplePct: z.number().finite(),
+  rank: z.number().int().positive(),
+  confidence: z.enum(['low', 'medium', 'high']),
+});
+
+const correlationCoverageSchema = z.object({
+  samplesInWindows: z.number().int().nonnegative(),
+  samplesAttributed: z.number().int().nonnegative(),
+  windowCount: z.number().int().nonnegative(),
+  attributionRate: z.number().finite(),
 });
 
 const gcCountSchema = z.object({
@@ -91,12 +100,14 @@ const blockingIoExtraSchema = attributionEvidenceSchema.extend({
   api: z.string().min(1),
   callee: z.string().min(1),
   eventLoopCorrelation: stallCorrelationSchema.optional(),
+  categoryTotalPct: z.number().finite().optional(),
 });
 
 const syncCryptoExtraSchema = attributionEvidenceSchema.extend({
   callee: z.string().min(1),
   calleeTotalPct: z.number().finite(),
   eventLoopCorrelation: stallCorrelationSchema.optional(),
+  categoryTotalPct: z.number().finite().optional(),
 });
 
 const deoptLoopExtraSchema = z.object({
@@ -144,6 +155,7 @@ const jsonHotPathExtraSchema = attributionEvidenceSchema.extend({
   callee: z.string().min(1),
   calleeTotalPct: z.number().finite(),
   eventLoopCorrelation: stallCorrelationSchema.optional(),
+  categoryTotalPct: z.number().finite().optional(),
 });
 
 const nodeModulesHotspotExtraSchema = attributionEvidenceSchema.extend({
@@ -182,6 +194,27 @@ const findingEvidenceSchema = z.object({
   extra: z.union([builtinFindingExtraSchema, genericFindingExtraSchema]).optional(),
 });
 
+const findingMeasurementsSchema = z.object({
+  observed: z.record(z.string(), z.number().finite()),
+  thresholds: z.record(z.string(), z.number().finite()),
+});
+
+const findingRemediationSchema = z.object({
+  kind: z.enum([
+    'async-variant',
+    'lazy-import-hoist',
+    'offload-worker',
+    'replace-library',
+    'cache',
+    'other',
+  ]),
+  replace: z.string().min(1).optional(),
+  with: z.string().min(1).optional(),
+  module: z.string().min(1).optional(),
+  docs: z.string().min(1).optional(),
+  notes: z.string().min(1).optional(),
+});
+
 const findingSchema = z
   .object({
     id: z.string().min(1),
@@ -189,6 +222,8 @@ const findingSchema = z
     category: z.string().min(1),
     title: z.string().min(1),
     evidence: findingEvidenceSchema,
+    measurements: findingMeasurementsSchema.optional(),
+    remediation: findingRemediationSchema.optional(),
     why: z.string().min(1),
     suggestion: z.string().min(1),
     references: z.array(z.string()),
@@ -241,6 +276,7 @@ const findingSchema = z
 // ---------------------------------------------------------------------------
 
 const metaSchema = z.object({
+  schemaVersion: z.string().min(1),
   nodeVersion: z.string().min(1),
   v8Version: z.string().min(1),
   platform: z.string().min(1),
@@ -312,6 +348,17 @@ const hotStackSchema = z.object({
   frames: z.array(hotStackFrameSchema),
 });
 
+const hotStackClusterSchema = z.object({
+  anchor: z.object({
+    function: z.string(),
+    file: z.string(),
+    line: z.number().int(),
+  }),
+  weightPct: z.number().finite(),
+  stackCount: z.number().int().positive(),
+  memberIndices: z.array(z.number().int().nonnegative()),
+});
+
 const gcReportSchema = z.object({
   totalPauseMs: z.number().finite(),
   count: gcCountSchema,
@@ -324,6 +371,7 @@ const gcReportSchema = z.object({
     }),
   ),
   correlatedHotspots: z.array(correlatedHotspotSchema).optional(),
+  correlationCoverage: correlationCoverageSchema.optional(),
 });
 
 const eventLoopReportSchema = z.object({
@@ -338,6 +386,7 @@ const eventLoopReportSchema = z.object({
   confidence: measurementConfidenceSchema,
   histogram: eventLoopHistogramSchema.optional(),
   correlatedHotspots: z.array(correlatedHotspotSchema).optional(),
+  correlationCoverage: correlationCoverageSchema.optional(),
 });
 
 const deoptEntrySchema = z.object({
@@ -359,6 +408,7 @@ export const lanternaReportSchema = z.object({
   summary: summarySchema,
   hotspots: z.array(hotspotSchema),
   hotStacks: z.array(hotStackSchema),
+  hotStackClusters: z.array(hotStackClusterSchema).optional(),
   gc: gcReportSchema,
   eventLoop: eventLoopReportSchema,
   deopts: z.array(deoptEntrySchema),

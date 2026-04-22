@@ -1,10 +1,14 @@
+import { LANTERNA_REPORT_SCHEMA_VERSION } from '../../report/meta.js';
 import type { Finding } from '../../report/types.js';
 import { logger } from '../../shared/logger.js';
-import { buildGcCorrelationWindows, correlateUserHotspots } from '../model/correlations.js';
+import {
+  buildGcCorrelationWindows,
+  correlateUserHotspotsWithCoverage,
+} from '../model/correlations.js';
 import { enrichDeopts } from '../model/deopts.js';
 import { buildEventLoopReport } from '../model/event-loop-report.js';
 import { buildGcReport } from '../model/gc-report.js';
-import { computeHotStacks } from '../model/hot-stacks.js';
+import { clusterHotStacksByUserAnchor, computeHotStacks } from '../model/hot-stacks.js';
 import { buildSummary, deriveDominantBlockingKind } from '../model/summary.js';
 import { createAnalysisContext } from './context.js';
 import type {
@@ -157,27 +161,37 @@ export function sortFindings(findings: Finding[]): Finding[] {
 
 function createBaseAnalysisSnapshot(context: AnalysisContext): AnalysisSnapshot {
   const gc = buildGcReport(context.rawCapture.gcEvents);
-  const gcCorrelatedHotspots = correlateUserHotspots(
+  const gcCorrelation = correlateUserHotspotsWithCoverage(
     context.getTimedSamples(),
     context.getTree(),
     buildGcCorrelationWindows(context.rawCapture),
   );
-  if (gcCorrelatedHotspots.length > 0) {
-    gc.correlatedHotspots = gcCorrelatedHotspots;
+  if (gcCorrelation.hotspots.length > 0) {
+    gc.correlatedHotspots = gcCorrelation.hotspots;
+  }
+  if (gcCorrelation.coverage.windowCount > 0) {
+    gc.correlationCoverage = gcCorrelation.coverage;
   }
 
+  const hotStacks = computeHotStacks(context.rawCapture.cpuProfile, context.getTree());
+  const hotStackClusters = clusterHotStacksByUserAnchor(hotStacks);
+
   const eventLoop = buildEventLoopReport(context.rawCapture);
-  const eventLoopCorrelatedHotspots = correlateUserHotspots(
+  const eventLoopCorrelation = correlateUserHotspotsWithCoverage(
     context.getTimedSamples(),
     context.getTree(),
     eventLoop.stallIntervals,
   );
-  if (eventLoopCorrelatedHotspots.length > 0) {
-    eventLoop.correlatedHotspots = eventLoopCorrelatedHotspots;
+  if (eventLoopCorrelation.hotspots.length > 0) {
+    eventLoop.correlatedHotspots = eventLoopCorrelation.hotspots;
+  }
+  if (eventLoopCorrelation.coverage.windowCount > 0) {
+    eventLoop.correlationCoverage = eventLoopCorrelation.coverage;
   }
 
   return {
     meta: {
+      schemaVersion: LANTERNA_REPORT_SCHEMA_VERSION,
       nodeVersion: '',
       v8Version: '',
       platform: '',
@@ -196,7 +210,8 @@ function createBaseAnalysisSnapshot(context: AnalysisContext): AnalysisSnapshot 
     },
     summary: buildSummary(context.getTree()),
     hotspots: context.getHotspotAnalysis().publicHotspots,
-    hotStacks: computeHotStacks(context.rawCapture.cpuProfile, context.getTree()),
+    hotStacks,
+    hotStackClusters: hotStackClusters.length > 0 ? hotStackClusters : undefined,
     gc,
     eventLoop,
     deopts: enrichDeopts(context.rawCapture.deopts),

@@ -1,5 +1,5 @@
 import type { RawCpuProfile } from '../../capture/core/types.js';
-import type { HotStack } from '../../report/types.js';
+import type { HotStack, HotStackCluster } from '../../report/types.js';
 import type { EnrichedTree } from './hotspots.js';
 
 export function computeHotStacks(
@@ -49,4 +49,53 @@ export function computeHotStacks(
     });
   }
   return stacks;
+}
+
+/**
+ * Group hot stacks by their top-most user-code anchor so callers can reason
+ * about "the feature driving this cost" rather than treating superficially-
+ * different stacks as independent. Stacks without any user frame are skipped.
+ */
+export function clusterHotStacksByUserAnchor(stacks: HotStack[]): HotStackCluster[] {
+  const clustersByKey = new Map<
+    string,
+    {
+      anchor: HotStackCluster['anchor'];
+      weightPct: number;
+      memberIndices: number[];
+    }
+  >();
+
+  for (let index = 0; index < stacks.length; index++) {
+    const stack = stacks[index];
+    if (!stack) continue;
+    const userFrame = stack.frames.find((frame) => frame.category === 'user');
+    if (!userFrame) continue;
+    const key = `${userFrame.file}|${userFrame.function}|${userFrame.line}`;
+    const existing = clustersByKey.get(key);
+    if (existing) {
+      existing.weightPct += stack.weightPct;
+      existing.memberIndices.push(index);
+    } else {
+      clustersByKey.set(key, {
+        anchor: {
+          function: userFrame.function,
+          file: userFrame.file,
+          line: userFrame.line,
+        },
+        weightPct: stack.weightPct,
+        memberIndices: [index],
+      });
+    }
+  }
+
+  return Array.from(clustersByKey.values())
+    .filter((cluster) => cluster.memberIndices.length >= 2)
+    .map((cluster) => ({
+      anchor: cluster.anchor,
+      weightPct: cluster.weightPct,
+      stackCount: cluster.memberIndices.length,
+      memberIndices: cluster.memberIndices,
+    }))
+    .sort((a, b) => b.weightPct - a.weightPct);
 }
