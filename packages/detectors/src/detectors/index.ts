@@ -1,7 +1,6 @@
 import type { FindingAnalyzer } from '@lanterna-profiler/core';
 import { createFindingAnalyzerFromDetector } from '../plugin.js';
 import { blockingIoDetector } from './blocking-io.js';
-import { cpuBoundUserHotspotDetector } from './cpu-bound-user-hotspot.js';
 import { deoptLoopDetector } from './deopt-loop.js';
 import { eventLoopStallDetector } from './event-loop-stall.js';
 import { excessiveGcDetector } from './excessive-gc.js';
@@ -20,7 +19,6 @@ export const DETECTORS: Detector[] = [
   deoptLoopDetector,
   requireInHotPathDetector,
   nodeModulesHotspotDetector,
-  cpuBoundUserHotspotDetector,
 ];
 
 export function createBuiltInFindingAnalyzers(): FindingAnalyzer[] {

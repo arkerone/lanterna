@@ -1,7 +1,7 @@
 // ---------------------------------------------------------------------------
 // Shared pattern constants
 // Each detector defines its own match set below so that related detectors
-// (e.g. cpu-bound-user-hotspot) can reuse these to stay in sync.
+// can reuse these to stay in sync.
 // ---------------------------------------------------------------------------
 
 /** Regex patterns matching blocking I/O Node.js APIs, paired with their canonical API name. */
@@ -83,13 +83,6 @@ export interface EventLoopThresholds {
 export interface DetectorThresholds {
   readonly blockingIo: BlockingThresholds;
   readonly syncCrypto: BlockingThresholds;
-  readonly cpuBoundUserHotspot: {
-    readonly minSelfPct: number;
-    readonly minTotalPct: number;
-    readonly warningTotalPct: number;
-    readonly criticalTotalPct: number;
-    readonly strongCorrelationOverlapPct: number;
-  };
   readonly jsonHotPath: {
     readonly minTotalPct: number;
     readonly criticalPct: number;
@@ -152,16 +145,6 @@ export const DETECTOR_THRESHOLDS: DetectorThresholds = {
   // sync-crypto self is always near 0 (work happens in native); total-only
   // gate. Same shape as blocking-io for consistency.
   syncCrypto: { minSelfPct: 0, minTotalPct: 1, criticalPct: 10, categoryTotalPct: 3 },
-  // Higher bar for user-code hotspots: we only want to surface a frame as
-  // "CPU-bound" when it really dominates, since it's also the fallback
-  // category when no specific detector fires.
-  cpuBoundUserHotspot: {
-    minSelfPct: 10,
-    minTotalPct: 20,
-    warningTotalPct: 20,
-    criticalTotalPct: 40,
-    strongCorrelationOverlapPct: 50,
-  },
   // JSON is everywhere, so the per-API bar (3%) is higher than blocking-io;
   // a 12% JSON.stringify on the request path is considered critical.
   jsonHotPath: {
