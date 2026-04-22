@@ -26,7 +26,6 @@ export type BuiltinFindingCategory =
   | 'require-in-hot-path'
   | 'excessive-gc'
   | 'event-loop-stall'
-  | 'cpu-bound-user-hotspot'
   | 'json-on-hot-path'
   | 'node-modules-hotspot';
 
@@ -55,7 +54,20 @@ export interface ReportMeta {
     gcTimed: boolean;
     cpuSamplesTimed: boolean;
     gcObserverAvailable: boolean;
+    controlChannelWriteErrors: number;
+    gcObserverSetupFailed: number;
+    heartbeatDropped: number;
   };
+}
+
+export interface SummaryUserHotspot {
+  function: string;
+  file: string;
+  line: number;
+  selfPct: number;
+  totalPct: number;
+  eventLoopCorrelation?: StallCorrelation;
+  alternativeHotspots?: AlternativeHotspotEvidence[];
 }
 
 export interface ReportSummary {
@@ -69,6 +81,7 @@ export interface ReportSummary {
   idleRatio: number;
   topCategory: FrameCategory;
   dominantBlockingKind: 'sync-crypto' | 'blocking-io' | null;
+  topUserHotspot?: SummaryUserHotspot;
 }
 
 export interface HotspotRef {
@@ -279,14 +292,6 @@ export interface EventLoopStallEvidenceExtra {
   candidateHotspots: CorrelatedHotspot[];
 }
 
-export interface CpuBoundUserHotspotEvidenceExtra {
-  proofLevel: 'aggregate-correlation' | 'attributed-caller';
-  totalPct: number;
-  selfPct: number;
-  eventLoopCorrelation?: StallCorrelation;
-  alternativeHotspots?: AlternativeHotspotEvidence[];
-}
-
 export interface JsonHotPathEvidenceExtra extends AttributionEvidence {
   callee: string;
   calleeTotalPct: number;
@@ -312,7 +317,6 @@ export interface BuiltinFindingEvidenceExtraMap {
   'require-in-hot-path': RequireInHotPathEvidenceExtra;
   'excessive-gc': ExcessiveGcEvidenceExtra;
   'event-loop-stall': EventLoopStallEvidenceExtra;
-  'cpu-bound-user-hotspot': CpuBoundUserHotspotEvidenceExtra;
   'json-on-hot-path': JsonHotPathEvidenceExtra;
   'node-modules-hotspot': NodeModulesHotspotEvidenceExtra;
 }
@@ -367,6 +371,12 @@ export interface FindingMeasurements {
   thresholds: Record<string, number>;
 }
 
+export interface FindingPriority {
+  score: number;
+  impactEstimateMs?: number;
+  actionConfidence: 'low' | 'medium' | 'high';
+}
+
 export interface BaseFinding<
   TCategory extends FindingCategory = FindingCategory,
   TExtra = FindingEvidenceExtra,
@@ -377,6 +387,7 @@ export interface BaseFinding<
   title: string;
   evidence: FindingEvidence<TExtra>;
   measurements?: FindingMeasurements;
+  priority?: FindingPriority;
   remediation?: FindingRemediation;
   why: string;
   suggestion: string;

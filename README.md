@@ -170,9 +170,14 @@ Lanterna emits a `LanternaReport` with the following top-level sections:
     "deep": false,
     "captureIntegrity": {
       "controlChannel": true,
+      "controlChannelExpected": true,
       "eventLoopTimed": true,
       "gcTimed": true,
-      "cpuSamplesTimed": true
+      "cpuSamplesTimed": true,
+      "gcObserverAvailable": true,
+      "controlChannelWriteErrors": 0,
+      "gcObserverSetupFailed": 0,
+      "heartbeatDropped": 0
     }
   },
   "summary": {
@@ -201,7 +206,6 @@ Lanterna emits a `LanternaReport` with the following top-level sections:
 | --- | --- | --- |
 | `sync-crypto-on-hot-path` | `sync-crypto` | Sampled sync crypto frame with `totalPct >= 1`, optionally attributed to a user caller. |
 | `blocking-io:<api>` | `blocking-io` | Sampled sync fs / child_process / zlib frame with meaningful CPU. |
-| `cpu-bound-user-hotspot:<hotspot>` | `cpu-bound-user-hotspot` | Dominant user-code hotspot with no more specific match. |
 | `json-on-hot-path:<api>` | `json-on-hot-path` | `JSON.parse` / `JSON.stringify` consuming meaningful CPU. |
 | `node-modules-hotspot:<package>` | `node-modules-hotspot` | A dependency frame dominates meaningful CPU time. |
 | `excessive-gc` | `excessive-gc` | `gcRatio > 10%` or `longestPauseMs > 100ms`. |

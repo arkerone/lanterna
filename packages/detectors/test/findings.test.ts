@@ -109,6 +109,119 @@ describe('findings – sync-crypto false positive suppression', () => {
   });
 });
 
+describe('findings – sync-crypto aggregate regression', () => {
+  const cryptoNodes = Array.from({ length: 10 }, (_, index) => {
+    const userId = 2 + index * 2;
+    const cryptoId = userId + 1;
+    return {
+      user: {
+        id: userId,
+        callFrame: {
+          functionName: `route${index}`,
+          scriptId: '1',
+          url: `file://${CWD}/src/routes.js`,
+          lineNumber: 10 + index,
+          columnNumber: 0,
+        },
+        hitCount: 0,
+        children: [cryptoId],
+      },
+      crypto: {
+        id: cryptoId,
+        callFrame: {
+          functionName: 'randomBytesSync',
+          scriptId: '0',
+          url: 'node:crypto',
+          lineNumber: index,
+          columnNumber: 0,
+        },
+        hitCount: 8,
+        children: [],
+      },
+    };
+  });
+  const profile: RawCpuProfile = {
+    nodes: [
+      {
+        id: 1,
+        callFrame: {
+          functionName: '(root)',
+          scriptId: '0',
+          url: '',
+          lineNumber: -1,
+          columnNumber: -1,
+        },
+        hitCount: 0,
+        children: cryptoNodes.map(({ user }) => user.id).concat([99]),
+      },
+      ...cryptoNodes.flatMap(({ user, crypto }) => [user, crypto]),
+      {
+        id: 99,
+        callFrame: {
+          functionName: '(idle)',
+          scriptId: '0',
+          url: '',
+          lineNumber: -1,
+          columnNumber: -1,
+        },
+        hitCount: 20,
+        children: [],
+      },
+    ],
+    startTime: 1000000,
+    endTime: 2000000,
+    samples: cryptoNodes
+      .flatMap(({ crypto }) => Array(8).fill(crypto.id))
+      .concat(Array(20).fill(99)),
+    timeDeltas: [],
+  };
+
+  const report = createReport(makeRaw(profile), {
+    sampleIntervalMicros: 1000,
+    deep: false,
+    command: ['node', 'app.js'],
+  });
+
+  it('emits sync-crypto when only the API family total crosses threshold', () => {
+    const findings = report.findings.filter((f) => f.id === 'sync-crypto-on-hot-path');
+    assert.ok(findings.length > 0);
+    assert.ok(
+      findings.every(
+        (finding) =>
+          ((finding.evidence.extra as Record<string, unknown>).calleeTotalPct as number) < 10,
+      ),
+    );
+    assert.ok(
+      findings.some(
+        (finding) =>
+          ((finding.evidence.extra as Record<string, unknown>).categoryTotalPct as number) >= 3,
+      ),
+    );
+  });
+});
+
+describe('capture integrity – attach mode clean regression', () => {
+  const report = makeReport('sync-crypto', {
+    captureIntegrity: {
+      controlChannel: false,
+      controlChannelExpected: false,
+      eventLoopTimed: true,
+      gcTimed: false,
+      cpuSamplesTimed: true,
+      gcObserverAvailable: true,
+      controlChannelWriteErrors: 0,
+      gcObserverSetupFailed: 0,
+      heartbeatDropped: 0,
+    },
+  });
+
+  it('treats an absent control channel as clean when attach mode did not expect it', () => {
+    assert.equal(report.meta.captureIntegrity.controlChannel, false);
+    assert.equal(report.meta.captureIntegrity.controlChannelExpected, false);
+    assert.equal(report.meta.captureIntegrity.controlChannelWriteErrors, 0);
+  });
+});
+
 describe('findings – excessive-gc', () => {
   const report = makeReport('gc-pressure', {
     gcEvents: [
@@ -187,6 +300,9 @@ describe('findings – excessive-gc confidence gating', () => {
         gcTimed: false,
         cpuSamplesTimed: true,
         gcObserverAvailable: true,
+        controlChannelWriteErrors: 0,
+        gcObserverSetupFailed: 0,
+        heartbeatDropped: 0,
       },
     }),
     { sampleIntervalMicros: 1000, deep: false, command: ['node', 'app.js'] },
@@ -213,6 +329,9 @@ describe('findings – event-loop-stall', () => {
       gcTimed: false,
       cpuSamplesTimed: true,
       gcObserverAvailable: true,
+      controlChannelWriteErrors: 0,
+      gcObserverSetupFailed: 0,
+      heartbeatDropped: 0,
     },
   });
 
@@ -254,6 +373,9 @@ describe('event loop report – hook without usable timing signal', () => {
       gcTimed: false,
       cpuSamplesTimed: true,
       gcObserverAvailable: true,
+      controlChannelWriteErrors: 0,
+      gcObserverSetupFailed: 0,
+      heartbeatDropped: 0,
     },
   });
 
@@ -939,7 +1061,7 @@ describe('findings – node-modules-hotspot selection uses inclusive cost', () =
   });
 });
 
-describe('findings – cpu-bound-user-hotspot', () => {
+describe('summary – topUserHotspot', () => {
   const profile: RawCpuProfile = {
     nodes: [
       {
@@ -979,21 +1101,17 @@ describe('findings – cpu-bound-user-hotspot', () => {
     command: ['node', 'app.js'],
   });
 
-  it('detects a dominant user-code hotspot', () => {
-    const f = report.findings.find((f) => f.id.startsWith('cpu-bound-user-hotspot:'));
-    assert.ok(
-      f,
-      `Expected cpu-bound-user-hotspot finding. findings = ${JSON.stringify(report.findings.map((f) => f.id))}`,
-    );
-    assert.match(f.evidence.function, /computeRanking/);
+  it('exposes a dominant user-code hotspot in summary instead of findings', () => {
     assert.equal(
-      (f?.evidence.extra as Record<string, unknown>)?.proofLevel,
-      'aggregate-correlation',
+      report.findings.some((f) => f.id.startsWith('cpu-bound-user-hotspot:')),
+      false,
     );
+    assert.match(report.summary.topUserHotspot?.function ?? '', /computeRanking/);
+    assert.equal(report.summary.topUserHotspot?.totalPct, 100);
   });
 });
 
-describe('findings – cpu-bound-user-hotspot selection uses inclusive cost', () => {
+describe('summary – topUserHotspot selection uses inclusive cost', () => {
   const profile: RawCpuProfile = {
     nodes: [
       {
@@ -1058,10 +1176,7 @@ describe('findings – cpu-bound-user-hotspot selection uses inclusive cost', ()
   });
 
   it('prefers the user hotspot with the highest totalPct', () => {
-    const f = report.findings.find((candidate) =>
-      candidate.id.startsWith('cpu-bound-user-hotspot:'),
-    )!;
-    assert.match(f.evidence.function, /broadPath/);
+    assert.match(report.summary.topUserHotspot?.function ?? '', /broadPath/);
   });
 });
 
@@ -1073,6 +1188,106 @@ describe('findings – cpu-bound-user-hotspot suppression', () => {
       report.findings.some((f) => f.id.startsWith('cpu-bound-user-hotspot:')),
       false,
     );
+    assert.equal(report.summary.topUserHotspot, undefined);
+  });
+});
+
+describe('findings – triple-hotspot regression', () => {
+  const profile: RawCpuProfile = {
+    nodes: [
+      {
+        id: 1,
+        callFrame: {
+          functionName: '(root)',
+          scriptId: '0',
+          url: '',
+          lineNumber: -1,
+          columnNumber: -1,
+        },
+        hitCount: 0,
+        children: [2, 4, 6],
+      },
+      {
+        id: 2,
+        callFrame: {
+          functionName: 'hashPassword',
+          scriptId: '1',
+          url: `file://${CWD}/src/auth.js`,
+          lineNumber: 10,
+          columnNumber: 0,
+        },
+        hitCount: 0,
+        children: [3],
+      },
+      {
+        id: 3,
+        callFrame: {
+          functionName: 'pbkdf2Sync',
+          scriptId: '0',
+          url: 'node:crypto',
+          lineNumber: 0,
+          columnNumber: 0,
+        },
+        hitCount: 35,
+        children: [],
+      },
+      {
+        id: 4,
+        callFrame: {
+          functionName: 'loadConfig',
+          scriptId: '2',
+          url: `file://${CWD}/src/config.js`,
+          lineNumber: 4,
+          columnNumber: 0,
+        },
+        hitCount: 0,
+        children: [5],
+      },
+      {
+        id: 5,
+        callFrame: {
+          functionName: 'readFileSync',
+          scriptId: '0',
+          url: 'node:fs',
+          lineNumber: 0,
+          columnNumber: 0,
+        },
+        hitCount: 30,
+        children: [],
+      },
+      {
+        id: 6,
+        callFrame: {
+          functionName: 'renderDashboard',
+          scriptId: '3',
+          url: `file://${CWD}/src/dashboard.js`,
+          lineNumber: 30,
+          columnNumber: 0,
+        },
+        hitCount: 35,
+        children: [],
+      },
+    ],
+    startTime: 1000000,
+    endTime: 2000000,
+    samples: Array(35).fill(3).concat(Array(30).fill(5), Array(35).fill(6)),
+    timeDeltas: [],
+  };
+
+  const report = createReport(makeRaw(profile), {
+    sampleIntervalMicros: 1000,
+    deep: false,
+    command: ['node', 'app.js'],
+  });
+
+  it('keeps specific findings and does not emit the old generic cpu-bound finding', () => {
+    assert.ok(report.findings.some((f) => f.category === 'sync-crypto'));
+    assert.ok(report.findings.some((f) => f.category === 'blocking-io'));
+    assert.equal(
+      report.findings.some((f) => f.category === 'cpu-bound-user-hotspot'),
+      false,
+    );
+    assert.match(report.summary.topUserHotspot?.function ?? '', /renderDashboard/);
   });
 });
 

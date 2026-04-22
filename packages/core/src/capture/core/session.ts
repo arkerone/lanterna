@@ -22,6 +22,11 @@ import type {
   TargetInfo,
 } from './types.js';
 
+export type CaptureIntegrityCounters = Pick<
+  CaptureIntegrity,
+  'controlChannelWriteErrors' | 'gcObserverSetupFailed' | 'heartbeatDropped'
+>;
+
 export interface StartedCaptureSession {
   cdp: CdpClient;
   target: TargetInfo;
@@ -141,8 +146,21 @@ export function createCaptureIntegrity(
     gcTimed: false,
     cpuSamplesTimed: false,
     gcObserverAvailable: false,
+    controlChannelWriteErrors: 0,
+    gcObserverSetupFailed: 0,
+    heartbeatDropped: 0,
     ...overrides,
   };
+}
+
+export function mergeCaptureIntegrityCounters(
+  captureIntegrity: CaptureIntegrity,
+  counters: CaptureIntegrityCounters | undefined,
+): void {
+  if (!counters) return;
+  captureIntegrity.controlChannelWriteErrors = counters.controlChannelWriteErrors;
+  captureIntegrity.gcObserverSetupFailed = counters.gcObserverSetupFailed;
+  captureIntegrity.heartbeatDropped = counters.heartbeatDropped;
 }
 
 function resolveEventLoopHistogram(

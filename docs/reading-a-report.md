@@ -106,7 +106,6 @@ For some detectors, `evidence.file` points to the **user caller** rather than th
 | --- | --- | --- |
 | `sync-crypto-on-hot-path` | Synchronous crypto on the main thread. | Switch to async crypto or move to worker threads. |
 | `blocking-io:<api>` | Synchronous fs / child-process / zlib on the hot path. | Replace with the async equivalent, or move off the request path. |
-| `cpu-bound-user-hotspot:<hotspot>` | A user function dominates on-CPU time. | Inspect for algorithmic cost, repeated work, or missing offload. |
 | `json-on-hot-path:<api>` | `JSON.parse` / `JSON.stringify` is a meaningful part of the request path. | Cache stable payloads, stream large ones, reduce repeated work. |
 | `node-modules-hotspot:<package>` | A dependency dominates a meaningful share of CPU. | Inspect the user caller path first. See below. |
 | `excessive-gc` | Too much on-CPU time in GC, or a pause long enough to matter. | Inspect top user hotspots for allocation patterns. |

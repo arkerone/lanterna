@@ -18,7 +18,6 @@ npm install @lanterna-profiler/detectors
 | --- | --- |
 | `sync-crypto-on-hot-path` | Sampled sync crypto frame (`pbkdf2Sync`, `scryptSync`, …) with meaningful CPU. |
 | `blocking-io:<api>` | Sampled sync fs / child_process / zlib frame. |
-| `cpu-bound-user-hotspot:<hotspot>` | Dominant user-code hotspot with no more specific match. |
 | `json-on-hot-path:<api>` | `JSON.parse` / `JSON.stringify` consuming meaningful CPU. |
 | `node-modules-hotspot:<package>` | A dependency frame dominates CPU time. |
 | `excessive-gc` | `gcRatio > 10%` or `longestPauseMs > 100ms`. |

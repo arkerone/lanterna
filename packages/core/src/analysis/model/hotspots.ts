@@ -42,6 +42,8 @@ export interface HotspotAnalysis {
   userAttributionById: Map<string, HotspotAttribution>;
 }
 
+const ATTRIBUTION_HIGH_CONFIDENCE_SUPPORT_PCT = 80;
+
 interface HotspotAggregate {
   id: string;
   function: string;
@@ -261,7 +263,10 @@ export function buildHotspotAnalysis(
       line: userHotspotAggregate.line,
       samplePct: (attributedSampleCount / totalSamples) * 100,
       supportPct: (attributedSampleCount / totalPathSamples) * 100,
-      confidence: attributedSampleCount / totalPathSamples >= 0.8 ? 'high' : 'low',
+      confidence:
+        (attributedSampleCount / totalPathSamples) * 100 >= ATTRIBUTION_HIGH_CONFIDENCE_SUPPORT_PCT
+          ? 'high'
+          : 'low',
     });
   }
 

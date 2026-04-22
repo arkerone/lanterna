@@ -100,9 +100,14 @@ Use lanterna-profile and analyze this report. Keep it short and definitive.
     "deep": false,
     "captureIntegrity": {
       "controlChannel": true,
+      "controlChannelExpected": true,
       "eventLoopTimed": true,
       "gcTimed": true,
-      "cpuSamplesTimed": true
+      "cpuSamplesTimed": true,
+      "gcObserverAvailable": true,
+      "controlChannelWriteErrors": 0,
+      "gcObserverSetupFailed": 0,
+      "heartbeatDropped": 0
     }
   },
   "summary": {
@@ -150,9 +155,14 @@ Use lanterna-profile and explain why latency is bad.
     "deep": false,
     "captureIntegrity": {
       "controlChannel": true,
+      "controlChannelExpected": true,
       "eventLoopTimed": false,
       "gcTimed": true,
-      "cpuSamplesTimed": true
+      "cpuSamplesTimed": true,
+      "gcObserverAvailable": true,
+      "controlChannelWriteErrors": 0,
+      "gcObserverSetupFailed": 0,
+      "heartbeatDropped": 0
     }
   },
   "summary": {

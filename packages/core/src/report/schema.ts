@@ -143,14 +143,6 @@ const eventLoopStallExtraSchema = z.object({
   candidateHotspots: z.array(correlatedHotspotSchema),
 });
 
-const cpuBoundUserHotspotExtraSchema = z.object({
-  proofLevel: z.union([z.literal('aggregate-correlation'), z.literal('attributed-caller')]),
-  totalPct: z.number().finite(),
-  selfPct: z.number().finite(),
-  eventLoopCorrelation: stallCorrelationSchema.optional(),
-  alternativeHotspots: z.array(alternativeHotspotEvidenceSchema).optional(),
-});
-
 const jsonHotPathExtraSchema = attributionEvidenceSchema.extend({
   callee: z.string().min(1),
   calleeTotalPct: z.number().finite(),
@@ -179,7 +171,6 @@ const builtinFindingExtraSchema = z.union([
   requireInHotPathExtraSchema,
   excessiveGcExtraSchema,
   eventLoopStallExtraSchema,
-  cpuBoundUserHotspotExtraSchema,
   jsonHotPathExtraSchema,
   nodeModulesHotspotExtraSchema,
 ]);
@@ -197,6 +188,12 @@ const findingEvidenceSchema = z.object({
 const findingMeasurementsSchema = z.object({
   observed: z.record(z.string(), z.number().finite()),
   thresholds: z.record(z.string(), z.number().finite()),
+});
+
+const findingPrioritySchema = z.object({
+  score: z.number().finite(),
+  impactEstimateMs: z.number().finite().optional(),
+  actionConfidence: z.enum(['low', 'medium', 'high']),
 });
 
 const findingRemediationSchema = z.object({
@@ -223,6 +220,7 @@ const findingSchema = z
     title: z.string().min(1),
     evidence: findingEvidenceSchema,
     measurements: findingMeasurementsSchema.optional(),
+    priority: findingPrioritySchema.optional(),
     remediation: findingRemediationSchema.optional(),
     why: z.string().min(1),
     suggestion: z.string().min(1),
@@ -239,7 +237,6 @@ const findingSchema = z
       'require-in-hot-path': requireInHotPathExtraSchema,
       'excessive-gc': excessiveGcExtraSchema,
       'event-loop-stall': eventLoopStallExtraSchema,
-      'cpu-bound-user-hotspot': cpuBoundUserHotspotExtraSchema,
       'json-on-hot-path': jsonHotPathExtraSchema,
       'node-modules-hotspot': nodeModulesHotspotExtraSchema,
     } as const;
@@ -298,6 +295,9 @@ const metaSchema = z.object({
     gcTimed: z.boolean(),
     cpuSamplesTimed: z.boolean(),
     gcObserverAvailable: z.boolean(),
+    controlChannelWriteErrors: z.number().int().nonnegative(),
+    gcObserverSetupFailed: z.number().int().nonnegative(),
+    heartbeatDropped: z.number().int().nonnegative(),
   }),
 });
 
@@ -312,6 +312,17 @@ const summarySchema = z.object({
   idleRatio: z.number().finite(),
   topCategory: frameCategorySchema,
   dominantBlockingKind: z.union([z.literal('sync-crypto'), z.literal('blocking-io'), z.null()]),
+  topUserHotspot: z
+    .object({
+      function: z.string(),
+      file: z.string(),
+      line: z.number().int(),
+      selfPct: z.number().finite(),
+      totalPct: z.number().finite(),
+      eventLoopCorrelation: stallCorrelationSchema.optional(),
+      alternativeHotspots: z.array(alternativeHotspotEvidenceSchema).optional(),
+    })
+    .optional(),
 });
 
 const hotspotRefSchema = z.object({

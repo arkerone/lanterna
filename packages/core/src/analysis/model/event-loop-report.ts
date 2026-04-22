@@ -4,7 +4,7 @@ import type {
   MeasurementBasis,
   MeasurementConfidence,
 } from '../../report/types.js';
-import { HEARTBEAT_RESOLUTION_MS } from '../../shared/config.js';
+import { EVENT_LOOP_STALL_INTERVAL_MS, HEARTBEAT_RESOLUTION_MS } from '../../shared/config.js';
 import { percentile } from '../../shared/percentile.js';
 
 export function buildEventLoopReport(raw: RawCapture): EventLoopReport {
@@ -66,7 +66,7 @@ function deriveStallIntervals(
   const intervals: EventLoopReport['stallIntervals'] = [];
 
   for (const sample of raw.eventLoopSamples) {
-    if (sample.lagMs < 200) continue;
+    if (sample.lagMs < EVENT_LOOP_STALL_INTERVAL_MS) continue;
     intervals.push({
       startMs: Math.max(0, sample.atMs - sample.lagMs),
       endMs: sample.atMs,
@@ -75,7 +75,7 @@ function deriveStallIntervals(
   }
 
   const trailingLagMs = inferTrailingLag(raw);
-  if (trailingLagMs >= 200) {
+  if (trailingLagMs >= EVENT_LOOP_STALL_INTERVAL_MS) {
     const lastSampleAtMs = raw.eventLoopSamples[raw.eventLoopSamples.length - 1]?.atMs ?? 0;
     intervals.push({
       startMs: Math.max(0, lastSampleAtMs + resolutionMs),

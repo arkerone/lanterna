@@ -46,7 +46,6 @@ export type {
   BlockingIoEvidenceExtra,
   BuiltinFinding,
   BuiltinFindingCategory,
-  CpuBoundUserHotspotEvidenceExtra,
   DeoptEntry,
   DeoptLoopEvidenceExtra,
   EventLoopReport,
@@ -56,6 +55,7 @@ export type {
   Finding,
   FindingCategory,
   FindingMeasurements,
+  FindingPriority,
   FindingRemediation,
   FindingSeverity,
   FrameCategory,
@@ -70,6 +70,7 @@ export type {
   ReportSummary,
   RequireInHotPathEvidenceExtra,
   StallCorrelation,
+  SummaryUserHotspot,
   SyncCryptoEvidenceExtra,
 } from './report/types.js';
 export { defineBuiltinFinding } from './report/types.js';

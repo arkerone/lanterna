@@ -3,10 +3,12 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { connectCdp } from '../../inspector/client.js';
 import { readEventLoopSamples } from '../../runtime-signals/readers/event-loop.js';
+import { readRuntimeIntegrity } from '../../runtime-signals/readers/integrity.js';
 import { parseDeoptsFromStderr } from '../core/deopts.js';
 import {
   createCaptureIntegrity,
   finishCaptureSession,
+  mergeCaptureIntegrityCounters,
   startCaptureSession,
 } from '../core/session.js';
 import type { ProfileSource, RawCapture, SourceHandle, SpawnStartOptions } from '../core/types.js';
@@ -98,6 +100,10 @@ export class SpawnSource implements ProfileSource<SpawnStartOptions> {
       }
       lifecycle.state.eventLoopResolutionMs =
         eventLoopRead.resolutionMs ?? lifecycle.state.eventLoopResolutionMs;
+      mergeCaptureIntegrityCounters(
+        lifecycle.state.captureIntegrity,
+        await readRuntimeIntegrity(session.cdp),
+      );
 
       const rawCapture = await finishCaptureSession({
         session,
