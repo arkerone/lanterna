@@ -32,7 +32,9 @@ Do not use when:
 - For HTTP servers, profile with load rather than idle traffic
 - If `summary.idleRatio > 0.8`, the run is mostly idle and should usually be repeated with load
 - If `eventLoop.available` is `false`, avoid strong latency attribution
-- If `meta.captureIntegrity.*` contains `false`, call out degraded signal quality
+- If `meta.captureIntegrity.*` contains `false`, call out degraded signal quality (see §5b for gating rules)
+- Use `measurements.observed` vs `measurements.thresholds` to rank findings — do not rely on severity alone (see §5b)
+- Only patch mechanically when `evidence.extra.attributionConfidence === 'high'` and `remediation` is populated; otherwise explain and ask (see §5b)
 - When `lanterna` is not installed globally, substitute `npx -y @lanterna-profiler/cli` in every command
 - Only Node.js targets are supported — other runtimes (Python, Rust, Go) will fail fast
 
@@ -176,6 +178,26 @@ Usually rerun instead of over-interpreting when:
 - `eventLoop.available` is `false` and the user asked specifically about latency or stalls
 - `meta.captureIntegrity.*` contains `false` for the signals you need
 - The hottest frames are startup-only work and the user asked about steady-state throughput
+
+### 5b. Decision rules when findings conflict or compete
+
+Findings are sorted by severity, then by `evidence.selfPct`. This is a useful default but not a decision rule — two `warning`s can dominate a `critical` in practice. Use the fields below to arbitrate before prescribing:
+
+- `measurements.observed` vs `measurements.thresholds` — always check the gap. A `blocking-io` finding where `observed.totalPct = 18` and `thresholds.criticalPct = 10` is a much stronger lead than one at `1.2 / 1.0`. Prefer the larger ratio, all else equal.
+- `evidence.extra.attributionConfidence` — on attributed findings (`blocking-io`, `sync-crypto`, `require-in-hot-path`, `node-modules-hotspot`, `json-on-hot-path`), **do not patch the user caller** when `attributionConfidence === 'low'`. Describe the symptom and recommend the user confirm the call site manually.
+- `evidence.extra.eventLoopCorrelation.overlapPct` — a finding whose caller shows ≥50% overlap during measured stalls is a *causal* lead. One with no correlation at all is circumstantial.
+- Correlated hotspots now carry `rank` and `confidence` (`low`/`medium`/`high`). Only attribute stall/GC pressure to a specific frame when `confidence === 'high'` (top-1 with a clear gap to top-2). Otherwise, report the ranked list and let the user choose.
+- `categoryTotalPct` in `evidence.extra` is the family-wide cost (e.g. all sync fs APIs together). If it's much larger than the single-API `calleeTotalPct`, the fix is structural (get the family off the hot path) — not "replace this one call".
+- `remediation.kind` / `remediation.replace` / `remediation.with` give you a mechanical patch path for ★★★ detectors (blocking-io, sync-crypto, require-in-hot-path). When present and attribution confidence is `high`, the patch can usually be applied directly at `evidence.file:evidence.line`. When missing (or for other detectors), the fix is judgment — read the caller chain first.
+- `hotStackClusters[]` groups hot stacks by their user-code anchor. When several findings all point at the same anchor, treat them as one problem (one feature) rather than three patches.
+- `captureIntegrity` gates the confidence of the whole report. If `controlChannelExpected && !controlChannel`, or `gcObserverAvailable === false`, degrade latency/GC claims accordingly.
+
+When in doubt, the strongest lead is the finding where:
+(a) `measurements.observed` clears `thresholds.criticalPct` by a wide margin, AND
+(b) `attributionConfidence === 'high'`, AND
+(c) `eventLoopCorrelation.overlapPct` is meaningful (≥30%).
+
+A `critical` finding missing (b) or (c) is a strong *hypothesis*, not an actionable fix.
 
 ### 6. Interpret before prescribing
 
