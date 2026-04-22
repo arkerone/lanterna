@@ -181,19 +181,21 @@ Usually rerun instead of over-interpreting when:
 
 ### 5b. Decision rules when findings conflict or compete
 
-Findings are sorted by severity, then by `evidence.selfPct`. This is a useful default but not a decision rule — two `warning`s can dominate a `critical` in practice. Use the fields below to arbitrate before prescribing:
+Findings are sorted by `priority.score`, then severity and `evidence.selfPct`. Use the fields below to validate that ordering before prescribing:
 
 - `measurements.observed` vs `measurements.thresholds` — always check the gap. A `blocking-io` finding where `observed.totalPct = 18` and `thresholds.criticalPct = 10` is a much stronger lead than one at `1.2 / 1.0`. Prefer the larger ratio, all else equal.
+- `priority.score` is the report producer's precomputed ordering signal. Start with the highest-priority finding unless the surrounding evidence is clearly degraded.
 - `evidence.extra.attributionConfidence` — on attributed findings (`blocking-io`, `sync-crypto`, `require-in-hot-path`, `node-modules-hotspot`, `json-on-hot-path`), **do not patch the user caller** when `attributionConfidence === 'low'`. Describe the symptom and recommend the user confirm the call site manually.
 - `evidence.extra.eventLoopCorrelation.overlapPct` — a finding whose caller shows ≥50% overlap during measured stalls is a *causal* lead. One with no correlation at all is circumstantial.
 - Correlated hotspots now carry `rank` and `confidence` (`low`/`medium`/`high`). Only attribute stall/GC pressure to a specific frame when `confidence === 'high'` (top-1 with a clear gap to top-2). Otherwise, report the ranked list and let the user choose.
 - `categoryTotalPct` in `evidence.extra` is the family-wide cost (e.g. all sync fs APIs together). If it's much larger than the single-API `calleeTotalPct`, the fix is structural (get the family off the hot path) — not "replace this one call".
 - `remediation.kind` / `remediation.replace` / `remediation.with` give you a mechanical patch path for ★★★ detectors (blocking-io, sync-crypto, require-in-hot-path). When present and attribution confidence is `high`, the patch can usually be applied directly at `evidence.file:evidence.line`. When missing (or for other detectors), the fix is judgment — read the caller chain first.
 - `hotStackClusters[]` groups hot stacks by their user-code anchor. When several findings all point at the same anchor, treat them as one problem (one feature) rather than three patches.
-- `captureIntegrity` gates the confidence of the whole report. If `controlChannelExpected && !controlChannel`, or `gcObserverAvailable === false`, degrade latency/GC claims accordingly.
+- `summary.topUserHotspot` is context for dominant user CPU, not a finding. Use it to orient the narrative after actionable `findings[]`.
+- `captureIntegrity` gates the confidence of the whole report. If `controlChannelExpected && !controlChannel`, `gcObserverAvailable === false`, or any integrity counter is non-zero, degrade latency/GC claims accordingly.
 
 When in doubt, the strongest lead is the finding where:
-(a) `measurements.observed` clears `thresholds.criticalPct` by a wide margin, AND
+(a) `priority.score` is highest or `measurements.observed` clears `thresholds.criticalPct` by a wide margin, AND
 (b) `attributionConfidence === 'high'`, AND
 (c) `eventLoopCorrelation.overlapPct` is meaningful (≥30%).
 

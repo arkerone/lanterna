@@ -40,9 +40,14 @@ This document describes every field in the JSON output produced by `lanterna run
 | `mode` | `"spawn"` \| `"attach"` \| `"in-process"` | How the profiler was connected. The CLI can emit `"spawn"` or `"attach"` depending on how Lanterna was invoked. |
 | `deep` | boolean | Whether `--deep` mode was active (enables deopt tracing) |
 | `captureIntegrity.controlChannel` | boolean | Whether the timed control channel from the preload hook was active |
+| `captureIntegrity.controlChannelExpected` | boolean | Whether the control channel should have been available for this mode |
 | `captureIntegrity.eventLoopTimed` | boolean | Whether event loop lag came from timed heartbeat samples |
 | `captureIntegrity.gcTimed` | boolean | Whether GC pauses carried real timestamps |
 | `captureIntegrity.cpuSamplesTimed` | boolean | Whether CPU samples had real `timeDeltas[]` timing |
+| `captureIntegrity.gcObserverAvailable` | boolean | Whether the runtime GC observer was installed |
+| `captureIntegrity.controlChannelWriteErrors` | number | Failed writes from the runtime hook to the control channel |
+| `captureIntegrity.gcObserverSetupFailed` | number | Failed attempts to install the runtime GC observer |
+| `captureIntegrity.heartbeatDropped` | number | Heartbeat samples that could not be emitted over the control channel |
 
 ---
 
@@ -62,6 +67,7 @@ All ratios are between 0 and 1.
 | `idleRatio` | number | Fraction of total samples that were idle (not useful work) |
 | `topCategory` | string | Category with the highest sample count: `"user"` \| `"node_modules"` \| `"node:builtin"` \| `"native"` \| `"gc"` |
 | `dominantBlockingKind` | `"sync-crypto"` \| `"blocking-io"` \| `null` | Coarse blocking classification derived from findings |
+| `topUserHotspot` | object? | Dominant user-code CPU hotspot for context; not an actionable finding by itself |
 
 **Interpretation tip**: If `gcRatio > 0.10`, look at the `excessive-gc` finding. If `userCodeRatio` is low and `builtinRatio` is high, the bottleneck is a sync built-in call (sync crypto, sync I/O).
 
@@ -176,6 +182,9 @@ Only populated when `meta.deep = true` (`--deep` flag). Requires `--trace-deopt`
 | `evidence.function` | string | Function name |
 | `evidence.selfPct` | number | CPU % attributed to this hotspot |
 | `evidence.extra` | object? | Category-specific additional data, including correlation candidates where available |
+| `priority.score` | number | Precomputed action priority; higher should be handled first |
+| `priority.impactEstimateMs` | number? | Estimated impact when available |
+| `priority.actionConfidence` | `"low"` \| `"medium"` \| `"high"` | Confidence that the suggested action targets the cause |
 | `why` | string | Why this is a problem in the context of this profile |
 | `suggestion` | string | Concrete, code-level remediation action |
 | `references[]` | string[] | URLs to Node.js / V8 documentation |
@@ -186,7 +195,6 @@ Only populated when `meta.deep = true` (`--deep` flag). Requires `--trace-deopt`
 |---|---|---|
 | `sync-crypto-on-hot-path` | `sync-crypto` | `pbkdf2Sync`/`scryptSync`/`randomBytesSync` with `totalPct >= 1%` |
 | `blocking-io:<api>` | `blocking-io` | Sync fs/child_process/zlib API with meaningful `selfPct` or `totalPct` |
-| `cpu-bound-user-hotspot:<hotspot>` | `cpu-bound-user-hotspot` | Dominant user-code hotspot with no more specific match |
 | `json-on-hot-path:<api>` | `json-on-hot-path` | `JSON.parse` / `JSON.stringify` consuming meaningful CPU |
 | `node-modules-hotspot:<package>` | `node-modules-hotspot` | A dependency frame dominates meaningful CPU time |
 | `excessive-gc` | `excessive-gc` | `gcRatio > 10%` OR `longestPauseMs > 100ms` |
@@ -194,6 +202,6 @@ Only populated when `meta.deep = true` (`--deep` flag). Requires `--trace-deopt`
 | `deopt-loop:<fn>` | `deopt-loop` | Same function deoptimised ≥ 5 times (requires `--deep`) |
 | `require-in-hot-path` | `require-in-hot-path` | `Module._load` / `require` on hot path with meaningful sample weight |
 
-Findings are sorted: `critical > warning > info`, then by `evidence.selfPct` descending.
+Findings are sorted by `priority.score` first, then by severity and `evidence.selfPct`.
 
 > Lanterna supports third-party detector plugins loaded via `--detectors <spec>` or `.lanterna.json`. A report may therefore contain `finding.category` values that are **not** in the table above. Treat unknown categories as extension findings with `evidence.extra` that is schema-defined by the plugin author — not by the core schema.

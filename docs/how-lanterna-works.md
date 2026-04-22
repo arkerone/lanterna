@@ -185,7 +185,6 @@ Findings are detectors running on the enriched report, not on the raw capture. B
 
 - synchronous crypto on the hot path
 - blocking sync I/O on the hot path
-- CPU-bound user-code hotspots
 - repeated `JSON.parse` / `JSON.stringify` on the hot path
 - dependency hotspots in `node_modules`
 - excessive GC
@@ -193,7 +192,7 @@ Findings are detectors running on the enriched report, not on the raw capture. B
 - repeated deoptimisation loops
 - module loading on the hot path
 
-Findings are sorted by severity first, then by attributed CPU weight.
+Findings are sorted by `priority.score` first, then by severity and attributed CPU weight. Dominant user-code CPU is exposed as `summary.topUserHotspot` for context instead of as an actionable finding.
 
 ---
 
