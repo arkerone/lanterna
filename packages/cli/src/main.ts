@@ -1,4 +1,5 @@
 import chalk from 'chalk';
+import { AttachSelectionCancelledError } from './attach-target.js';
 import { attachCommand } from './commands/attach.js';
 import { runCommand } from './commands/run.js';
 import { parseAttachArgs, parseRunArgs } from './parse.js';
@@ -128,7 +129,15 @@ export async function main(argv: string[]): Promise<void> {
       process.stdout.write(ATTACH_HELP);
       return;
     }
-    await attachCommand(parseAttachArgs(rest));
+    try {
+      await attachCommand(parseAttachArgs(rest));
+    } catch (error) {
+      if (error instanceof AttachSelectionCancelledError) {
+        process.exitCode = 1;
+        return;
+      }
+      throw error;
+    }
     return;
   }
 
