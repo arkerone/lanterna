@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import { writeSync } from 'node:fs';
-import { writeFile } from 'node:fs/promises';
+import { rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { connectCdp } from '../../inspector/client.js';
@@ -123,75 +123,84 @@ export class SpawnSource implements ProfileSource<SpawnStartOptions> {
 
     child.once('exit', () => resolveAppCompletion());
 
-    options.onProgress?.({
-      stage: 'wait-inspector',
-      message: 'Waiting for the child process to expose its inspector endpoint...',
-    });
-    const webSocketDebuggerUrl = await waitForInspectorUrl(child, stderrBuffer);
-    options.onProgress?.({
-      stage: 'connect-cdp',
-      message: 'Connecting to the child process over CDP...',
-    });
-    const cdp = await connectCdp(webSocketDebuggerUrl);
-
-    options.onProgress?.({
-      stage: 'prepare-runtime',
-      message: options.deep
-        ? 'Preparing runtime hooks and deopt tracing...'
-        : 'Preparing runtime hooks and control signals...',
-    });
-
-    let exited = false;
-    let resolveExit = () => {};
-    const exitPromise = new Promise<void>((resolve) => {
-      resolveExit = resolve;
-      child.once('exit', () => {
-        exited = true;
-        resolve();
+    try {
+      options.onProgress?.({
+        stage: 'wait-inspector',
+        message: 'Waiting for the child process to expose its inspector endpoint...',
       });
-    });
+      const webSocketDebuggerUrl = await waitForInspectorUrl(child, stderrBuffer);
+      options.onProgress?.({
+        stage: 'connect-cdp',
+        message: 'Connecting to the child process over CDP...',
+      });
+      const cdp = await connectCdp(webSocketDebuggerUrl);
 
-    const waitForExit = async (): Promise<void> => {
-      await Promise.race([appCompletionPromise, exitPromise]);
-    };
+      options.onProgress?.({
+        stage: 'prepare-runtime',
+        message: options.deep
+          ? 'Preparing runtime hooks and deopt tracing...'
+          : 'Preparing runtime hooks and control signals...',
+      });
 
-    const drainLiveSignals = (): LiveSourceSignals => ({
-      gcEventsAbs: [...gcEventsAbs],
-      eventLoopSamplesAbs: [...eventLoopSamplesAbs],
-      eventLoopAvailable,
-      eventLoopResolutionMs,
-      integrityCounters: {
-        controlChannelWriteErrors: captureIntegrity.controlChannelWriteErrors,
-        gcObserverSetupFailed: captureIntegrity.gcObserverSetupFailed,
-        heartbeatDropped: captureIntegrity.heartbeatDropped,
-      },
-      appCompleted,
-    });
+      let exited = false;
+      let resolveExit = () => {};
+      const exitPromise = new Promise<void>((resolve) => {
+        resolveExit = resolve;
+        child.once('exit', () => {
+          exited = true;
+          resolve();
+        });
+      });
 
-    const finalize = async (args: { appCompleted: boolean }): Promise<void> => {
-      await terminateSpawnedChild(child, args.appCompleted, exited, exitPromise);
-      resolveExit();
-    };
+      const waitForExit = async (): Promise<void> => {
+        await Promise.race([appCompletionPromise, exitPromise]);
+      };
 
-    // Release the inspector breakpoint so the target begins running.
-    await cdp.send('Runtime.runIfWaitingForDebugger');
+      const drainLiveSignals = (): LiveSourceSignals => ({
+        gcEventsAbs: [...gcEventsAbs],
+        eventLoopSamplesAbs: [...eventLoopSamplesAbs],
+        eventLoopAvailable,
+        eventLoopResolutionMs,
+        integrityCounters: {
+          controlChannelWriteErrors: captureIntegrity.controlChannelWriteErrors,
+          gcObserverSetupFailed: captureIntegrity.gcObserverSetupFailed,
+          heartbeatDropped: captureIntegrity.heartbeatDropped,
+        },
+        appCompleted,
+      });
 
-    return {
-      cdp,
-      target: {
-        pid: child.pid ?? -1,
-        nodeVersion: '',
-        v8Version: '',
-        platform: process.platform,
-        arch: process.arch,
-        cwd: process.cwd(),
-      },
-      startedAtEpoch: Date.now(),
-      initialIntegrity: captureIntegrity,
-      waitForExit,
-      drainLiveSignals,
-      finalize,
-    };
+      const finalize = async (args: { appCompleted: boolean }): Promise<void> => {
+        try {
+          await terminateSpawnedChild(child, args.appCompleted, exited, exitPromise);
+          resolveExit();
+        } finally {
+          await rm(preloadPath, { force: true }).catch(() => {});
+        }
+      };
+
+      // Release the inspector breakpoint so the target begins running.
+      await cdp.send('Runtime.runIfWaitingForDebugger');
+
+      return {
+        cdp,
+        target: {
+          pid: child.pid ?? -1,
+          nodeVersion: '',
+          v8Version: '',
+          platform: process.platform,
+          arch: process.arch,
+          cwd: process.cwd(),
+        },
+        startedAtEpoch: Date.now(),
+        initialIntegrity: captureIntegrity,
+        waitForExit,
+        drainLiveSignals,
+        finalize,
+      };
+    } catch (error) {
+      await rm(preloadPath, { force: true }).catch(() => {});
+      throw error;
+    }
   }
 }
 

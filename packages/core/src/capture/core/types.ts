@@ -75,6 +75,23 @@ export interface RawDeopt {
   count: number;
 }
 
+export type CaptureDiagnosticStage =
+  | 'probe-install'
+  | 'probe-start'
+  | 'probe-stop'
+  | 'runtime-read'
+  | 'analysis-contributor'
+  | 'section-analyzer'
+  | 'finding-analyzer'
+  | 'finalize';
+
+export interface CaptureDiagnostic {
+  stage: CaptureDiagnosticStage;
+  message: string;
+  kindId?: string;
+  analyzerId?: string;
+}
+
 export interface EventLoopHistogram {
   maxMs: number;
   meanMs: number;
@@ -92,6 +109,7 @@ export interface CaptureIntegrity {
   controlChannelWriteErrors: number;
   gcObserverSetupFailed: number;
   heartbeatDropped: number;
+  diagnostics?: CaptureDiagnostic[];
 }
 
 /**

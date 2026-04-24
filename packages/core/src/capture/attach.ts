@@ -23,6 +23,8 @@ interface InstallAttachRuntimeResult {
   };
 }
 
+const ATTACH_RUNTIME_HOOK_TIMEOUT_MS = 5000;
+
 export class AttachSource implements ProfileSource<AttachStartOptions> {
   async connect(
     options: AttachStartOptions,
@@ -51,8 +53,13 @@ export class AttachSource implements ProfileSource<AttachStartOptions> {
       stage: 'install-hooks',
       message: 'Installing Lanterna runtime hooks on the target process...',
     });
-    const hookResult = await installAttachRuntimeHook(cdp, preload.attachScript);
-
+    let hookResult: InstallAttachRuntimeResult;
+    try {
+      hookResult = await installAttachRuntimeHook(cdp, preload.attachScript);
+    } catch (error) {
+      await cdp.close().catch(() => {});
+      throw error;
+    }
     const captureIntegrity = createCaptureIntegrity({
       controlChannelExpected: false,
       gcObserverAvailable: Boolean(hookResult.capabilities?.gc),
@@ -102,7 +109,14 @@ async function installAttachRuntimeHook(
   cdp: import('../inspector/client.js').CdpClient,
   attachScript: string,
 ): Promise<InstallAttachRuntimeResult> {
-  const value = await cdp.evaluate(attachScript);
+  const value = await withTimeout(
+    cdp.evaluate(attachScript),
+    ATTACH_RUNTIME_HOOK_TIMEOUT_MS,
+    () =>
+      new Error(
+        `timed out installing attach runtime hook after ${ATTACH_RUNTIME_HOOK_TIMEOUT_MS}ms; the target process did not answer Runtime.evaluate`,
+      ),
+  );
   const result = (value ?? {}) as InstallAttachRuntimeResult;
   if (result.installed) return result;
   throw new Error(
@@ -110,6 +124,24 @@ async function installAttachRuntimeHook(
       ? `failed to install attach runtime hook: ${result.reason}`
       : 'failed to install attach runtime hook',
   );
+}
+
+async function withTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  createTimeoutError: () => Error,
+): Promise<T> {
+  let timeout: NodeJS.Timeout | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_, reject) => {
+        timeout = setTimeout(() => reject(createTimeoutError()), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
 }
 
 export async function createAttachSource(): Promise<AttachSource> {

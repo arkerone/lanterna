@@ -11,7 +11,11 @@ import { readRuntimeIntegrity } from '../runtime-signals/readers/integrity.js';
 import { HEARTBEAT_RESOLUTION_MS } from '../shared/config.js';
 import { logger } from '../shared/logger.js';
 import { sleep } from '../shared/sleep.js';
-import { mergeCaptureIntegrityCounters } from './core/session.js';
+import {
+  captureDiagnosticMessage,
+  mergeCaptureIntegrityCounters,
+  recordCaptureDiagnostic,
+} from './core/session.js';
 import {
   isUsableEventLoopSummary,
   mergeTimedSamples,
@@ -68,129 +72,212 @@ export async function runCapture<TSourceOptions>(
   };
 
   const connected = await options.source.connect(options.sourceOptions, preload);
+  const session = new CaptureSession(connected);
   const cdp = connected.cdp;
+  const captureIntegrity: CaptureIntegrity = connected.initialIntegrity;
 
-  const target = await fetchTargetInfo(cdp, { pid: connected.target.pid });
-  await markCaptureStart(cdp);
-  const runtimeCaptureStartMs = await readRuntimeClockNow(cdp);
-  const startedAtHr = performance.now();
+  try {
+    const target = await fetchTargetInfo(cdp, { pid: connected.target.pid });
+    await markCaptureStart(cdp);
+    const runtimeCaptureStartMs = await readRuntimeClockNow(cdp);
+    const startedAtHr = performance.now();
+    emitCaptureProgress(options.sourceOptions, {
+      stage: 'start-capture',
+      message: 'Runtime capture clock started. Starting profile probes...',
+    });
 
-  const probeInstances = [] as Array<{
-    kind: ProfileKind;
-    probe: ReturnType<ProfileKind['createProbe']>;
-  }>;
-  for (const kind of options.kinds) {
-    const probe = kind.createProbe(options.probeOptions);
-    try {
-      await probe.install?.(cdp);
-    } catch (error) {
-      logger.warn({ kindId: kind.id, err: error }, 'kind probe install failed');
-      continue;
+    const probeInstances = [] as Array<{
+      kind: ProfileKind;
+      probe: ReturnType<ProfileKind['createProbe']>;
+    }>;
+    for (const kind of options.kinds) {
+      const probe = kind.createProbe(options.probeOptions);
+      try {
+        await probe.install?.(cdp);
+      } catch (error) {
+        logger.warn({ kindId: kind.id, err: error }, 'kind probe install failed');
+        recordCaptureDiagnostic(captureIntegrity, {
+          stage: 'probe-install',
+          kindId: kind.id,
+          message: captureDiagnosticMessage(error),
+        });
+        continue;
+      }
+      probeInstances.push({ kind, probe });
     }
-    probeInstances.push({ kind, probe });
-  }
 
-  for (const { kind, probe } of probeInstances) {
+    for (const { kind, probe } of probeInstances) {
+      try {
+        await probe.start(cdp);
+      } catch (error) {
+        logger.warn({ kindId: kind.id, err: error }, 'kind probe failed to start');
+        recordCaptureDiagnostic(captureIntegrity, {
+          stage: 'probe-start',
+          kindId: kind.id,
+          message: captureDiagnosticMessage(error),
+        });
+      }
+    }
+
+    emitCaptureProgress(options.sourceOptions, {
+      stage: 'capture-running',
+      message:
+        options.durationMs === undefined
+          ? 'Capture is running until the target exits or Lanterna is stopped...'
+          : `Capture is running for ${Math.round(options.durationMs)}ms...`,
+    });
+
+    await waitForStop(connected, options);
+
+    const kindsData: Record<string, unknown> = {};
+    for (const { kind, probe } of probeInstances) {
+      try {
+        kindsData[kind.id] = await probe.stop(cdp);
+      } catch (error) {
+        logger.warn({ kindId: kind.id, err: error }, 'kind probe failed to stop');
+        recordCaptureDiagnostic(captureIntegrity, {
+          stage: 'probe-stop',
+          kindId: kind.id,
+          message: captureDiagnosticMessage(error),
+        });
+      }
+    }
+
+    const durationMs = performance.now() - startedAtHr;
+
+    const live: LiveSourceSignals = connected.drainLiveSignals?.() ?? {
+      gcEventsAbs: [],
+      eventLoopSamplesAbs: [],
+      eventLoopAvailable: false,
+    };
+    session.appCompleted = Boolean(live.appCompleted);
+
+    const eventLoopRead: EventLoopReadResult = cdp.closed
+      ? { samples: [], available: false }
+      : await withTimeout(readEventLoopSamples(cdp), 1500, { samples: [], available: false });
+
+    const gcEventsViaCdp: RawGcEvent[] = cdp.closed
+      ? []
+      : await withTimeout(readGcEvents(cdp), 1500, [] as RawGcEvent[]);
+
+    const absoluteEventLoopSamples = mergeTimedSamples(
+      live.eventLoopSamplesAbs,
+      eventLoopRead.samples,
+    );
+    const absoluteGcEvents = dedupeTimedEvents([...live.gcEventsAbs, ...gcEventsViaCdp]);
+
+    if (!captureIntegrity.eventLoopTimed && absoluteEventLoopSamples.length > 0) {
+      captureIntegrity.eventLoopTimed = true;
+    }
+    if (!captureIntegrity.gcTimed && absoluteGcEvents.length > 0) {
+      captureIntegrity.gcTimed = true;
+    }
+    const runtimeIntegrity = cdp.closed
+      ? undefined
+      : await withTimeout(readRuntimeIntegrity(cdp), 1500, undefined);
+    mergeCaptureIntegrityCounters(captureIntegrity, live.integrityCounters ?? runtimeIntegrity);
+
+    const cpuData = kindsData.cpu as
+      | { cpuProfile?: { samples?: number[]; timeDeltas?: number[] } }
+      | undefined;
+    if (
+      cpuData?.cpuProfile?.samples?.length &&
+      cpuData.cpuProfile.timeDeltas?.length === cpuData.cpuProfile.samples.length
+    ) {
+      captureIntegrity.cpuSamplesTimed = true;
+    }
+
+    const normalizedGcEvents = normalizeTimedEvents(
+      absoluteGcEvents,
+      runtimeCaptureStartMs,
+      durationMs,
+    );
+    const normalizedEventLoopSamples = normalizeTimedEvents(
+      absoluteEventLoopSamples,
+      runtimeCaptureStartMs,
+      durationMs,
+    );
+    const resolvedEventLoopResolutionMs = eventLoopRead.resolutionMs ?? live.eventLoopResolutionMs;
+    const eventLoopHistogram = resolveEventLoopHistogram(
+      eventLoopRead,
+      normalizedEventLoopSamples,
+      resolvedEventLoopResolutionMs,
+    );
+
+    await session.closeCdp();
+
+    const runtimeSignals: RuntimeSignalsData = {
+      gcEvents: normalizedGcEvents,
+      eventLoopSamples: normalizedEventLoopSamples,
+      eventLoopHistogram,
+      eventLoopResolutionMs: resolvedEventLoopResolutionMs,
+      eventLoopAvailable:
+        live.eventLoopAvailable || eventLoopRead.available || normalizedEventLoopSamples.length > 0,
+    };
+
+    await session.finalize({ suppressErrors: false });
+
+    return {
+      target: { ...target, pid: target.pid ?? connected.target.pid },
+      startedAtEpoch: connected.startedAtEpoch,
+      durationMs,
+      captureIntegrity,
+      runtimeSignals,
+      kinds: kindsData as CaptureBundle['kinds'],
+    };
+  } finally {
+    await session.cleanup();
+  }
+}
+
+class CaptureSession {
+  appCompleted = false;
+  private cdpClosed = false;
+  private finalized = false;
+
+  constructor(private readonly connected: ConnectedSource) {}
+
+  async closeCdp(): Promise<void> {
+    if (this.cdpClosed) return;
+    this.cdpClosed = true;
     try {
-      await probe.start(cdp);
+      await this.connected.cdp.close();
     } catch (error) {
-      logger.warn({ kindId: kind.id, err: error }, 'kind probe failed to start');
+      recordCaptureDiagnostic(this.connected.initialIntegrity, {
+        stage: 'finalize',
+        message: `failed to close CDP connection: ${captureDiagnosticMessage(error)}`,
+      });
     }
   }
 
-  await waitForStop(connected, options);
-
-  const kindsData: Record<string, unknown> = {};
-  for (const { kind, probe } of probeInstances) {
+  async finalize(options: { suppressErrors: boolean }): Promise<void> {
+    if (this.finalized) return;
+    this.finalized = true;
     try {
-      kindsData[kind.id] = await probe.stop(cdp);
+      await this.connected.finalize({ appCompleted: this.appCompleted });
     } catch (error) {
-      logger.warn({ kindId: kind.id, err: error }, 'kind probe failed to stop');
+      recordCaptureDiagnostic(this.connected.initialIntegrity, {
+        stage: 'finalize',
+        message: captureDiagnosticMessage(error),
+      });
+      if (!options.suppressErrors) throw error;
     }
   }
 
-  const durationMs = performance.now() - startedAtHr;
-
-  const live: LiveSourceSignals = connected.drainLiveSignals?.() ?? {
-    gcEventsAbs: [],
-    eventLoopSamplesAbs: [],
-    eventLoopAvailable: false,
-  };
-
-  const eventLoopRead: EventLoopReadResult = cdp.closed
-    ? { samples: [], available: false }
-    : await withTimeout(readEventLoopSamples(cdp), 1500, { samples: [], available: false });
-
-  const gcEventsViaCdp: RawGcEvent[] = cdp.closed
-    ? []
-    : await withTimeout(readGcEvents(cdp), 1500, [] as RawGcEvent[]);
-
-  const absoluteEventLoopSamples = mergeTimedSamples(
-    live.eventLoopSamplesAbs,
-    eventLoopRead.samples,
-  );
-  const absoluteGcEvents = dedupeTimedEvents([...live.gcEventsAbs, ...gcEventsViaCdp]);
-
-  const captureIntegrity: CaptureIntegrity = { ...connected.initialIntegrity };
-  if (!captureIntegrity.eventLoopTimed && absoluteEventLoopSamples.length > 0) {
-    captureIntegrity.eventLoopTimed = true;
+  async cleanup(): Promise<void> {
+    await this.closeCdp();
+    await this.finalize({ suppressErrors: true });
   }
-  if (!captureIntegrity.gcTimed && absoluteGcEvents.length > 0) {
-    captureIntegrity.gcTimed = true;
-  }
-  const runtimeIntegrity = cdp.closed
-    ? undefined
-    : await withTimeout(readRuntimeIntegrity(cdp), 1500, undefined);
-  mergeCaptureIntegrityCounters(captureIntegrity, live.integrityCounters ?? runtimeIntegrity);
+}
 
-  const cpuData = kindsData.cpu as
-    | { cpuProfile?: { samples?: number[]; timeDeltas?: number[] } }
-    | undefined;
-  if (
-    cpuData?.cpuProfile?.samples?.length &&
-    cpuData.cpuProfile.timeDeltas?.length === cpuData.cpuProfile.samples.length
-  ) {
-    captureIntegrity.cpuSamplesTimed = true;
-  }
-
-  const normalizedGcEvents = normalizeTimedEvents(
-    absoluteGcEvents,
-    runtimeCaptureStartMs,
-    durationMs,
-  );
-  const normalizedEventLoopSamples = normalizeTimedEvents(
-    absoluteEventLoopSamples,
-    runtimeCaptureStartMs,
-    durationMs,
-  );
-  const resolvedEventLoopResolutionMs = eventLoopRead.resolutionMs ?? live.eventLoopResolutionMs;
-  const eventLoopHistogram = resolveEventLoopHistogram(
-    eventLoopRead,
-    normalizedEventLoopSamples,
-    resolvedEventLoopResolutionMs,
-  );
-
-  await cdp.close().catch(() => {});
-
-  const runtimeSignals: RuntimeSignalsData = {
-    gcEvents: normalizedGcEvents,
-    eventLoopSamples: normalizedEventLoopSamples,
-    eventLoopHistogram,
-    eventLoopResolutionMs: resolvedEventLoopResolutionMs,
-    eventLoopAvailable:
-      live.eventLoopAvailable || eventLoopRead.available || normalizedEventLoopSamples.length > 0,
-  };
-
-  await connected.finalize({ appCompleted: Boolean(live.appCompleted) });
-
-  return {
-    target: { ...target, pid: target.pid ?? connected.target.pid },
-    startedAtEpoch: connected.startedAtEpoch,
-    durationMs,
-    captureIntegrity,
-    runtimeSignals,
-    kinds: kindsData as CaptureBundle['kinds'],
-  };
+function emitCaptureProgress(
+  sourceOptions: unknown,
+  event: { stage: 'start-capture' | 'capture-running'; message: string },
+): void {
+  if (!sourceOptions || typeof sourceOptions !== 'object') return;
+  const onProgress = (sourceOptions as { onProgress?: unknown }).onProgress;
+  if (typeof onProgress !== 'function') return;
+  onProgress(event);
 }
 
 async function waitForStop<TOptions>(

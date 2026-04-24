@@ -268,6 +268,24 @@ const findingSchema = z
 // Meta
 // ---------------------------------------------------------------------------
 
+const captureDiagnosticStageSchema = z.enum([
+  'probe-install',
+  'probe-start',
+  'probe-stop',
+  'runtime-read',
+  'analysis-contributor',
+  'section-analyzer',
+  'finding-analyzer',
+  'finalize',
+]);
+
+const captureDiagnosticSchema = z.object({
+  stage: captureDiagnosticStageSchema,
+  message: z.string().min(1),
+  kindId: z.string().min(1).optional(),
+  analyzerId: z.string().min(1).optional(),
+});
+
 const metaSchema = z.object({
   schemaVersion: z.string().min(1),
   nodeVersion: z.string().min(1),
@@ -295,6 +313,7 @@ const metaSchema = z.object({
     controlChannelWriteErrors: z.number().int().nonnegative(),
     gcObserverSetupFailed: z.number().int().nonnegative(),
     heartbeatDropped: z.number().int().nonnegative(),
+    diagnostics: z.array(captureDiagnosticSchema).optional(),
   }),
 });
 
