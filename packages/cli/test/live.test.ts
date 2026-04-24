@@ -12,6 +12,15 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(__dirname, '..');
 const binPath = resolve(repoRoot, 'bin', 'lanterna.js');
 const fixturesDir = resolve(repoRoot, 'test', 'fixtures');
+const deoptFixture = [
+  'function churn(value) { return value.x + 1; }',
+  '%PrepareFunctionForOptimization(churn);',
+  'churn({ x: 1 });',
+  'churn({ x: 2 });',
+  '%OptimizeFunctionOnNextCall(churn);',
+  'churn({ x: 3 });',
+  'churn({ x: "4" });',
+].join(' ');
 let inspectorSupportPromise: Promise<boolean> | undefined;
 
 interface ExecFileFailure extends Error {
@@ -360,8 +369,9 @@ describe('live profiling', () => {
         '--pretty',
         '--',
         'node',
+        '--allow-natives-syntax',
         '-e',
-        'function churn(value) { return value.x + 1; } const shapes = [{ x: 1 }, { x: 2 }, { x: "3" }, { y: 4 }]; for (let i = 0; i < 2e6; i++) churn(shapes[i % shapes.length]);',
+        deoptFixture,
       ]);
       return;
     }
@@ -375,8 +385,9 @@ describe('live profiling', () => {
         '--pretty',
         '--',
         'node',
+        '--allow-natives-syntax',
         '-e',
-        'function churn(value) { return value.x + 1; } const shapes = [{ x: 1 }, { x: 2 }, { x: "3" }, { y: 4 }]; for (let i = 0; i < 2e6; i++) churn(shapes[i % shapes.length]);',
+        deoptFixture,
       ],
       { cwd: repoRoot, timeout: 10_000, maxBuffer: 1024 * 1024 * 8 },
     );

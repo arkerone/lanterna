@@ -11,6 +11,8 @@ export function parseDeoptsFromStderr(stderr: string): RawDeopt[] {
   const genericBailoutPattern = /bailout .*?kind:\s*([^,]+),\s*reason:\s*([^)]+)\)/i;
   const deoptPattern =
     /deoptimiz\w+\s+.*?\(([^)]+)\):\s*(?:begin|end)\s+\S+\s+<[^>]*>\s+(\S+).*?reason:\s*([^,;]+)/i;
+  const dependentCodePattern =
+    /marking dependent code .*?<SharedFunctionInfo\s+([^>]+)>\).*?for deoptimization,\s*reason:\s*([^\]]+)/i;
   const deoptCountsByKey = new Map<string, RawDeopt & { count: number }>();
 
   for (const line of lines) {
@@ -54,19 +56,39 @@ export function parseDeoptsFromStderr(stderr: string): RawDeopt[] {
     }
 
     match = deoptPattern.exec(line);
+    if (match) {
+      const key = `${match[2]}|${match[3]}`;
+      const existing = deoptCountsByKey.get(key);
+      if (existing) {
+        existing.count += 1;
+        continue;
+      }
+      deoptCountsByKey.set(key, {
+        function: match[2] ?? '',
+        file: '',
+        line: 0,
+        reason: (match[3] ?? '').trim(),
+        bailoutType: (match[1] ?? '').trim(),
+        count: 1,
+      });
+      continue;
+    }
+
+    match = dependentCodePattern.exec(line);
     if (!match) continue;
-    const key = `${match[2]}|${match[3]}`;
+    const reason = (match[2] ?? '').trim();
+    const key = `${match[1]}|${reason}`;
     const existing = deoptCountsByKey.get(key);
     if (existing) {
       existing.count += 1;
       continue;
     }
     deoptCountsByKey.set(key, {
-      function: match[2] ?? '',
+      function: (match[1] ?? '').trim(),
       file: '',
       line: 0,
-      reason: (match[3] ?? '').trim(),
-      bailoutType: (match[1] ?? '').trim(),
+      reason,
+      bailoutType: 'dependent-code',
       count: 1,
     });
   }
