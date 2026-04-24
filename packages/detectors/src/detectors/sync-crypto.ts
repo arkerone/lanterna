@@ -1,9 +1,9 @@
 import type {
   BuiltinFinding,
+  EventLoopReport,
   Finding,
   FindingRemediation,
   Hotspot,
-  LanternaReport,
   SyncCryptoEvidenceExtra,
 } from '@lanterna-profiler/core';
 import { defineBuiltinFinding, stripOptPrefix } from '@lanterna-profiler/core';
@@ -93,7 +93,7 @@ export const syncCryptoDetector: Detector = {
 function buildFinding(
   hotspot: Hotspot,
   categoryTotalPct: number,
-  report: LanternaReport,
+  report: { eventLoop: EventLoopReport },
   context: FindingContext,
 ): BuiltinFinding<'sync-crypto'> {
   const { attribution, caller } = resolveAttribution(hotspot, context);

@@ -47,6 +47,7 @@ export const excessiveGcDetector: Detector = {
     return [
       defineBuiltinFinding<BuiltinFinding<'excessive-gc'>['category']>({
         id: 'excessive-gc',
+        profileKind: 'cpu',
         severity,
         category: 'excessive-gc',
         title: 'Excessive garbage collection',

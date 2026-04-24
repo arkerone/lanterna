@@ -22,6 +22,7 @@ export const deoptLoopDetector: Detector = {
       };
       const finding: BuiltinFinding<'deopt-loop'> = defineBuiltinFinding({
         id: `deopt-loop:${deopt.function}`,
+        profileKind: 'cpu',
         severity: deopt.count > thresholds.criticalCount ? 'critical' : 'warning',
         category: 'deopt-loop',
         title: `Repeated deoptimisation of ${deopt.function} (${deopt.count}×)`,

@@ -143,20 +143,23 @@ The `--` separator is required before the target command in `run` mode.
 
 ## The Report
 
-Lanterna emits a `LanternaReport` with the following top-level sections:
+Lanterna emits a `LanternaReport` (schema v2) with per-kind sections nested under `profiles.*`:
 
 | Section | Purpose |
 | --- | --- |
-| `meta` | Capture metadata, mode, duration, integrity flags. |
-| `summary` | High-level ratios (user / builtin / native / GC). |
-| `hotspots` | Aggregated functions with self/total CPU + callers/callees. |
-| `hotStacks` | Most frequent sampled stacks. |
-| `gc` | Pause totals, counts, longest pause, correlated hotspots. |
-| `eventLoop` | Lag stats, stalls, correlation candidates, signal quality. |
-| `deopts` | V8 deoptimisation events (only with `--deep`). |
-| `findings` | Actionable detector output, sorted by severity. |
+| `meta` | Capture metadata, mode, duration, `profileKinds`, integrity flags. |
+| `profiles.cpu.summary` | High-level CPU ratios (user / builtin / native / GC). |
+| `profiles.cpu.hotspots` | Aggregated functions with self/total CPU + callers/callees. |
+| `profiles.cpu.hotStacks` | Most frequent sampled stacks. |
+| `profiles.cpu.gc` | Pause totals, counts, longest pause, correlated hotspots. |
+| `profiles.cpu.eventLoop` | Lag stats, stalls, correlation candidates, signal quality. |
+| `profiles.cpu.deopts` | V8 deoptimisation events (only with `--deep`). |
+| `findings` | Actionable detector output (cross-kind, each tagged `profileKind`), sorted by severity. |
 
-**Read it in this order:** `summary.topCategory` → `findings[]` → top `hotspots` → `eventLoop` & `gc`. Full schema in [docs/reading-a-report.md](docs/reading-a-report.md).
+> [!NOTE]
+> Schema **v2** (current) nests CPU data under `profiles.cpu.*`. Future profile kinds (memory, async) will land under `profiles.memory.*`, `profiles.async.*`. Select kinds via `--kind <id>` (repeatable, default `cpu`).
+
+**Read it in this order:** `profiles.cpu.summary.topCategory` → `findings[]` → top `profiles.cpu.hotspots` → `eventLoop` & `gc`. Full schema in [docs/reading-a-report.md](docs/reading-a-report.md).
 
 <details>
 <summary><strong>Example output</strong></summary>
@@ -180,20 +183,24 @@ Lanterna emits a `LanternaReport` with the following top-level sections:
       "heartbeatDropped": 0
     }
   },
-  "summary": {
-    "onCpuRatio": 0.91,
-    "userCodeRatio": 0.14,
-    "builtinRatio": 0.31,
-    "nativeRatio": 0.49,
-    "gcRatio": 0.03,
-    "topCategory": "native",
-    "dominantBlockingKind": "sync-crypto"
+  "profiles": {
+    "cpu": {
+      "summary": {
+        "onCpuRatio": 0.91,
+        "userCodeRatio": 0.14,
+        "builtinRatio": 0.31,
+        "nativeRatio": 0.49,
+        "gcRatio": 0.03,
+        "topCategory": "native",
+        "dominantBlockingKind": "sync-crypto"
+      },
+      "hotspots": [],
+      "hotStacks": [],
+      "gc": {},
+      "eventLoop": {},
+      "deopts": []
+    }
   },
-  "hotspots": [],
-  "hotStacks": [],
-  "gc": {},
-  "eventLoop": {},
-  "deopts": [],
   "findings": []
 }
 ```
@@ -224,10 +231,10 @@ Lanterna is extensible: you can ship your own detectors as plugins. See [Extendi
 jq '.findings[] | select(.severity != "info") | {id, severity, file: .evidence.file, line: .evidence.line}' report.json
 
 # Top 5 hotspots
-jq '.hotspots[:5] | .[] | {fn: .functionName, selfPct, totalPct, file}' report.json
+jq '.profiles.cpu.hotspots[:5] | .[] | {fn: .functionName, selfPct, totalPct, file}' report.json
 
 # Event-loop summary
-jq '{basis: .eventLoop.measurementBasis, confidence: .eventLoop.confidence, maxLagMs: .eventLoop.maxLagMs, p99LagMs: .eventLoop.p99LagMs}' report.json
+jq '{basis: .profiles.cpu.eventLoop.measurementBasis, confidence: .profiles.cpu.eventLoop.confidence, maxLagMs: .profiles.cpu.eventLoop.maxLagMs, p99LagMs: .profiles.cpu.eventLoop.p99LagMs}' report.json
 
 # Capture integrity
 jq '.meta.captureIntegrity' report.json
@@ -304,10 +311,11 @@ const report: LanternaReport = await runProfile({
 
 - `runProfile(...)` - spawn a Node process, capture, analyze, return a `LanternaReport`.
 - `attachProfile(...)` - attach to an existing inspector target and return a `LanternaReport`.
-- `analyzeCapture(raw, options)` - run the default pipeline on a `RawCapture`.
+- `analyzeCapture(bundle, options)` - run the default pipeline on a `CaptureBundle`.
+- `createDefaultKindRegistry(...)` - registry pre-loaded with the CPU kind (plug extras here).
 - `DETECTOR_THRESHOLDS` - thresholds used by the built-in rules.
 
-Both `runProfile` and `attachProfile` accept extension options so you can add detectors without going through the CLI:
+Both `runProfile` and `attachProfile` accept extension options so you can add detectors, analyzers, or additional profile kinds without going through the CLI:
 
 ```ts
 await runProfile({
@@ -316,7 +324,8 @@ await runProfile({
   sampleIntervalMicros: 1000,
   deep: false,
   pretty: false,
-  detectors: [myDetector],                  // wrapped as FindingAnalyzers automatically
+  // kinds: [cpuKind, myMemoryKind],        // omit to default to [cpu]
+  detectors: [myDetector],                  // wrapped as FindingAnalyzers automatically (tagged profileKind: 'cpu')
   analyzers: [mySectionAnalyzer],           // raw FindingAnalyzer | SectionAnalyzer
   setupPipeline: async (pipeline, ctx) => { /* full-control hook */ },
 });
@@ -331,19 +340,22 @@ await runProfile({
 import {
   buildLanternaReport,
   createAnalysisPipeline,
+  createCpuProfileKind,
   defineFindingAnalyzer,
   defineSectionAnalyzer,
+  runCapture,
   serializeReport,
-  startAttachCapture,
-  startSpawnCapture,
+  SpawnSource,
+  AttachSource,
+  type CaptureBundle,
   type Finding,
   type Hotspot,
   type LanternaReport,
-  type RawCapture,
+  type ProfileKind,
 } from '@lanterna-profiler/core';
 ```
 
-Use core when you want full control over the pipeline - no default detectors are registered. Register your own analyzers with `pipeline.register(defineFindingAnalyzer({...}))` / `defineSectionAnalyzer({...})`.
+Use core when you want full control over the pipeline — no default detectors or kinds are registered. Compose your own `runCapture({ source, kinds, ... })` call, then feed the resulting `CaptureBundle` into a pipeline you built with `createAnalysisPipeline({ kinds })` plus `pipeline.register(defineFindingAnalyzer({...}))` / `defineSectionAnalyzer({...})`.
 
 </details>
 

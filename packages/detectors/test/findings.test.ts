@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import {
   buildLanternaReport,
+  type CaptureBundle,
   LANTERNA_VERSION,
   type LanternaReport,
-  type RawCapture,
   type RawCpuProfile,
   serializeReport,
 } from '@lanterna-profiler/core';
@@ -11,7 +11,7 @@ import { describe, it } from 'vitest';
 import { analyzeCapture } from '../src/analyze-capture.js';
 import { CWD, loadProfile, makeRaw } from './helpers.js';
 
-function makeReport(profileName: string, overrides: Partial<RawCapture> = {}): LanternaReport {
+function makeReport(profileName: string, overrides: Partial<CaptureBundle> = {}): LanternaReport {
   const profile = loadProfile(profileName);
   const raw = makeRaw(profile, overrides);
   return createReport(raw, {
@@ -22,35 +22,62 @@ function makeReport(profileName: string, overrides: Partial<RawCapture> = {}): L
 }
 
 function createReport(
-  raw: RawCapture,
+  raw: CaptureBundle,
   options: { sampleIntervalMicros: number; deep: boolean; command: string[] },
 ): LanternaReport {
-  return buildLanternaReport(raw, analyzeCapture(raw, options), options);
+  return buildLanternaReport(raw, analyzeCapture(raw, options), ['cpu'], options);
+}
+
+function findFindingOrFail(
+  report: LanternaReport,
+  predicate: (finding: LanternaReport['findings'][number]) => boolean,
+  description: string,
+) {
+  const finding = report.findings.find(predicate);
+  assert.ok(
+    finding,
+    `Expected ${description}. findings = ${JSON.stringify(report.findings.map((entry) => entry.id))}`,
+  );
+  return finding;
+}
+
+function getCpuProfile(report: LanternaReport) {
+  const cpuProfile = report.profiles.cpu;
+  assert.ok(cpuProfile, 'Expected cpu profile in report');
+  return cpuProfile;
 }
 
 describe('findings – sync-crypto-on-hot-path', () => {
   const report = makeReport('sync-crypto');
 
   it('detects sync-crypto finding', () => {
-    const f = report.findings.find((f) => f.id === 'sync-crypto-on-hot-path');
-    assert.ok(
-      f,
-      `Expected sync-crypto finding. findings = ${JSON.stringify(report.findings.map((f) => f.id))}`,
-    );
+    findFindingOrFail(report, (f) => f.id === 'sync-crypto-on-hot-path', 'sync-crypto finding');
   });
 
   it('finding has severity warning or critical', () => {
-    const f = report.findings.find((f) => f.id === 'sync-crypto-on-hot-path')!;
+    const f = findFindingOrFail(
+      report,
+      (finding) => finding.id === 'sync-crypto-on-hot-path',
+      'sync-crypto finding',
+    );
     assert.ok(f.severity === 'warning' || f.severity === 'critical');
   });
 
   it('finding has a non-empty suggestion', () => {
-    const f = report.findings.find((f) => f.id === 'sync-crypto-on-hot-path')!;
+    const f = findFindingOrFail(
+      report,
+      (finding) => finding.id === 'sync-crypto-on-hot-path',
+      'sync-crypto finding',
+    );
     assert.ok(f.suggestion.length > 10);
   });
 
   it('finding evidence points to user caller, not node internals', () => {
-    const f = report.findings.find((f) => f.id === 'sync-crypto-on-hot-path')!;
+    const f = findFindingOrFail(
+      report,
+      (finding) => finding.id === 'sync-crypto-on-hot-path',
+      'sync-crypto finding',
+    );
     // Evidence should point to the user-code caller (hashPassword), not the node:crypto internal.
     // The callee is exposed in evidence.extra.callee for reference.
     assert.match(f.evidence.function, /hashPassword/);
@@ -231,15 +258,15 @@ describe('findings – excessive-gc', () => {
   });
 
   it('detects excessive-gc finding when longest pause > 100ms', () => {
-    const f = report.findings.find((f) => f.id === 'excessive-gc');
-    assert.ok(
-      f,
-      `Expected excessive-gc finding. findings = ${JSON.stringify(report.findings.map((f) => f.id))}`,
-    );
+    findFindingOrFail(report, (f) => f.id === 'excessive-gc', 'excessive-gc finding');
   });
 
   it('excessive-gc finding has suggestion', () => {
-    const f = report.findings.find((f) => f.id === 'excessive-gc')!;
+    const f = findFindingOrFail(
+      report,
+      (finding) => finding.id === 'excessive-gc',
+      'excessive-gc finding',
+    );
     assert.ok(f.suggestion.length > 10);
   });
 });
@@ -336,22 +363,22 @@ describe('findings – event-loop-stall', () => {
   });
 
   it('detects event-loop-stall when max lag > 200ms', () => {
-    const f = report.findings.find((f) => f.id === 'event-loop-stall');
-    assert.ok(
-      f,
-      `Expected event-loop-stall finding. findings = ${JSON.stringify(report.findings.map((f) => f.id))}`,
-    );
+    findFindingOrFail(report, (f) => f.id === 'event-loop-stall', 'event-loop-stall finding');
   });
 
   it('derives real stall intervals from timed heartbeats', () => {
-    assert.deepEqual(report.eventLoop.stallIntervals, [
+    assert.deepEqual(getCpuProfile(report).eventLoop.stallIntervals, [
       { startMs: 20, endMs: 320, maxLagMs: 300 },
       { startMs: 340, endMs: 1000, maxLagMs: 660 },
     ]);
   });
 
   it('includes correlated hotspot candidates in event-loop evidence', () => {
-    const f = report.findings.find((f) => f.id === 'event-loop-stall')!;
+    const f = findFindingOrFail(
+      report,
+      (finding) => finding.id === 'event-loop-stall',
+      'event-loop-stall finding',
+    );
     const candidates = (f.evidence.extra as Record<string, unknown>).candidateHotspots as Array<
       Record<string, unknown>
     >;
@@ -380,9 +407,10 @@ describe('event loop report – hook without usable timing signal', () => {
   });
 
   it('does not claim event-loop availability without heartbeats or histogram', () => {
-    assert.equal(report.eventLoop.available, false);
-    assert.equal(report.eventLoop.measurementBasis, 'none');
-    assert.equal(report.eventLoop.confidence, 'none');
+    const cpuProfile = getCpuProfile(report);
+    assert.equal(cpuProfile.eventLoop.available, false);
+    assert.equal(cpuProfile.eventLoop.measurementBasis, 'none');
+    assert.equal(cpuProfile.eventLoop.confidence, 'none');
   });
 });
 
@@ -441,15 +469,15 @@ describe('findings – blocking-io', () => {
   });
 
   it('detects blocking-io finding', () => {
-    const f = report.findings.find((f) => f.id.startsWith('blocking-io'));
-    assert.ok(
-      f,
-      `Expected blocking-io finding. findings = ${JSON.stringify(report.findings.map((f) => f.id))}`,
-    );
+    findFindingOrFail(report, (f) => f.id.startsWith('blocking-io'), 'blocking-io finding');
   });
 
   it('blocking-io evidence points to user caller, not node:fs internal', () => {
-    const f = report.findings.find((f) => f.id.startsWith('blocking-io'))!;
+    const f = findFindingOrFail(
+      report,
+      (finding) => finding.id.startsWith('blocking-io'),
+      'blocking-io finding',
+    );
     // Evidence should point to the user-code caller (processRequest), not node:fs.
     assert.match(f.evidence.function, /processRequest/);
     assert.ok(
@@ -559,15 +587,15 @@ describe('findings – deopt-loop', () => {
   );
 
   it('detects deopt-loop when same function deoptimised ≥ 5 times in deep mode', () => {
-    const f = report.findings.find((f) => f.id.startsWith('deopt-loop:'));
-    assert.ok(
-      f,
-      `Expected deopt-loop finding. findings = ${JSON.stringify(report.findings.map((f) => f.id))}`,
-    );
+    findFindingOrFail(report, (f) => f.id.startsWith('deopt-loop:'), 'deopt-loop finding');
   });
 
   it('deopt-loop finding has warning severity for count 5-20', () => {
-    const f = report.findings.find((f) => f.id.startsWith('deopt-loop:'))!;
+    const f = findFindingOrFail(
+      report,
+      (finding) => finding.id.startsWith('deopt-loop:'),
+      'deopt-loop finding',
+    );
     assert.equal(f.severity, 'warning');
     assert.equal((f.evidence.extra as Record<string, unknown>)?.proofLevel, 'deopt-trace-only');
   });
@@ -621,7 +649,11 @@ describe('findings – deopt-loop', () => {
       ),
       { sampleIntervalMicros: 1000, deep: true, command: ['node', 'hot.js'] },
     );
-    const f = heavyReport.findings.find((f) => f.id.startsWith('deopt-loop:'))!;
+    const f = findFindingOrFail(
+      heavyReport,
+      (finding) => finding.id.startsWith('deopt-loop:'),
+      'deopt-loop finding',
+    );
     assert.equal(f.severity, 'critical');
   });
 
@@ -794,25 +826,33 @@ describe('findings – require-in-hot-path', () => {
   });
 
   it('detects require-in-hot-path when Module._load is on the hot path', () => {
-    const f = report.findings.find((f) => f.id === 'require-in-hot-path');
-    assert.ok(
-      f,
-      `Expected require-in-hot-path finding. findings = ${JSON.stringify(report.findings.map((f) => f.id))}`,
-    );
+    findFindingOrFail(report, (f) => f.id === 'require-in-hot-path', 'require-in-hot-path finding');
   });
 
   it('require-in-hot-path evidence points to the Module._load frame', () => {
-    const f = report.findings.find((f) => f.id === 'require-in-hot-path')!;
+    const f = findFindingOrFail(
+      report,
+      (finding) => finding.id === 'require-in-hot-path',
+      'require-in-hot-path finding',
+    );
     assert.match(f.evidence.function, /handleRequest/);
   });
 
   it('require-in-hot-path keeps the builtin callee in evidence.extra', () => {
-    const f = report.findings.find((f) => f.id === 'require-in-hot-path')!;
+    const f = findFindingOrFail(
+      report,
+      (finding) => finding.id === 'require-in-hot-path',
+      'require-in-hot-path finding',
+    );
     assert.match(String((f.evidence.extra as Record<string, unknown>)?.callee), /_load/);
   });
 
   it('require-in-hot-path is at least info severity', () => {
-    const f = report.findings.find((f) => f.id === 'require-in-hot-path')!;
+    const f = findFindingOrFail(
+      report,
+      (finding) => finding.id === 'require-in-hot-path',
+      'require-in-hot-path finding',
+    );
     assert.ok(f.severity === 'info' || f.severity === 'warning' || f.severity === 'critical');
   });
 });
@@ -870,15 +910,19 @@ describe('findings – json-on-hot-path', () => {
   });
 
   it('detects json-on-hot-path', () => {
-    const f = report.findings.find((f) => f.id.startsWith('json-on-hot-path:'));
-    assert.ok(
-      f,
-      `Expected json-on-hot-path finding. findings = ${JSON.stringify(report.findings.map((f) => f.id))}`,
+    findFindingOrFail(
+      report,
+      (f) => f.id.startsWith('json-on-hot-path:'),
+      'json-on-hot-path finding',
     );
   });
 
   it('attributes json-on-hot-path to the user caller', () => {
-    const f = report.findings.find((f) => f.id.startsWith('json-on-hot-path:'))!;
+    const f = findFindingOrFail(
+      report,
+      (finding) => finding.id.startsWith('json-on-hot-path:'),
+      'json-on-hot-path finding',
+    );
     assert.match(f.evidence.function, /serializeResponse/);
     assert.match(String((f.evidence.extra as Record<string, unknown>)?.callee), /JSON\.stringify/);
     assert.equal((f.evidence.extra as Record<string, unknown>)?.proofLevel, 'attributed-caller');
@@ -938,15 +982,19 @@ describe('findings – node-modules-hotspot', () => {
   });
 
   it('detects node-modules-hotspot', () => {
-    const f = report.findings.find((f) => f.id.startsWith('node-modules-hotspot:'));
-    assert.ok(
-      f,
-      `Expected node-modules-hotspot finding. findings = ${JSON.stringify(report.findings.map((f) => f.id))}`,
+    findFindingOrFail(
+      report,
+      (f) => f.id.startsWith('node-modules-hotspot:'),
+      'node-modules-hotspot finding',
     );
   });
 
   it('reports the dependency package and user caller', () => {
-    const f = report.findings.find((f) => f.id.startsWith('node-modules-hotspot:'))!;
+    const f = findFindingOrFail(
+      report,
+      (finding) => finding.id.startsWith('node-modules-hotspot:'),
+      'node-modules-hotspot finding',
+    );
     assert.match(f.evidence.function, /renderPage/);
     assert.equal((f.evidence.extra as Record<string, unknown>)?.package, 'markdown-it');
     assert.equal((f.evidence.extra as Record<string, unknown>)?.proofLevel, 'attributed-caller');
@@ -1054,9 +1102,11 @@ describe('findings – node-modules-hotspot selection uses inclusive cost', () =
   });
 
   it('prefers the dependency with the highest totalPct', () => {
-    const f = report.findings.find((candidate) =>
-      candidate.id.startsWith('node-modules-hotspot:'),
-    )!;
+    const f = findFindingOrFail(
+      report,
+      (candidate) => candidate.id.startsWith('node-modules-hotspot:'),
+      'node-modules-hotspot finding',
+    );
     assert.equal((f.evidence.extra as Record<string, unknown>)?.package, 'react-dom');
   });
 });
@@ -1102,12 +1152,13 @@ describe('summary – topUserHotspot', () => {
   });
 
   it('exposes a dominant user-code hotspot in summary instead of findings', () => {
+    const cpuProfile = getCpuProfile(report);
     assert.equal(
       report.findings.some((f) => f.id.startsWith('cpu-bound-user-hotspot:')),
       false,
     );
-    assert.match(report.summary.topUserHotspot?.function ?? '', /computeRanking/);
-    assert.equal(report.summary.topUserHotspot?.totalPct, 100);
+    assert.match(cpuProfile.summary.topUserHotspot?.function ?? '', /computeRanking/);
+    assert.equal(cpuProfile.summary.topUserHotspot?.totalPct, 100);
   });
 });
 
@@ -1176,7 +1227,7 @@ describe('summary – topUserHotspot selection uses inclusive cost', () => {
   });
 
   it('prefers the user hotspot with the highest totalPct', () => {
-    assert.match(report.summary.topUserHotspot?.function ?? '', /broadPath/);
+    assert.match(getCpuProfile(report).summary.topUserHotspot?.function ?? '', /broadPath/);
   });
 });
 
@@ -1188,7 +1239,7 @@ describe('findings – cpu-bound-user-hotspot suppression', () => {
       report.findings.some((f) => f.id.startsWith('cpu-bound-user-hotspot:')),
       false,
     );
-    assert.equal(report.summary.topUserHotspot, undefined);
+    assert.equal(getCpuProfile(report).summary.topUserHotspot, undefined);
   });
 });
 
@@ -1281,13 +1332,14 @@ describe('findings – triple-hotspot regression', () => {
   });
 
   it('keeps specific findings and does not emit the old generic cpu-bound finding', () => {
+    const cpuProfile = getCpuProfile(report);
     assert.ok(report.findings.some((f) => f.category === 'sync-crypto'));
     assert.ok(report.findings.some((f) => f.category === 'blocking-io'));
     assert.equal(
       report.findings.some((f) => f.category === 'cpu-bound-user-hotspot'),
       false,
     );
-    assert.match(report.summary.topUserHotspot?.function ?? '', /renderDashboard/);
+    assert.match(cpuProfile.summary.topUserHotspot?.function ?? '', /renderDashboard/);
   });
 });
 
@@ -1367,13 +1419,13 @@ describe('report structure – meta is complete', () => {
   });
 
   it('summary ratios sum to ~1', () => {
-    const s = report.summary;
+    const s = getCpuProfile(report).summary;
     const sum = s.userCodeRatio + s.nodeModulesRatio + s.builtinRatio + s.nativeRatio + s.gcRatio;
     assert.ok(Math.abs(sum - 1) < 0.01, `ratio sum ${sum} should be ~1 (on-CPU basis)`);
   });
 
   it('summary exposes dominant blocking kind when available', () => {
-    assert.equal(report.summary.dominantBlockingKind, 'sync-crypto');
+    assert.equal(getCpuProfile(report).summary.dominantBlockingKind, 'sync-crypto');
   });
 });
 
@@ -1386,7 +1438,7 @@ describe('report structure – timed GC events are preserved', () => {
   });
 
   it('keeps GC timestamps in pausesOver10ms', () => {
-    assert.deepEqual(report.gc.pausesOver10ms, [
+    assert.deepEqual(getCpuProfile(report).gc.pausesOver10ms, [
       { atMs: 123, kind: 'scavenge', durationMs: 12 },
       { atMs: 456, kind: 'markSweep', durationMs: 34 },
     ]);

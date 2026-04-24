@@ -1,3 +1,4 @@
+import { writeSync } from 'node:fs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const stopAndPersist = vi.fn();
@@ -21,6 +22,10 @@ vi.mock('ora', () => ({
   default: vi.fn(() => spinner),
 }));
 
+vi.mock('node:fs', () => ({
+  writeSync: vi.fn(),
+}));
+
 describe('activity indicator', () => {
   beforeEach(() => {
     stopAndPersist.mockClear();
@@ -28,6 +33,7 @@ describe('activity indicator', () => {
     succeed.mockClear();
     fail.mockClear();
     stop.mockClear();
+    vi.mocked(writeSync).mockClear();
   });
 
   it('persists completed steps as green checks when history is enabled', async () => {
@@ -46,7 +52,6 @@ describe('activity indicator', () => {
   });
 
   it('persists the failed step and prints the failure reason when history is enabled', async () => {
-    const stderrWrite = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
     const { startActivityIndicator } = await import('../src/activity-indicator.js');
     const indicator = startActivityIndicator('Connecting to CDP', { keepHistory: true });
 
@@ -58,7 +63,8 @@ describe('activity indicator', () => {
         text: expect.stringContaining('Connecting to CDP'),
       }),
     );
-    expect(stderrWrite).toHaveBeenCalledWith(
+    expect(writeSync).toHaveBeenCalledWith(
+      2,
       expect.stringContaining('lanterna: failed to connect'),
     );
   });

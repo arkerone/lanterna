@@ -1,19 +1,21 @@
 # Reading a Lanterna Report
 
-Lanterna emits a structured `LanternaReport`. This guide walks through each section - **in reading order** - and how to interpret it.
+Lanterna emits a structured `LanternaReport` (schema v2). This guide walks through each section — **in reading order** — and how to interpret it.
+
+> **Schema v2 convention.** Per-kind analysis output lives under `report.profiles.<kind>.*`. Today the only kind is `cpu`, so every field named below without an explicit path is short-hand for `report.profiles.cpu.<field>`. `findings[]` is cross-kind at the root; each finding carries a required `profileKind` tag. `meta.profileKinds` lists the kinds present in this report.
 
 ## At a glance
 
 | # | Section | What it tells you | When to distrust it |
 | --- | --- | --- | --- |
-| 1 | `meta` | What was captured (mode, duration, integrity flags). | `durationMs` very short, or `captureIntegrity.*` flags `false`. |
-| 2 | `summary` | Where CPU time went (ratios, top category). | `idleRatio` > 0.8 - the profile is mostly idle. |
-| 3 | `findings` | Prioritized hypotheses backed by the capture. | Empty `findings[]` does not prove a healthy profile. |
-| 4 | `hotspots` | Where CPU is actually spent (self + inclusive). | A hot leaf in `node_modules` is usually a symptom, not a cause. |
-| 5 | `eventLoop` | Latency signal + stall windows. | `confidence = low` or `measurementBasis = histogram` alone. |
-| 6 | `gc` | Pause counts, duration, correlated hotspots. | Very short runs with no `gcTimed`. |
-| 7 | `hotStacks` | Complete sampled call paths, weighted. | Not always needed - use when a single hotspot is ambiguous. |
-| 8 | `deopts` | V8 deoptimisation clusters. | Empty unless `meta.deep === true`. |
+| 1 | `meta` | What was captured (mode, duration, `profileKinds`, integrity flags). | `durationMs` very short, or `captureIntegrity.*` flags `false`. |
+| 2 | `profiles.cpu.summary` | Where CPU time went (ratios, top category). | `idleRatio` > 0.8 — the profile is mostly idle. |
+| 3 | `findings` | Prioritized hypotheses backed by the capture (tagged `profileKind`). | Empty `findings[]` does not prove a healthy profile. |
+| 4 | `profiles.cpu.hotspots` | Where CPU is actually spent (self + inclusive). | A hot leaf in `node_modules` is usually a symptom, not a cause. |
+| 5 | `profiles.cpu.eventLoop` | Latency signal + stall windows. | `confidence = low` or `measurementBasis = histogram` alone. |
+| 6 | `profiles.cpu.gc` | Pause counts, duration, correlated hotspots. | Very short runs with no `gcTimed`. |
+| 7 | `profiles.cpu.hotStacks` | Complete sampled call paths, weighted. | Not always needed — use when a single hotspot is ambiguous. |
+| 8 | `profiles.cpu.deopts` | V8 deoptimisation clusters. | Empty unless `meta.deep === true`. |
 
 ---
 
@@ -26,6 +28,7 @@ Lanterna emits a structured `LanternaReport`. This guide walks through each sect
 | `command` | The executed command, or `[]` in attach mode. |
 | `mode` | `"spawn"` or `"attach"`. |
 | `deep` | Whether deopt tracing was enabled. |
+| `profileKinds` | Profile kinds captured, in declared order (e.g. `["cpu"]`). |
 | `captureIntegrity` | Quality indicators for timed signals. |
 
 Sanity-check pattern:
@@ -68,6 +71,7 @@ Each finding contains:
 | Field | Purpose |
 | --- | --- |
 | `id` | Detector-specific identifier. |
+| `profileKind` | Which profile kind emitted the finding (e.g. `"cpu"`). |
 | `severity` | `critical` / `warning` / `info`. |
 | `category` | Grouping for filtering. |
 | `title` | Short human label. |
@@ -76,7 +80,7 @@ Each finding contains:
 | `suggestion` | Concrete remediation hint. |
 | `references` | Links to docs or related findings. |
 
-Read `findings[]` as **prioritized hypotheses backed by the capture**.
+Read `findings[]` as **prioritized hypotheses backed by the capture**. Filter by `profileKind` when multiple kinds are captured; today every built-in finding is `profileKind: "cpu"`.
 
 ### Evidence attribution
 

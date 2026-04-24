@@ -44,7 +44,6 @@ export function waitForInspectorUrl(child: ChildProcess, stderrBuffer: string[])
 
     const onData = (chunk: Buffer | string) => {
       const text = chunk.toString();
-      stderrBuffer.push(text);
       const match = /Debugger listening on (ws:\/\/[^\s]+)/.exec(text);
       if (match?.[1]) {
         resolveOnce(match[1]);

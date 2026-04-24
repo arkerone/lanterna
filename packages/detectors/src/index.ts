@@ -15,15 +15,12 @@ export {
   buildAttributionEvidence,
   resolveAttribution,
 } from './detectors/shared.js';
-export type { Detector, FindingContext } from './detectors/types.js';
+export type { CpuDetectorReport, Detector, FindingContext } from './detectors/types.js';
 export type {
   LanternaDetectorPlugin,
   LanternaPluginContext,
 } from './plugin.js';
-export {
-  buildFindingContext,
-  createFindingAnalyzerFromDetector,
-} from './plugin.js';
+export { buildFindingContext, createFindingAnalyzerFromDetector } from './plugin.js';
 export type {
   AttachProfileOptions,
   AttachProgressEvent,
@@ -31,3 +28,9 @@ export type {
   RunProgressEvent,
 } from './profile.js';
 export { attachProfile, runProfile } from './profile.js';
+
+/**
+ * Default kind registry factory — pre-loaded with the CPU kind. Call this
+ * from the CLI or any driver that needs to resolve `--kind <id>` strings.
+ */
+export { createDefaultKindRegistry } from './registry.js';

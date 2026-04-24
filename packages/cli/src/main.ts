@@ -36,6 +36,9 @@ ${chalk.bold('Examples')}
   ${chalk.gray('# Run with deopt tracing')}
   lanterna run --deep --duration 15s -- node server.js
 
+  ${chalk.gray('# Attach with an explicit profile kind')}
+  lanterna attach --inspect-url ws://127.0.0.1:9229/<uuid> --kind cpu --duration 15s
+
   ${chalk.gray('# Attach directly by PID')}
   lanterna attach --pid 4242 --duration 15s --output report.json
 
@@ -58,6 +61,7 @@ ${chalk.bold('Options')}
   ${chalk.cyan('--deep')}                  Enable deopt tracing ${chalk.gray('(stderr becomes noisier)')}
   ${chalk.cyan('--sample-interval <us>')}  V8 sample interval in microseconds ${chalk.gray('(default: 1000)')}
   ${chalk.cyan('--detectors <spec>')}      Load an additional detector plugin (package name or path). Repeatable.
+  ${chalk.cyan('--kind <id>')}             Profile kind to capture ${chalk.gray('(default: cpu)')}. Repeatable or comma-separated.
   ${chalk.cyan('-h, --help')}              Show this help
 
 ${chalk.bold('Examples')}
@@ -65,10 +69,13 @@ ${chalk.bold('Examples')}
   lanterna run --deep --duration 15s -- node server.js
   lanterna run --pretty -- node script.js
   lanterna run --detectors @acme/lanterna-detectors-prisma -- node app.js
+  lanterna run --kind cpu -- node app.js
 
 ${chalk.bold('Notes')}
   - The ${chalk.cyan('--')} separator is required before the target command
   - Without ${chalk.cyan('--duration')}, Lanterna profiles until the child process exits
+  - ${chalk.cyan('--kind')} works here and on ${chalk.cyan('attach')}; repeat it or use ${chalk.cyan('--kind cpu,memory')}
+  - Today the only built-in profile kind is ${chalk.cyan('cpu')}; unknown ids fail with ${chalk.gray('"unknown profile kind(s): <ids>. Available kinds: cpu"')}
 `;
 
 const ATTACH_HELP = `${chalk.bold.cyan('lanterna attach')} ${chalk.gray('Attach to a running Node.js process')}
@@ -84,11 +91,12 @@ ${chalk.bold('Options')}
   ${chalk.cyan('--pretty')}                Pretty-print JSON output
   ${chalk.cyan('--sample-interval <us>')}  V8 sample interval in microseconds ${chalk.gray('(default: 1000)')}
   ${chalk.cyan('--detectors <spec>')}      Load an additional detector plugin (package name or path). Repeatable.
+  ${chalk.cyan('--kind <id>')}             Profile kind to capture ${chalk.gray('(default: cpu)')}. Repeatable or comma-separated.
   ${chalk.cyan('-h, --help')}              Show this help
 
 ${chalk.bold('Examples')}
   lanterna attach --pid 4242 --duration 15s
-  lanterna attach --inspect-url ws://127.0.0.1:9229/<uuid> --duration 15s
+  lanterna attach --inspect-url ws://127.0.0.1:9229/<uuid> --kind cpu --duration 15s
   lanterna attach --pid 4242
   lanterna attach --pid
 
@@ -96,6 +104,8 @@ ${chalk.bold('Notes')}
   - Without ${chalk.cyan('--duration')}, Lanterna runs until the target exits or you stop it with ${chalk.cyan('Ctrl+C')}
   - ${chalk.cyan('--pid')} with no value opens the interactive picker in a TTY
   - ${chalk.cyan('--deep')} is not supported in attach mode
+  - ${chalk.cyan('--kind')} works here and on ${chalk.cyan('run')}; repeat it or use ${chalk.cyan('--kind cpu,memory')}
+  - Today the only built-in profile kind is ${chalk.cyan('cpu')}; unknown ids fail with ${chalk.gray('"unknown profile kind(s): <ids>. Available kinds: cpu"')}
 `;
 
 export async function main(argv: string[]): Promise<void> {

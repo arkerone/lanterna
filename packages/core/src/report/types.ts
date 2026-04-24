@@ -1,3 +1,5 @@
+import type { ProfileSectionMap } from '../kinds/core/types.js';
+
 export type FrameCategory =
   | 'user'
   | 'node_modules'
@@ -47,6 +49,8 @@ export interface ReportMeta {
   lanternaVersion: string;
   mode: 'spawn' | 'attach' | 'in-process';
   deep: boolean;
+  /** Ordered list of profile kind ids that contributed to this report. */
+  profileKinds: string[];
   captureIntegrity: {
     controlChannel: boolean;
     controlChannelExpected: boolean;
@@ -70,7 +74,11 @@ export interface SummaryUserHotspot {
   alternativeHotspots?: AlternativeHotspotEvidence[];
 }
 
-export interface ReportSummary {
+/**
+ * CPU-specific summary — used to live at the root under `report.summary`;
+ * now under `report.profiles.cpu.summary` in schema v2.
+ */
+export interface CpuSummary {
   totalCpuMs: number;
   onCpuRatio: number;
   userCodeRatio: number;
@@ -118,22 +126,14 @@ export interface HotStack {
   frames: HotStackFrame[];
 }
 
-/**
- * Group of hot stacks that share the same user-code anchor (the top-most
- * user frame in the stack). Lets an agent reason about "the feature" behind
- * several superficially-different stacks instead of treating each as isolated.
- */
 export interface HotStackCluster {
   anchor: {
     function: string;
     file: string;
     line: number;
   };
-  /** Sum of `weightPct` across all stacks in this cluster. */
   weightPct: number;
-  /** Number of hot stacks grouped under this anchor. */
   stackCount: number;
-  /** Indices into `hotStacks[]` of the member stacks. */
   memberIndices: number[];
 }
 
@@ -185,15 +185,7 @@ export interface CorrelatedHotspot {
   line: number;
   overlapPct: number;
   samplePct: number;
-  /** 1-indexed rank within the correlation array (1 = strongest candidate). */
   rank: number;
-  /**
-   * Qualitative confidence that this frame is the cause, derived from
-   * absolute overlap and the gap to the next-ranked candidate:
-   * - `high`: dominant alone (≥60%) or clearly ahead (≥30% with ≥15pp gap).
-   * - `medium`: meaningful share (≥25%) but not dominant.
-   * - `low`: weak signal — treat as hint only.
-   */
   confidence: 'low' | 'medium' | 'high';
 }
 
@@ -242,12 +234,6 @@ export interface BlockingIoEvidenceExtra extends AttributionEvidence {
   api: string;
   callee: string;
   eventLoopCorrelation?: StallCorrelation;
-  /**
-   * Sum of `totalPct` across every blocking-I/O frame in the capture.
-   * Populated so an agent can see the family-wide cost even when a single
-   * API crossed the per-API threshold (or when the finding was emitted only
-   * because the family aggregate crossed `categoryTotalPct`).
-   */
   categoryTotalPct?: number;
 }
 
@@ -255,7 +241,6 @@ export interface SyncCryptoEvidenceExtra extends AttributionEvidence {
   callee: string;
   calleeTotalPct: number;
   eventLoopCorrelation?: StallCorrelation;
-  /** Sum of `totalPct` across every sync-crypto frame in the capture. */
   categoryTotalPct?: number;
 }
 
@@ -296,7 +281,6 @@ export interface JsonHotPathEvidenceExtra extends AttributionEvidence {
   callee: string;
   calleeTotalPct: number;
   eventLoopCorrelation?: StallCorrelation;
-  /** Sum of `totalPct` across every JSON.parse/stringify frame in the capture. */
   categoryTotalPct?: number;
 }
 
@@ -337,7 +321,6 @@ export interface FindingEvidence<TExtra = FindingEvidenceExtra> {
 }
 
 export interface FindingRemediation {
-  /** Category of fix. Agents can branch on this to pick a transform. */
   kind:
     | 'async-variant'
     | 'lazy-import-hoist'
@@ -345,29 +328,15 @@ export interface FindingRemediation {
     | 'replace-library'
     | 'cache'
     | 'other';
-  /** Symbol or call signature to look for in user code. */
   replace?: string;
-  /** Recommended replacement symbol or call signature. */
   with?: string;
-  /** Source module of the replacement (e.g. `node:fs/promises`). */
   module?: string;
-  /** Canonical reference URL. */
   docs?: string;
-  /** Short, non-machine-actionable hint (e.g. edge-case notes). */
   notes?: string;
 }
 
 export interface FindingMeasurements {
-  /**
-   * Raw observed values that caused the finding to fire (e.g.
-   * `{ totalPct: 12.4, categoryTotalPct: 18 }` for a blocking-io finding).
-   */
   observed: Record<string, number>;
-  /**
-   * Threshold values the detector compared against (e.g.
-   * `{ minTotalPct: 1, criticalPct: 10 }`). Lets an agent re-reason about
-   * severity without parsing the `why` string.
-   */
   thresholds: Record<string, number>;
 }
 
@@ -382,6 +351,8 @@ export interface BaseFinding<
   TExtra = FindingEvidenceExtra,
 > {
   id: string;
+  /** Profile kind that produced this finding (e.g. 'cpu', 'memory', 'async'). */
+  profileKind: string;
   severity: FindingSeverity;
   category: TCategory;
   title: string;
@@ -409,17 +380,39 @@ export function defineBuiltinFinding<C extends BuiltinFindingCategory>(
   return finding;
 }
 
-export type ExtensionEntry = unknown;
-
-export interface LanternaReport {
-  meta: ReportMeta;
-  summary: ReportSummary;
+/**
+ * CPU profile report section — what lives under `report.profiles.cpu` in
+ * schema v2. Was top-level in schema v1.
+ */
+export interface CpuProfileReport {
+  summary: CpuSummary;
   hotspots: Hotspot[];
   hotStacks: HotStack[];
   hotStackClusters?: HotStackCluster[];
   gc: GcReport;
   eventLoop: EventLoopReport;
   deopts: DeoptEntry[];
+}
+
+declare module '../kinds/core/types.js' {
+  interface ProfileSectionMap {
+    cpu: CpuProfileReport;
+  }
+}
+
+export type ExtensionEntry = unknown;
+
+/**
+ * Root Lanterna report — schema v2.
+ *
+ * - `profiles.<kind>` holds per-kind analysis output (cpu/memory/async/...).
+ * - `findings` stays cross-kind; each finding is tagged `profileKind`.
+ * - `extensions` is the free-form escape hatch for custom analyzer sections
+ *   that aren't tied to a profile kind.
+ */
+export interface LanternaReport {
+  meta: ReportMeta;
+  profiles: Partial<ProfileSectionMap>;
   findings: Finding[];
   extensions?: Record<string, ExtensionEntry>;
 }

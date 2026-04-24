@@ -5,6 +5,10 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+function expectKindsToEqual(kinds: string[], expected: string[]): void {
+  expect(kinds).toEqual(expected);
+}
+
 describe('parseRunArgs', () => {
   it('parses the target command after `--` and preserves profiling options', () => {
     expect(
@@ -28,6 +32,7 @@ describe('parseRunArgs', () => {
       deep: true,
       sampleIntervalMicros: 2500,
       detectors: [],
+      kinds: ['cpu'],
     });
   });
 
@@ -58,6 +63,22 @@ describe('parseRunArgs', () => {
       /invalid --sample-interval/,
     );
   });
+
+  it('normalizes repeated and comma-separated kinds without duplication', () => {
+    const parsed = parseRunArgs([
+      '--kind',
+      'cpu,memory',
+      '--kind',
+      'cpu',
+      '--kind',
+      'async',
+      '--',
+      'node',
+      'app.js',
+    ]);
+
+    expectKindsToEqual(parsed.kinds, ['cpu', 'memory', 'async']);
+  });
 });
 
 describe('parseAttachArgs', () => {
@@ -68,6 +89,7 @@ describe('parseAttachArgs', () => {
       pretty: true,
       sampleIntervalMicros: 1000,
       detectors: [],
+      kinds: ['cpu'],
     });
   });
 
@@ -88,6 +110,7 @@ describe('parseAttachArgs', () => {
       pretty: false,
       sampleIntervalMicros: 1000,
       detectors: [],
+      kinds: ['cpu'],
     });
   });
 
@@ -110,6 +133,7 @@ describe('parseAttachArgs', () => {
       pretty: true,
       sampleIntervalMicros: 1000,
       detectors: [],
+      kinds: ['cpu'],
     });
   });
 
@@ -119,7 +143,29 @@ describe('parseAttachArgs', () => {
       pretty: false,
       sampleIntervalMicros: 1000,
       detectors: [],
+      kinds: ['cpu'],
     });
+  });
+
+  it('accepts attach kinds with repeatable and comma-separated syntax', () => {
+    const parsed = parseAttachArgs([
+      '--pid',
+      '42',
+      '--kind',
+      'cpu,memory',
+      '--kind',
+      'cpu',
+      '--kind',
+      'async',
+    ]);
+
+    expect(parsed).toMatchObject({
+      pid: 42,
+      pretty: false,
+      sampleIntervalMicros: 1000,
+      detectors: [],
+    });
+    expectKindsToEqual(parsed.kinds, ['cpu', 'memory', 'async']);
   });
 
   it('does not prompt interactively for bare attach anymore', () => {
@@ -127,6 +173,7 @@ describe('parseAttachArgs', () => {
       pretty: false,
       sampleIntervalMicros: 1000,
       detectors: [],
+      kinds: ['cpu'],
     });
   });
 

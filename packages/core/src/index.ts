@@ -1,3 +1,4 @@
+// Analysis pipeline
 export {
   AnalysisPipeline,
   createAnalysisPipeline,
@@ -16,29 +17,66 @@ export type {
   SectionAnalyzer,
 } from './analysis/core/types.js';
 export type { HotspotAttribution } from './analysis/model/hotspots.js';
-export { AttachSource, startAttachCapture } from './capture/attach.js';
+export { AttachSource, createAttachSource } from './capture/attach.js';
+export type { RunCaptureOptions } from './capture/coordinator.js';
+// Capture
+export { createManualStopSignal, runCapture } from './capture/coordinator.js';
 export type {
   AttachStartOptions,
-  CaptureHandle,
+  CaptureBundle,
   CaptureIntegrity,
+  ConnectedSource,
   EventLoopHistogram,
   EventLoopSample,
+  LiveSourceSignals,
+  PreloadContribution,
   ProfileSource,
-  RawCapture,
   RawCpuProfile,
   RawDeopt,
   RawGcEvent,
-  SourceHandle,
+  RuntimeSignalsData,
   SpawnStartOptions,
   TargetInfo,
 } from './capture/core/types.js';
-export { SpawnSource, startSpawnCapture } from './capture/spawn.js';
+export { createSpawnSource, SpawnSource } from './capture/spawn.js';
+
+// Inspector
 export type { InspectorTargetDescriptor } from './inspector/discovery.js';
 export { openInspectorForPid, readInspectableTargetsByPid } from './inspector/discovery.js';
+
+// Kinds
 export {
-  buildLanternaReport,
-  serializeReport,
-} from './report/index.js';
+  createKindRegistry,
+  ProfileKindRegistry,
+} from './kinds/core/registry.js';
+export type {
+  CaptureKindDataMap,
+  CaptureProbe,
+  KindAnalysisContext as KindContributorContext,
+  KindAnalysisContributor,
+  KindFinalizeHook,
+  KindProbeOptions,
+  KindViews,
+  ProfileKind,
+  ProfileSectionMap,
+} from './kinds/core/types.js';
+export { defineProfileKind } from './kinds/core/types.js';
+export type {
+  CpuAnalysisView,
+  CpuKindData,
+  CpuKindOptions,
+} from './kinds/cpu/index.js';
+// CPU kind (built-in)
+export {
+  cpuFinalize,
+  createCpuAnalysisContributor,
+  createCpuProbe,
+  createCpuProfileKind,
+} from './kinds/cpu/index.js';
+
+// Report
+export { buildLanternaReport, serializeReport } from './report/index.js';
+export { LANTERNA_REPORT_SCHEMA_VERSION } from './report/meta.js';
 export type {
   AlternativeHotspotEvidence,
   AttributionEvidence,
@@ -46,6 +84,8 @@ export type {
   BlockingIoEvidenceExtra,
   BuiltinFinding,
   BuiltinFindingCategory,
+  CpuProfileReport,
+  CpuSummary,
   DeoptEntry,
   DeoptLoopEvidenceExtra,
   EventLoopReport,
@@ -67,7 +107,6 @@ export type {
   LanternaReport,
   NodeModulesHotspotEvidenceExtra,
   ReportMeta,
-  ReportSummary,
   RequireInHotPathEvidenceExtra,
   StallCorrelation,
   SummaryUserHotspot,
@@ -75,6 +114,8 @@ export type {
 } from './report/types.js';
 export { defineBuiltinFinding } from './report/types.js';
 export { LANTERNA_VERSION } from './report/version.generated.js';
+
+// Shared
 export { DEFAULT_SAMPLE_INTERVAL_MICROS, MIN_SAMPLE_INTERVAL_MICROS } from './shared/config.js';
 export { stripOptPrefix } from './shared/frame.js';
 export type { LoggerLevel } from './shared/logger.js';

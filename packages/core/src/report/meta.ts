@@ -1,37 +1,38 @@
 import type { AnalysisOptions } from '../analysis/core/types.js';
-import type { EnrichedTree } from '../analysis/model/hotspots.js';
-import type { RawCapture } from '../capture/core/types.js';
+import type { CaptureBundle } from '../capture/core/types.js';
 import type { ReportMeta } from './types.js';
 import { LANTERNA_VERSION } from './version.generated.js';
 
 /**
- * Current version of the Lanterna JSON report schema. Bump this when the
- * report's consumer-visible shape changes in a way that an agent needs to
- * notice (added fields = patch, renamed/removed = major).
+ * Report schema version. Schema v2 (2.0.0) restructures CPU data under
+ * `report.profiles.cpu.*` and introduces `profileKinds` in meta; prior v1
+ * kept CPU sections at the root.
  */
-export const LANTERNA_REPORT_SCHEMA_VERSION = '1.0.0';
+export const LANTERNA_REPORT_SCHEMA_VERSION = '2.0.0';
 
 export function buildReportMeta(
-  raw: RawCapture,
-  tree: Pick<EnrichedTree, 'totalSamples'>,
+  bundle: CaptureBundle,
+  profileKinds: string[],
+  totalSamples: number,
   opts: AnalysisOptions,
 ): ReportMeta {
   return {
     schemaVersion: LANTERNA_REPORT_SCHEMA_VERSION,
-    nodeVersion: raw.target.nodeVersion,
-    v8Version: raw.target.v8Version,
-    platform: raw.target.platform,
-    arch: raw.target.arch,
-    pid: raw.target.pid,
-    startedAt: new Date(raw.startedAtEpoch).toISOString(),
-    durationMs: raw.durationMs,
+    nodeVersion: bundle.target.nodeVersion,
+    v8Version: bundle.target.v8Version,
+    platform: bundle.target.platform,
+    arch: bundle.target.arch,
+    pid: bundle.target.pid,
+    startedAt: new Date(bundle.startedAtEpoch).toISOString(),
+    durationMs: bundle.durationMs,
     sampleIntervalMicros: opts.sampleIntervalMicros,
-    totalSamples: tree.totalSamples,
-    cwd: raw.target.cwd,
+    totalSamples,
+    cwd: bundle.target.cwd,
     command: opts.command,
     lanternaVersion: LANTERNA_VERSION,
     mode: opts.mode ?? 'spawn',
     deep: opts.deep,
-    captureIntegrity: raw.captureIntegrity,
+    profileKinds: [...profileKinds],
+    captureIntegrity: bundle.captureIntegrity,
   };
 }

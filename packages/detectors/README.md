@@ -1,8 +1,10 @@
 # @lanterna-profiler/detectors
 
-Default detector pack + ready-to-use profiling facades for [Lanterna](https://github.com/arkerone/lanterna), the agent-first Node.js CPU profiler.
+Default detector pack + ready-to-use profiling facades for [Lanterna](https://github.com/arkerone/lanterna), the agent-first Node.js profiler.
 
 This is the **batteries-included** package: one function call captures a profile, runs the built-in detectors, and returns a structured `LanternaReport`. If you want the low-level primitives without the defaults, use [`@lanterna-profiler/core`](../core) directly.
+
+> Schema v2: CPU data lives under `report.profiles.cpu.*`. `runProfile` / `attachProfile` accept a `kinds` option (default `[cpu]`). The kind registry (`createDefaultKindRegistry`) is the seam where future `memory`/`async` kinds will plug in.
 
 ## Install
 
@@ -47,23 +49,24 @@ console.log(report.findings);
 
 ```ts
 import { analyzeCapture } from '@lanterna-profiler/detectors';
-import { buildLanternaReport, type RawCapture } from '@lanterna-profiler/core';
+import { buildLanternaReport, type CaptureBundle } from '@lanterna-profiler/core';
 
-const raw: RawCapture = /* from startSpawnCapture / startAttachCapture */;
+const bundle: CaptureBundle = /* from runCapture(...) */;
 const options = { sampleIntervalMicros: 1000, deep: false, command: ['node', 'app.js'], mode: 'spawn' as const };
-const analysis = analyzeCapture(raw, options);
-const report = buildLanternaReport(raw, analysis, options);
+const analysis = analyzeCapture(bundle, options);
+const report = buildLanternaReport(bundle, analysis, ['cpu'], options);
 ```
 
 ## Exports
 
 - `runProfile(options, onProgress?)` - spawn + capture + analyze + report.
 - `attachProfile(options, onProgress?)` - attach to a running process + capture + analyze + report.
-- `analyzeCapture(raw, options)` - run the default pipeline on a `RawCapture`.
-- `createDefaultAnalysisPipeline()` - pre-populated pipeline you can extend with `register(...)`.
+- `analyzeCapture(bundle, options)` - run the default pipeline on a `CaptureBundle`.
+- `createDefaultAnalysisPipeline(extraKinds?)` - pre-populated pipeline (CPU kind + built-ins) you can extend with `register(...)`.
+- `createDefaultKindRegistry(options?)` - `ProfileKindRegistry` pre-loaded with the CPU kind. Used by the CLI to resolve `--kind <id>`.
 - `defaultDetectors` - the raw detector descriptors (for introspection or custom composition).
 - `createBuiltInFindingAnalyzers()` - the same detectors wrapped as `FindingAnalyzer` instances.
-- `createFindingAnalyzerFromDetector(detector)` - wrap a single `Detector` into a `FindingAnalyzer`.
+- `createFindingAnalyzerFromDetector(detector)` - wrap a single `Detector` into a `FindingAnalyzer` (auto-tags findings with `profileKind: 'cpu'`).
 - `buildFindingContext(context)` / `buildAttributedFinding(...)` / `resolveAttribution(...)` / `buildAttributionEvidence(...)` - helpers for writing detectors that reuse Lanterna's hotspot attribution.
 - `LanternaDetectorPlugin` / `LanternaPluginContext` - plugin contract types.
 - `DETECTOR_THRESHOLDS` + threshold types.
@@ -77,17 +80,20 @@ import type { Detector, LanternaDetectorPlugin } from '@lanterna-profiler/detect
 import { createFindingAnalyzerFromDetector } from '@lanterna-profiler/detectors';
 
 // Flag a Prisma client frame that eats too much CPU on the request path.
+// `report` is the CPU-shaped view passed by the adapter — `report.hotspots`,
+// `report.gc`, `report.eventLoop`, etc. mirror `snapshot.profiles.cpu.*`.
 const prismaHotspotDetector: Detector = {
   id: 'prisma-hotspot:client',
-  detect(snapshot, context) {
+  detect(report, context) {
     const findings = [];
-    for (const hotspot of snapshot.hotspots) {
+    for (const hotspot of report.hotspots) {
       const isPrisma = hotspot.file.includes('node_modules/@prisma/client');
       if (!isPrisma || hotspot.totalPct < 8) continue;
 
       const attribution = context.userAttributionById.get(hotspot.id);
       findings.push({
         id: `prisma-hotspot:client:${hotspot.function}`,
+        profileKind: 'cpu',
         severity: 'warning',
         category: 'prisma-hotspot',
         title: `Prisma client dominates CPU in ${hotspot.function}`,
@@ -115,7 +121,7 @@ export default register;
 
 Publish that module (e.g. `@acme/lanterna-detectors-prisma`) and users can load it from the CLI with `--detectors @acme/lanterna-detectors-prisma` or through `.lanterna.json`. See [`@lanterna-profiler/cli`](../cli) for CLI loading details, and [`@lanterna-profiler/core`](../core) for the pipeline / analyzer primitives.
 
-Programmatically, `runProfile` / `attachProfile` also accept custom detectors directly:
+Programmatically, `runProfile` / `attachProfile` also accept custom detectors and extra kinds directly:
 
 ```ts
 await runProfile({
@@ -124,7 +130,8 @@ await runProfile({
   sampleIntervalMicros: 1000,
   deep: false,
   pretty: false,
-  detectors: [prismaHotspotDetector],           // auto-wrapped as FindingAnalyzers
+  // kinds: [cpuKind, myMemoryKind],            // override default; omit to get [cpu]
+  detectors: [prismaHotspotDetector],           // auto-wrapped as FindingAnalyzers (tagged profileKind: 'cpu')
   analyzers: [myCustomSectionAnalyzer],         // raw analyzer registration
   setupPipeline: async (pipeline, ctx) => {
     // full-control hook - runs after detectors/analyzers are registered

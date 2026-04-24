@@ -6,6 +6,7 @@ export default function register(pipeline) {
       return [
         {
           id: 'custom-test:always',
+          profileKind: 'extension',
           severity: 'info',
           category: 'custom-test',
           title: 'Custom always-on finding',

@@ -1,42 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { LANTERNA_REPORT_SCHEMA_VERSION } from '../src/report/meta.js';
 import { lanternaReportSchema } from '../src/report/schema.js';
-import type { LanternaReport } from '../src/report/types.js';
+import type { CpuProfileReport, LanternaReport } from '../src/report/types.js';
 
-// ---------------------------------------------------------------------------
-// Minimal valid report fixture
-// ---------------------------------------------------------------------------
-
-function makeReport(overrides: Partial<LanternaReport> = {}): unknown {
-  const base: LanternaReport = {
-    meta: {
-      schemaVersion: LANTERNA_REPORT_SCHEMA_VERSION,
-      nodeVersion: 'v24.0.0',
-      v8Version: '12.0.0',
-      platform: 'linux',
-      arch: 'x64',
-      pid: 1234,
-      startedAt: '2024-01-01T00:00:00.000Z',
-      durationMs: 5000,
-      sampleIntervalMicros: 1000,
-      totalSamples: 200,
-      cwd: '/app',
-      command: ['node', 'server.js'],
-      lanternaVersion: '0.1.0',
-      mode: 'spawn',
-      deep: false,
-      captureIntegrity: {
-        controlChannel: true,
-        controlChannelExpected: true,
-        eventLoopTimed: false,
-        gcTimed: false,
-        cpuSamplesTimed: true,
-        gcObserverAvailable: true,
-        controlChannelWriteErrors: 0,
-        gcObserverSetupFailed: 0,
-        heartbeatDropped: 0,
-      },
-    },
+function makeCpuSection(overrides: Partial<CpuProfileReport> = {}): CpuProfileReport {
+  return {
     summary: {
       totalCpuMs: 5000,
       onCpuRatio: 0.6,
@@ -70,18 +38,50 @@ function makeReport(overrides: Partial<LanternaReport> = {}): unknown {
       confidence: 'none',
     },
     deopts: [],
+    ...overrides,
+  };
+}
+
+function makeReport(overrides: Partial<LanternaReport> = {}): unknown {
+  const base: LanternaReport = {
+    meta: {
+      schemaVersion: LANTERNA_REPORT_SCHEMA_VERSION,
+      nodeVersion: 'v24.0.0',
+      v8Version: '12.0.0',
+      platform: 'linux',
+      arch: 'x64',
+      pid: 1234,
+      startedAt: '2024-01-01T00:00:00.000Z',
+      durationMs: 5000,
+      sampleIntervalMicros: 1000,
+      totalSamples: 200,
+      cwd: '/app',
+      command: ['node', 'server.js'],
+      lanternaVersion: '0.1.0',
+      mode: 'spawn',
+      deep: false,
+      profileKinds: ['cpu'],
+      captureIntegrity: {
+        controlChannel: true,
+        controlChannelExpected: true,
+        eventLoopTimed: false,
+        gcTimed: false,
+        cpuSamplesTimed: true,
+        gcObserverAvailable: true,
+        controlChannelWriteErrors: 0,
+        gcObserverSetupFailed: 0,
+        heartbeatDropped: 0,
+      },
+    },
+    profiles: { cpu: makeCpuSection() },
     findings: [],
   };
   return { ...base, ...overrides };
 }
 
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
-
 describe('lanternaReportSchema', () => {
   it('pins the report schema version constant', () => {
-    expect(LANTERNA_REPORT_SCHEMA_VERSION).toBe('1.0.0');
+    expect(LANTERNA_REPORT_SCHEMA_VERSION).toBe('2.0.0');
   });
 
   describe('valid reports', () => {
@@ -99,19 +99,24 @@ describe('lanternaReportSchema', () => {
 
     it('accepts summary topUserHotspot and finding priority metadata', () => {
       const report = makeReport({
-        summary: {
-          ...(makeReport() as LanternaReport).summary,
-          topUserHotspot: {
-            function: 'computeRanking',
-            file: 'src/ranking.js',
-            line: 27,
-            selfPct: 42,
-            totalPct: 67,
-          },
+        profiles: {
+          cpu: makeCpuSection({
+            summary: {
+              ...makeCpuSection().summary,
+              topUserHotspot: {
+                function: 'computeRanking',
+                file: 'src/ranking.js',
+                line: 27,
+                selfPct: 42,
+                totalPct: 67,
+              },
+            },
+          }),
         },
         findings: [
           {
             id: 'custom:priority',
+            profileKind: 'cpu',
             severity: 'warning',
             category: 'custom',
             title: 'Prioritized finding',
@@ -126,7 +131,7 @@ describe('lanternaReportSchema', () => {
       const result = lanternaReportSchema.safeParse(report);
       expect(result.success).toBe(true);
       if (!result.success) return;
-      expect(result.data.summary.topUserHotspot?.function).toBe('computeRanking');
+      expect(result.data.profiles.cpu?.summary.topUserHotspot?.function).toBe('computeRanking');
       expect(result.data.findings[0]?.priority?.score).toBe(250);
     });
 
@@ -135,6 +140,7 @@ describe('lanternaReportSchema', () => {
         findings: [
           {
             id: 'custom:thing',
+            profileKind: 'extension',
             severity: 'warning',
             category: 'my-custom-category',
             title: 'Custom finding',
@@ -154,6 +160,7 @@ describe('lanternaReportSchema', () => {
         findings: [
           {
             id: 'blocking-io:fs.readFileSync',
+            profileKind: 'cpu',
             severity: 'warning',
             category: 'blocking-io',
             title: 'Blocking I/O (fs.readFileSync)',
@@ -194,9 +201,13 @@ describe('lanternaReportSchema', () => {
       expect(result.success).toBe(false);
     });
 
-    it('rejects a report with missing gc section', () => {
-      const { gc: _gc, ...withoutGc } = makeReport() as LanternaReport;
-      const result = lanternaReportSchema.safeParse(withoutGc);
+    it('rejects a report with a malformed cpu profile section', () => {
+      const report = makeReport({
+        profiles: {
+          cpu: { ...makeCpuSection(), gc: undefined as unknown as CpuProfileReport['gc'] },
+        },
+      });
+      const result = lanternaReportSchema.safeParse(report);
       expect(result.success).toBe(false);
     });
   });
@@ -217,6 +228,7 @@ describe('lanternaReportSchema', () => {
         findings: [
           {
             id: 'x',
+            profileKind: 'cpu',
             severity: 'fatal' as 'critical',
             category: 'custom',
             title: 'X',
@@ -241,11 +253,12 @@ describe('lanternaReportSchema', () => {
       expect(result.success).toBe(false);
     });
 
-    it('rejects non-finite number in summary', () => {
+    it('rejects non-finite number in cpu summary', () => {
       const report = makeReport({
-        summary: {
-          ...(makeReport() as LanternaReport).summary,
-          totalCpuMs: Infinity,
+        profiles: {
+          cpu: makeCpuSection({
+            summary: { ...makeCpuSection().summary, totalCpuMs: Infinity },
+          }),
         },
       });
       const result = lanternaReportSchema.safeParse(report);
@@ -259,6 +272,7 @@ describe('lanternaReportSchema', () => {
         findings: [
           {
             id: 'blocking-io:fs.readFileSync',
+            profileKind: 'cpu',
             severity: 'warning',
             category: 'blocking-io',
             title: 'Blocking I/O',
@@ -268,7 +282,6 @@ describe('lanternaReportSchema', () => {
               function: 'readConfig',
               selfPct: 8,
               extra: {
-                // Missing `api` field
                 callee: 'readFileSync',
                 proofLevel: 'direct-builtin',
                 attributionBasis: 'builtin-only',
@@ -290,6 +303,7 @@ describe('lanternaReportSchema', () => {
         findings: [
           {
             id: 'custom:x',
+            profileKind: 'extension',
             severity: 'info',
             category: 'my-plugin',
             title: 'Plugin finding',
@@ -315,6 +329,7 @@ describe('lanternaReportSchema', () => {
         findings: [
           {
             id: 'custom:x',
+            profileKind: 'extension',
             severity: 'info',
             category: 'my-plugin',
             title: 'Plugin finding',

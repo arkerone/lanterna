@@ -1,8 +1,10 @@
 # @lanterna-profiler/cli
 
-The `lanterna` command-line binary for [Lanterna](https://github.com/arkerone/lanterna), the agent-first Node.js CPU profiler.
+The `lanterna` command-line binary for [Lanterna](https://github.com/arkerone/lanterna), the agent-first Node.js profiler.
 
-Profile a Node process (spawn or attach), capture a V8 CPU profile plus runtime signals, run the built-in detectors, and emit a structured `LanternaReport` as JSON to stdout or a file.
+Profile a Node process (spawn or attach), capture one or more profile kinds, run the built-in detectors, and emit a structured `LanternaReport` as JSON to stdout or a file.
+
+> Schema v2: analysis output is grouped under `report.profiles.<kind>.*`. Today the built-in kind is `cpu`, so the CLI defaults to `--kind cpu` on both `run` and `attach`.
 
 ## Install
 
@@ -28,6 +30,7 @@ lanterna run --duration 30s --output report.json -- node app.js
 npx -y @lanterna-profiler/cli run --duration 30s --output report.json -- node app.js
 
 lanterna run --deep --duration 15s -- node server.js
+lanterna run --kind cpu --pretty -- node script.js
 lanterna run --pretty -- node script.js
 ```
 
@@ -41,8 +44,9 @@ Connects to an existing Node.js process over the Chrome DevTools Protocol and pr
 
 ```bash
 lanterna attach --pid 4242 --duration 15s
+lanterna attach --pid 4242 --kind cpu --duration 15s
 lanterna attach --pid                # interactive picker (TTY required)
-lanterna attach --inspect-url ws://127.0.0.1:9229/<uuid>
+lanterna attach --inspect-url ws://127.0.0.1:9229/<uuid> --kind cpu
 ```
 
 > `attach --pid` relies on `SIGUSR1` and is POSIX-only. On Windows, use `--inspect-url`. Attach mode does **not** support `--deep`.
@@ -59,9 +63,20 @@ lanterna attach --inspect-url ws://127.0.0.1:9229/<uuid>
 | `--pid [pid]` | Attach by PID, or open the interactive picker if no value. |
 | `--inspect-url <url>` | Attach to an existing inspector WebSocket URL. |
 | `--detectors <spec>` | Load an additional detector plugin (package name or path). Repeatable. |
+| `--kind <id>` | Profile kind to capture. Repeatable or comma-separated (default `cpu`). |
 | `-h, --help` | Show help. |
 
 The `--` separator is required before the target command in `run` mode.
+
+`--kind` is supported on both `run` and `attach`. You can repeat the flag or use comma-separated shorthand such as `--kind cpu,memory`.
+
+Today the only built-in kind is `cpu`, so both commands default to `--kind cpu`. Unknown kind ids fail before capture starts with:
+
+```text
+unknown profile kind(s): <ids>. Available kinds: cpu
+```
+
+Future kinds can be added through the core/detectors extension APIs.
 
 ## Loading external detectors
 

@@ -1,4 +1,8 @@
-import { attachProfile, type LanternaDetectorPlugin } from '@lanterna-profiler/detectors';
+import {
+  attachProfile,
+  createDefaultKindRegistry,
+  type LanternaDetectorPlugin,
+} from '@lanterna-profiler/detectors';
 import { startActivityIndicator } from '../activity-indicator.js';
 import { resolveAttachTarget } from '../attach-target.js';
 import { loadLanternaConfig } from '../config.js';
@@ -17,9 +21,16 @@ export async function attachCommand(options: AttachProfileOptions): Promise<void
   });
   try {
     const setupPipeline = await resolveSetupPipeline(resolvedOptions.detectors);
-    const { detectors: _specs, ...profileOptions } = resolvedOptions;
+    const kinds = createDefaultKindRegistry().resolveMany(resolvedOptions.kinds);
+    const { detectors: _specs, kinds: _kindIds, ...profileOptions } = resolvedOptions;
+    void _specs;
+    void _kindIds;
     const report = await attachProfile(
-      { ...profileOptions, ...(setupPipeline ? { setupPipeline } : {}) },
+      {
+        ...profileOptions,
+        kinds,
+        ...(setupPipeline ? { setupPipeline } : {}),
+      },
       (event) => {
         indicator.update(event.message);
       },
@@ -27,9 +38,7 @@ export async function attachCommand(options: AttachProfileOptions): Promise<void
     indicator.update('Writing the Lanterna report output...');
     await writeReportOutput(report, resolvedOptions.output, resolvedOptions.pretty);
     indicator.succeed('Lanterna attach capture complete');
-    if (process.exitCode === 0) {
-      process.exit(0);
-    }
+    process.exit(0);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     indicator.fail(`Lanterna attach capture failed: ${message}`);

@@ -1,4 +1,4 @@
-import type { RawCapture } from '../../capture/core/types.js';
+import type { RawCpuProfile, RawGcEvent } from '../../capture/core/types.js';
 import type { CorrelatedHotspot, CorrelationCoverage, FrameCategory } from '../../report/types.js';
 import { GC_CORRELATION_LOOKAROUND_MS } from '../../shared/config.js';
 import type { EnrichedTree, NodeEnriched } from './hotspots.js';
@@ -18,11 +18,14 @@ export interface CorrelationResult {
   coverage: CorrelationCoverage;
 }
 
-export function buildTimedSamples(raw: RawCapture, sampleIntervalMicros: number): TimedSample[] {
-  const sampleLeafIds = raw.cpuProfile.samples ?? [];
+export function buildTimedSamples(
+  cpuProfile: RawCpuProfile,
+  sampleIntervalMicros: number,
+): TimedSample[] {
+  const sampleLeafIds = cpuProfile.samples ?? [];
   if (sampleLeafIds.length === 0) return [];
 
-  const sampleTimeDeltas = raw.cpuProfile.timeDeltas ?? [];
+  const sampleTimeDeltas = cpuProfile.timeDeltas ?? [];
   const fallbackDeltaUs = sampleIntervalMicros;
   let elapsedUs = 0;
   const timedSamples: TimedSample[] = [];
@@ -128,12 +131,13 @@ export function scoreConfidence(
 }
 
 export function buildGcCorrelationWindows(
-  raw: RawCapture,
+  gcEvents: RawGcEvent[],
+  durationMs: number,
   lookaroundMs = GC_CORRELATION_LOOKAROUND_MS,
 ): TimeWindow[] {
-  return raw.gcEvents.map((event) => ({
+  return gcEvents.map((event) => ({
     startMs: Math.max(0, event.atMs - lookaroundMs),
-    endMs: Math.min(raw.durationMs, event.atMs + event.durationMs + lookaroundMs),
+    endMs: Math.min(durationMs, event.atMs + event.durationMs + lookaroundMs),
   }));
 }
 

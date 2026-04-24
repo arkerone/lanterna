@@ -4,6 +4,33 @@ import {
 } from '@lanterna-profiler/core';
 import { Command, CommanderError } from 'commander';
 
+interface ParsedCommonOptions {
+  duration?: number;
+  output?: string;
+  pretty?: boolean;
+  sampleInterval?: number;
+  detectors?: string[];
+  kind?: string[];
+}
+
+interface NormalizedCommonOptions {
+  durationMs?: number;
+  output?: string;
+  pretty: boolean;
+  sampleIntervalMicros: number;
+  detectors: string[];
+  kinds: string[];
+}
+
+interface ParsedRunOptions extends ParsedCommonOptions {
+  deep?: boolean;
+}
+
+interface ParsedAttachOptions extends ParsedCommonOptions {
+  pid?: number | true;
+  inspectUrl?: string;
+}
+
 export interface RunProfileOptions {
   command: string[];
   durationMs?: number;
@@ -12,6 +39,7 @@ export interface RunProfileOptions {
   deep: boolean;
   sampleIntervalMicros: number;
   detectors: string[];
+  kinds: string[];
 }
 
 export interface AttachProfileOptions {
@@ -23,6 +51,7 @@ export interface AttachProfileOptions {
   pretty: boolean;
   sampleIntervalMicros: number;
   detectors: string[];
+  kinds: string[];
 }
 
 export function parseRunArgs(args: string[]): RunProfileOptions {
@@ -32,14 +61,7 @@ export function parseRunArgs(args: string[]): RunProfileOptions {
 
   const command = createRunParser();
   parseCommand(command, optionArgs);
-  const parsed = command.opts<{
-    duration?: number;
-    output?: string;
-    pretty?: boolean;
-    deep?: boolean;
-    sampleInterval?: number;
-    detectors?: string[];
-  }>();
+  const parsed = command.opts<ParsedRunOptions>();
 
   if (targetCommand.length === 0) {
     throw new Error('no command provided. Use: lanterna run [options] -- <command> [args...]');
@@ -47,27 +69,15 @@ export function parseRunArgs(args: string[]): RunProfileOptions {
 
   return {
     command: targetCommand,
-    durationMs: parsed.duration,
-    output: parsed.output,
-    pretty: Boolean(parsed.pretty),
     deep: Boolean(parsed.deep),
-    sampleIntervalMicros: parsed.sampleInterval ?? DEFAULT_SAMPLE_INTERVAL_MICROS,
-    detectors: parsed.detectors ?? [],
+    ...normalizeCommonOptions(parsed),
   };
 }
 
 export function parseAttachArgs(args: string[]): AttachProfileOptions {
   const command = createAttachParser();
   parseCommand(command, args);
-  const parsed = command.opts<{
-    duration?: number;
-    output?: string;
-    pretty?: boolean;
-    sampleInterval?: number;
-    pid?: number | true;
-    inspectUrl?: string;
-    detectors?: string[];
-  }>();
+  const parsed = command.opts<ParsedAttachOptions>();
 
   const promptForTarget = parsed.pid === true;
   const targetCount =
@@ -77,66 +87,88 @@ export function parseAttachArgs(args: string[]): AttachProfileOptions {
   }
 
   return {
-    ...(parsed.duration !== undefined ? { durationMs: parsed.duration } : {}),
-    pretty: Boolean(parsed.pretty),
-    sampleIntervalMicros: parsed.sampleInterval ?? DEFAULT_SAMPLE_INTERVAL_MICROS,
+    ...normalizeCommonOptions(parsed),
     ...(parsed.pid !== undefined && parsed.pid !== true ? { pid: parsed.pid } : {}),
     ...(promptForTarget ? { promptForTarget: true } : {}),
     ...(parsed.inspectUrl ? { inspectUrl: parsed.inspectUrl } : {}),
-    ...(parsed.output ? { output: parsed.output } : {}),
-    detectors: parsed.detectors ?? [],
   };
 }
 
+function normalizeCommonOptions(parsed: ParsedCommonOptions): NormalizedCommonOptions {
+  return {
+    ...(parsed.duration !== undefined ? { durationMs: parsed.duration } : {}),
+    ...(parsed.output ? { output: parsed.output } : {}),
+    pretty: Boolean(parsed.pretty),
+    sampleIntervalMicros: parsed.sampleInterval ?? DEFAULT_SAMPLE_INTERVAL_MICROS,
+    detectors: parsed.detectors ?? [],
+    kinds: resolveKinds(parsed.kind),
+  };
+}
+
+function resolveKinds(raw: string[] | undefined): string[] {
+  if (!raw || raw.length === 0) return ['cpu'];
+  // Allow `--kind cpu,memory` shorthand in addition to repeated flags.
+  const expanded = raw.flatMap((value) =>
+    value
+      .split(',')
+      .map((piece) => piece.trim())
+      .filter(Boolean),
+  );
+  // De-dupe while preserving first-seen order.
+  const seen = new Set<string>();
+  const ordered: string[] = [];
+  for (const kind of expanded) {
+    if (seen.has(kind)) continue;
+    seen.add(kind);
+    ordered.push(kind);
+  }
+  return ordered;
+}
+
 function createRunParser(): Command {
-  return createBaseParser('run')
-    .allowUnknownOption(false)
-    .option('--duration <value>', 'Profiling duration', parseDuration)
-    .option('--output, -o <path>', 'Write JSON report to path')
-    .option('--pretty', 'Pretty-print JSON')
-    .option('--deep', 'Enable --trace-deopt')
-    .option(
-      '--sample-interval <us>',
-      'V8 sample interval in microseconds',
-      parseSampleInterval,
-      DEFAULT_SAMPLE_INTERVAL_MICROS,
-    )
-    .option(
-      '--detectors <spec>',
-      'Load an additional detector plugin (package name or path). Repeatable.',
-      appendDetector,
-      [] as string[],
-    );
+  return addCommonProfilingOptions(createBaseParser('run').allowUnknownOption(false)).option(
+    '--deep',
+    'Enable --trace-deopt',
+  );
 }
 
 function createAttachParser(): Command {
-  return createBaseParser('attach')
-    .allowUnknownOption(false)
-    .option('--duration <value>', 'Profiling duration', parseDuration)
-    .option('--output, -o <path>', 'Write JSON report to path')
-    .option('--pretty', 'Pretty-print JSON')
-    .option(
-      '--sample-interval <us>',
-      'V8 sample interval in microseconds',
-      parseSampleInterval,
-      DEFAULT_SAMPLE_INTERVAL_MICROS,
-    )
+  return addCommonProfilingOptions(createBaseParser('attach').allowUnknownOption(false))
     .option(
       '--pid [pid]',
       'Attach to an existing Node.js pid, or open the interactive picker if no pid is provided',
       parseOptionalPid,
     )
     .option('--inspect-url <url>', 'Attach to an existing inspector WebSocket URL')
-    .option(
-      '--detectors <spec>',
-      'Load an additional detector plugin (package name or path). Repeatable.',
-      appendDetector,
-      [] as string[],
-    )
     .option('--deep', 'Unsupported in attach mode');
 }
 
-function appendDetector(value: string, previous: string[]): string[] {
+function addCommonProfilingOptions(command: Command): Command {
+  return command
+    .option('--duration <value>', 'Profiling duration', parseDuration)
+    .option('--output, -o <path>', 'Write JSON report to path')
+    .option('--pretty', 'Pretty-print JSON')
+    .option(
+      '--sample-interval <us>',
+      'V8 sample interval in microseconds',
+      parseSampleInterval,
+      DEFAULT_SAMPLE_INTERVAL_MICROS,
+    )
+    .option(
+      '--detectors <spec>',
+      'Load an additional detector plugin (package name or path). Repeatable.',
+      appendRepeatableValue,
+      [] as string[],
+    )
+    .option(
+      '--kind <id>',
+      'Profile kind to capture (default: cpu). Repeatable or comma-separated.',
+      appendRepeatableValue,
+      [] as string[],
+    );
+}
+
+function appendRepeatableValue(value: string, previous: string[]): string[] {
   return [...previous, value];
 }
 

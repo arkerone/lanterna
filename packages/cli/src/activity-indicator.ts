@@ -1,3 +1,4 @@
+import { writeSync } from 'node:fs';
 import chalk from 'chalk';
 import ora from 'ora';
 
@@ -48,7 +49,14 @@ export function startActivityIndicator(
           prefixText: chalk.bold('lanterna'),
         });
         if (message) {
-          process.stderr.write(`${chalk.red(message)}\n`);
+          writeStderrLine(chalk.red(message));
+        }
+        return;
+      }
+      if (!process.stderr.isTTY) {
+        spinner.stop();
+        if (message) {
+          writeStderrLine(chalk.red(message));
         }
         return;
       }
@@ -58,4 +66,8 @@ export function startActivityIndicator(
       spinner.stop();
     },
   };
+}
+
+function writeStderrLine(message: string): void {
+  writeSync(2, `${message}\n`);
 }

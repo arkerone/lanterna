@@ -16,7 +16,7 @@
   ],
   "scripts": {
     "prebuild": "node scripts/generate-version.js",
-    "build": "tsc -b && node scripts/copy-assets.js",
+    "build": "tsc -b",
     "dev": "tsc -b --watch",
     "test": "vitest run",
     "typecheck": "tsc --noEmit -p tsconfig.json",

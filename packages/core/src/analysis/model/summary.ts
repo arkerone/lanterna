@@ -1,9 +1,9 @@
 import type {
   CorrelatedHotspot,
+  CpuSummary,
   FrameCategory,
   Hotspot,
   LanternaReport,
-  ReportSummary,
   SummaryUserHotspot,
 } from '../../report/types.js';
 import type { EnrichedTree } from './hotspots.js';
@@ -11,7 +11,7 @@ import type { EnrichedTree } from './hotspots.js';
 const TOP_USER_HOTSPOT_MIN_SELF_PCT = 10;
 const TOP_USER_HOTSPOT_MIN_TOTAL_PCT = 20;
 
-export function buildSummary(tree: EnrichedTree): ReportSummary {
+export function buildCpuSummary(tree: EnrichedTree): CpuSummary {
   const totals = createFrameCategoryTotals();
   for (const node of tree.nodes.values()) {
     totals[node.category] += node.hitCount;
@@ -37,8 +37,8 @@ export function buildSummary(tree: EnrichedTree): ReportSummary {
 }
 
 export function deriveDominantBlockingKind(
-  findings: LanternaReport['findings'],
-): ReportSummary['dominantBlockingKind'] {
+  findings: readonly LanternaReport['findings'][number][],
+): CpuSummary['dominantBlockingKind'] {
   if (findings.some((finding) => finding.category === 'sync-crypto')) {
     return 'sync-crypto';
   }

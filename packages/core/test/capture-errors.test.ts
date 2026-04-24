@@ -6,9 +6,20 @@
  * so the entire suite stays well under the default 20 s test timeout.
  */
 import { describe, expect, it } from 'vitest';
-import { startSpawnCapture } from '../src/capture/spawn.js';
+import type { PreloadContribution, SpawnStartOptions } from '../src/capture/core/types.js';
+import { SpawnSource } from '../src/capture/spawn.js';
 import { openInspectorForPid } from '../src/inspector/discovery.js';
 import { DEFAULT_SAMPLE_INTERVAL_MICROS } from '../src/shared/config.js';
+
+const EMPTY_PRELOAD: PreloadContribution = {
+  preloadScript: '/* empty */\n',
+  attachScript: '/* empty */',
+  controlFd: 3,
+};
+
+function startSpawnCapture(options: SpawnStartOptions) {
+  return new SpawnSource().connect(options, EMPTY_PRELOAD);
+}
 
 // ---------------------------------------------------------------------------
 // startSpawnCapture — spawn-time failures
