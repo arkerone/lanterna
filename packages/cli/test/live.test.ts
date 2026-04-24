@@ -162,15 +162,21 @@ async function waitForInspectorUrl(child: ChildProcess, timeoutMs = 5_000): Prom
 
 async function terminateChild(child: ChildProcess): Promise<void> {
   if (child.exitCode !== null) return;
-  child.kill('SIGTERM');
   await new Promise<void>((resolve) => {
+    let settled = false;
+    const resolveOnce = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      child.off('exit', resolveOnce);
+      resolve();
+    };
     const timeout = setTimeout(() => {
       if (child.exitCode === null) child.kill('SIGKILL');
     }, 1_000);
-    child.once('exit', () => {
-      clearTimeout(timeout);
-      resolve();
-    });
+    child.once('exit', resolveOnce);
+    if (child.exitCode !== null) resolveOnce();
+    else child.kill('SIGTERM');
   });
 }
 
@@ -271,12 +277,22 @@ async function runLanternaAndSignal(
   const stopTimer = setTimeout(sendSignal, delayMs);
 
   return await new Promise<SpawnedCommandResult>((resolveResult, reject) => {
+    const hardTimeout = setTimeout(() => {
+      child.kill('SIGKILL');
+      reject(
+        new Error(
+          `lanterna command did not exit after signal ${stopSignal}. stdout=${stdout} stderr=${stderr}`,
+        ),
+      );
+    }, 15_000);
     child.once('error', (error) => {
       clearTimeout(stopTimer);
+      clearTimeout(hardTimeout);
       reject(error);
     });
     child.once('exit', (code, signal) => {
       clearTimeout(stopTimer);
+      clearTimeout(hardTimeout);
       resolveResult({ code, signal, stdout, stderr });
     });
   });
