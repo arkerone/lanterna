@@ -130,6 +130,10 @@ export async function runCapture<TSourceOptions>(
     });
 
     await waitForStop(connected, options);
+    emitCaptureProgress(options.sourceOptions, {
+      stage: 'finalize-capture',
+      message: 'Stopping the profiler and collecting the final samples...',
+    });
 
     const kindsData: Record<string, unknown> = {};
     for (const { kind, probe } of probeInstances) {
@@ -289,7 +293,7 @@ class CaptureSession {
 
 function emitCaptureProgress(
   sourceOptions: unknown,
-  event: { stage: 'start-capture' | 'capture-running'; message: string },
+  event: { stage: 'start-capture' | 'capture-running' | 'finalize-capture'; message: string },
 ): void {
   if (!sourceOptions || typeof sourceOptions !== 'object') return;
   const onProgress = (sourceOptions as { onProgress?: unknown }).onProgress;

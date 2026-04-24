@@ -269,7 +269,7 @@ describe('runCapture lifecycle', () => {
     vi.useRealTimers();
   });
 
-  it('reports capture start and running progress after the source is connected', async () => {
+  it('reports capture lifecycle progress after the source is connected', async () => {
     const source = new FakeSource();
     const stages: string[] = [];
 
@@ -284,7 +284,29 @@ describe('runCapture lifecycle', () => {
       probeOptions: { sampleIntervalMicros: 1000, deep: false },
     });
 
-    expect(stages).toEqual(['start-capture', 'capture-running']);
+    expect(stages).toEqual(['start-capture', 'capture-running', 'finalize-capture']);
+  });
+
+  it('reports finalization progress as soon as capture stops', async () => {
+    vi.useFakeTimers();
+    const source = new FakeSource();
+    const stages: string[] = [];
+
+    const capturePromise = runCapture({
+      source,
+      sourceOptions: {
+        onProgress(event) {
+          stages.push(event.stage);
+        },
+      },
+      kinds: [hangingStopKind('stop-hangs')],
+      probeOptions: { sampleIntervalMicros: 1000, deep: false },
+    });
+
+    await vi.advanceTimersByTimeAsync(1);
+    expect(stages).toEqual(['start-capture', 'capture-running', 'finalize-capture']);
+    await vi.advanceTimersByTimeAsync(5000);
+    await capturePromise;
   });
 
   it('clears the duration timer when an external stop signal wins', async () => {
