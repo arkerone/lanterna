@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { runCapture } from '../src/capture/coordinator.js';
 import { createCaptureIntegrity } from '../src/capture/core/session.js';
 import type {
@@ -150,7 +150,29 @@ function successfulKind(id: string): ProfileKind {
   });
 }
 
+function hangingStopKind(id: string): ProfileKind {
+  return defineProfileKind({
+    id,
+    reportSectionKey: id,
+    createProbe() {
+      return {
+        start: async () => {},
+        stop: () => new Promise(() => {}),
+      };
+    },
+    createAnalysisContributor() {
+      return {
+        analyze() {},
+      };
+    },
+  });
+}
+
 describe('runCapture lifecycle', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it('closes CDP and finalizes the connected source when setup fails after connect', async () => {
     const cdp = new FakeCdp();
     cdp.failTargetInfo = true;
@@ -189,6 +211,32 @@ describe('runCapture lifecycle', () => {
       'start-fails': { ok: true },
     });
     expect(source.finalizeCalls).toBe(1);
+  });
+
+  it('times out a hanging probe stop and still finalizes the session', async () => {
+    vi.useFakeTimers();
+    const source = new FakeSource();
+
+    const capturePromise = runCapture({
+      source,
+      sourceOptions: undefined,
+      kinds: [hangingStopKind('stop-hangs')],
+      probeOptions: { sampleIntervalMicros: 1000, deep: false },
+    });
+    const resultPromise = capturePromise.then(
+      (bundle) => bundle,
+      (error: unknown) => error,
+    );
+
+    await vi.advanceTimersByTimeAsync(5000);
+    const result = await resultPromise;
+
+    expect(result).not.toBeInstanceOf(Error);
+    expect(diagnosticStages(result as Awaited<ReturnType<typeof runCapture>>)).toEqual([
+      'probe-stop',
+    ]);
+    expect(source.finalizeCalls).toBe(1);
+    vi.useRealTimers();
   });
 
   it('reports capture start and running progress after the source is connected', async () => {

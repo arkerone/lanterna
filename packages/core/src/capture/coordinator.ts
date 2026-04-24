@@ -35,6 +35,9 @@ import type {
   RuntimeSignalsData,
 } from './core/types.js';
 
+const PROBE_STOP_TIMEOUT_MS = 5000;
+const CDP_CLOSE_TIMEOUT_MS = 2000;
+
 export interface RunCaptureOptions<TSourceOptions> {
   source: ProfileSource<TSourceOptions>;
   sourceOptions: TSourceOptions;
@@ -132,7 +135,16 @@ export async function runCapture<TSourceOptions>(
     const kindsData: Record<string, unknown> = {};
     for (const { kind, probe } of probeInstances) {
       try {
-        kindsData[kind.id] = await probe.stop(cdp);
+        const result = await withTimeoutResult(probe.stop(cdp), PROBE_STOP_TIMEOUT_MS);
+        if (!result.ok) {
+          recordCaptureDiagnostic(captureIntegrity, {
+            stage: 'probe-stop',
+            kindId: kind.id,
+            message: `timed out stopping ${kind.id} probe after ${PROBE_STOP_TIMEOUT_MS}ms`,
+          });
+          continue;
+        }
+        kindsData[kind.id] = result.value;
       } catch (error) {
         logger.warn({ kindId: kind.id, err: error }, 'kind probe failed to stop');
         recordCaptureDiagnostic(captureIntegrity, {
@@ -241,7 +253,13 @@ class CaptureSession {
     if (this.cdpClosed) return;
     this.cdpClosed = true;
     try {
-      await this.connected.cdp.close();
+      const result = await withTimeoutResult(this.connected.cdp.close(), CDP_CLOSE_TIMEOUT_MS);
+      if (!result.ok) {
+        recordCaptureDiagnostic(this.connected.initialIntegrity, {
+          stage: 'finalize',
+          message: `timed out closing CDP connection after ${CDP_CLOSE_TIMEOUT_MS}ms`,
+        });
+      }
     } catch (error) {
       recordCaptureDiagnostic(this.connected.initialIntegrity, {
         stage: 'finalize',
@@ -298,6 +316,16 @@ async function waitForStop<TOptions>(
 
 async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, fallback: T): Promise<T> {
   return Promise.race([promise.catch(() => fallback), sleep(timeoutMs).then(() => fallback)]);
+}
+
+async function withTimeoutResult<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+): Promise<{ ok: true; value: T } | { ok: false }> {
+  return Promise.race([
+    promise.then((value) => ({ ok: true as const, value })),
+    sleep(timeoutMs).then(() => ({ ok: false as const })),
+  ]);
 }
 
 function resolveEventLoopHistogram(

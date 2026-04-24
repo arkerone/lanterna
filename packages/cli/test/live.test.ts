@@ -237,8 +237,9 @@ async function expectLanternaCommandFailure(
 async function runLanternaAndSignal(
   args: string[],
   stopSignal: NodeJS.Signals,
-  delayMs = 700,
+  options: { delayMs?: number; signalAfterStderr?: RegExp } = {},
 ): Promise<SpawnedCommandResult> {
+  const delayMs = options.delayMs ?? 700;
   const child = spawn('node', [binPath, ...args], {
     cwd: repoRoot,
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -252,14 +253,22 @@ async function runLanternaAndSignal(
     stdout += chunk.toString();
   });
   child.stderr?.on('data', (chunk) => {
-    stderr += chunk.toString();
+    const text = chunk.toString();
+    stderr += text;
+    if (options.signalAfterStderr?.test(normalizeTerminalOutput(stderr))) {
+      sendSignal();
+    }
   });
 
-  const stopTimer = setTimeout(() => {
+  let signalSent = false;
+  const sendSignal = () => {
+    if (signalSent) return;
+    signalSent = true;
     if (child.exitCode === null) {
       child.kill(stopSignal);
     }
-  }, delayMs);
+  };
+  const stopTimer = setTimeout(sendSignal, delayMs);
 
   return await new Promise<SpawnedCommandResult>((resolveResult, reject) => {
     child.once('error', (error) => {
@@ -614,6 +623,10 @@ describe('live profiling', () => {
       const result = await runLanternaAndSignal(
         ['attach', '--inspect-url', wsUrl, '--output', outputPath, '--pretty', '--duration', '30s'],
         'SIGTERM',
+        {
+          delayMs: 10_000,
+          signalAfterStderr: /Capture is running/,
+        },
       );
 
       assert.equal(result.code, 0);
