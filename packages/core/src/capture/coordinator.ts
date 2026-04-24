@@ -10,7 +10,6 @@ import { readGcEvents } from '../runtime-signals/readers/gc.js';
 import { readRuntimeIntegrity } from '../runtime-signals/readers/integrity.js';
 import { HEARTBEAT_RESOLUTION_MS } from '../shared/config.js';
 import { logger } from '../shared/logger.js';
-import { sleep } from '../shared/sleep.js';
 import {
   captureDiagnosticMessage,
   mergeCaptureIntegrityCounters,
@@ -302,30 +301,56 @@ async function waitForStop<TOptions>(
   connected: ConnectedSource,
   options: RunCaptureOptions<TOptions>,
 ): Promise<'exit' | 'timeout' | 'signal'> {
+  let timeout: NodeJS.Timeout | undefined;
   const promises: Array<Promise<'exit' | 'timeout' | 'signal'>> = [
     connected.waitForExit().then<'exit'>(() => 'exit'),
   ];
   if (options.durationMs !== undefined) {
-    promises.push(sleep(options.durationMs).then<'timeout'>(() => 'timeout'));
+    promises.push(
+      new Promise<'timeout'>((resolve) => {
+        timeout = setTimeout(() => resolve('timeout'), options.durationMs);
+      }),
+    );
   }
   if (options.stopSignal) {
     promises.push(options.stopSignal.then<'signal'>(() => 'signal'));
   }
-  return Promise.race(promises);
+  try {
+    return await Promise.race(promises);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
 }
 
 async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, fallback: T): Promise<T> {
-  return Promise.race([promise.catch(() => fallback), sleep(timeoutMs).then(() => fallback)]);
+  let timeout: NodeJS.Timeout | undefined;
+  try {
+    return await Promise.race([
+      promise.catch(() => fallback),
+      new Promise<T>((resolve) => {
+        timeout = setTimeout(() => resolve(fallback), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
 }
 
 async function withTimeoutResult<T>(
   promise: Promise<T>,
   timeoutMs: number,
 ): Promise<{ ok: true; value: T } | { ok: false }> {
-  return Promise.race([
-    promise.then((value) => ({ ok: true as const, value })),
-    sleep(timeoutMs).then(() => ({ ok: false as const })),
-  ]);
+  let timeout: NodeJS.Timeout | undefined;
+  try {
+    return await Promise.race([
+      promise.then((value) => ({ ok: true as const, value })),
+      new Promise<{ ok: false }>((resolve) => {
+        timeout = setTimeout(() => resolve({ ok: false }), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
 }
 
 function resolveEventLoopHistogram(

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { runCapture } from '../src/capture/coordinator.js';
+import { createManualStopSignal, runCapture } from '../src/capture/coordinator.js';
 import { createCaptureIntegrity } from '../src/capture/core/session.js';
 import type {
   ConnectedSource,
@@ -285,5 +285,25 @@ describe('runCapture lifecycle', () => {
     });
 
     expect(stages).toEqual(['start-capture', 'capture-running']);
+  });
+
+  it('clears the duration timer when an external stop signal wins', async () => {
+    vi.useFakeTimers();
+    const source = new FakeSource();
+    const stop = createManualStopSignal();
+
+    const capturePromise = runCapture({
+      source,
+      sourceOptions: undefined,
+      kinds: [successfulKind('ok')],
+      probeOptions: { sampleIntervalMicros: 1000, deep: false },
+      durationMs: 30_000,
+      stopSignal: stop.promise,
+    });
+    await vi.advanceTimersByTimeAsync(1);
+    stop.trigger();
+    await capturePromise;
+
+    expect(vi.getTimerCount()).toBe(0);
   });
 });
