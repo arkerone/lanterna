@@ -14,10 +14,14 @@ const mocks = vi.hoisted(() => ({
   },
 }));
 
-vi.mock('@lanterna-profiler/detectors', () => ({
+vi.mock('@lanterna-profiler/core', () => ({
   createDefaultKindRegistry: vi.fn(() => ({ resolveMany: mocks.resolveMany })),
   runProfile: mocks.runProfile,
   attachProfile: mocks.attachProfile,
+}));
+
+vi.mock('@lanterna-profiler/detectors', () => ({
+  createBuiltInFindingAnalyzers: vi.fn(() => []),
 }));
 
 vi.mock('../src/activity-indicator.js', () => ({

@@ -3,12 +3,10 @@ export type {
   AnalysisPipeline,
   AnalysisSnapshot,
   FindingAnalyzer,
-  ProfileKind,
   SectionAnalyzer,
 } from '@lanterna-profiler/core';
 export {
   defineFindingAnalyzer,
-  defineProfileKind,
   defineSectionAnalyzer,
 } from '@lanterna-profiler/core';
 export type { Detector, FindingContext } from './detectors/types.js';
