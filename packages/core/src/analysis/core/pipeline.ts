@@ -1,3 +1,4 @@
+import { captureDiagnosticMessage, recordCaptureDiagnostic } from '../../capture/core/session.js';
 import type { CaptureBundle } from '../../capture/core/types.js';
 import type {
   CaptureKindDataMap,
@@ -104,6 +105,11 @@ export class AnalysisPipeline {
         contributor.analyze(kindCtx);
       } catch (error) {
         logger.warn({ kindId: kind.id, err: error }, 'kind analysis contributor failed');
+        recordCaptureDiagnostic(bundle.captureIntegrity, {
+          stage: 'analysis-contributor',
+          kindId: kind.id,
+          message: captureDiagnosticMessage(error),
+        });
       }
     }
 
@@ -113,6 +119,11 @@ export class AnalysisPipeline {
         snapshot.extensions[analyzer.namespace] = analyzer.run(context, snapshot);
       } catch (error) {
         logger.warn({ analyzerId: analyzer.id, err: error }, 'analysis section analyzer failed');
+        recordCaptureDiagnostic(bundle.captureIntegrity, {
+          stage: 'section-analyzer',
+          analyzerId: analyzer.id,
+          message: captureDiagnosticMessage(error),
+        });
       }
     }
 
@@ -123,6 +134,11 @@ export class AnalysisPipeline {
         findings.push(...analyzer.run(context, snapshot));
       } catch (error) {
         logger.warn({ analyzerId: analyzer.id, err: error }, 'analysis finding analyzer failed');
+        recordCaptureDiagnostic(bundle.captureIntegrity, {
+          stage: 'finding-analyzer',
+          analyzerId: analyzer.id,
+          message: captureDiagnosticMessage(error),
+        });
       }
     }
 
@@ -141,6 +157,11 @@ export class AnalysisPipeline {
         });
       } catch (error) {
         logger.warn({ kindId: kind.id, err: error }, 'kind finalize hook failed');
+        recordCaptureDiagnostic(bundle.captureIntegrity, {
+          stage: 'finalize',
+          kindId: kind.id,
+          message: captureDiagnosticMessage(error),
+        });
       }
     }
 

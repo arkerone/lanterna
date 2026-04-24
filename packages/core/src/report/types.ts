@@ -1,3 +1,4 @@
+import type { CaptureDiagnostic } from '../capture/core/types.js';
 import type { ProfileSectionMap } from '../kinds/core/types.js';
 
 export type FrameCategory =
@@ -61,6 +62,7 @@ export interface ReportMeta {
     controlChannelWriteErrors: number;
     gcObserverSetupFailed: number;
     heartbeatDropped: number;
+    diagnostics?: CaptureDiagnostic[];
   };
 }
 

@@ -39,11 +39,11 @@ export type {
   TargetInfo,
 } from './capture/core/types.js';
 export { createSpawnSource, SpawnSource } from './capture/spawn.js';
-
+// Stable extension-author API surface.
+export * as extensionApi from './extension-api.js';
 // Inspector
 export type { InspectorTargetDescriptor } from './inspector/discovery.js';
 export { openInspectorForPid, readInspectableTargetsByPid } from './inspector/discovery.js';
-
 // Kinds
 export {
   createKindRegistry,
@@ -73,7 +73,6 @@ export {
   createCpuProbe,
   createCpuProfileKind,
 } from './kinds/cpu/index.js';
-
 // Report
 export { buildLanternaReport, serializeReport } from './report/index.js';
 export { LANTERNA_REPORT_SCHEMA_VERSION } from './report/meta.js';

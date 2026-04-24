@@ -97,6 +97,28 @@ describe('lanternaReportSchema', () => {
       expect(result.success).toBe(true);
     });
 
+    it('accepts structured capture diagnostics in meta.captureIntegrity', () => {
+      const report = makeReport() as LanternaReport;
+      const captureIntegrity = report.meta
+        .captureIntegrity as typeof report.meta.captureIntegrity & {
+        diagnostics: Array<{ stage: string; message: string; kindId?: string }>;
+      };
+      captureIntegrity.diagnostics = [
+        {
+          stage: 'probe-start',
+          message: 'cpu start failed',
+          kindId: 'cpu',
+        },
+      ];
+      const result = lanternaReportSchema.safeParse(report);
+
+      expect(result.success).toBe(true);
+      if (!result.success) return;
+      expect(result.data.meta.captureIntegrity.diagnostics).toEqual([
+        { stage: 'probe-start', message: 'cpu start failed', kindId: 'cpu' },
+      ]);
+    });
+
     it('accepts summary topUserHotspot and finding priority metadata', () => {
       const report = makeReport({
         profiles: {

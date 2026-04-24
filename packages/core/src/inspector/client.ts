@@ -4,12 +4,18 @@ import { logger } from '../shared/logger.js';
 type EventHandler = (params: unknown) => void;
 type CloseHandler = () => void;
 type ChromeRemoteInterfaceClient = CDP.Client & {
+  _ws?: {
+    readyState: number;
+    terminate?: () => void;
+  };
   removeListener(
     event: string,
     listener: (params: unknown, sessionId?: string) => void,
   ): CDP.Client;
   send(command: string, parameters?: Record<string, unknown>): Promise<unknown>;
 };
+
+const CDP_GRACEFUL_CLOSE_TIMEOUT_MS = 1000;
 
 export interface CdpClient {
   send<TResponse = unknown>(method: string, params?: Record<string, unknown>): Promise<TResponse>;
@@ -89,7 +95,30 @@ export async function connectCdp(webSocketDebuggerUrl: string): Promise<CdpClien
     async close(): Promise<void> {
       if (closed) return;
       closed = true;
-      await client.close();
+      const result = await closeChromeClient(client, CDP_GRACEFUL_CLOSE_TIMEOUT_MS);
+      if (!result.closedGracefully) {
+        logger.debug('force-terminated CDP websocket after graceful close timeout');
+      }
     },
   };
+}
+
+async function closeChromeClient(
+  client: ChromeRemoteInterfaceClient,
+  timeoutMs: number,
+): Promise<{ closedGracefully: boolean }> {
+  let timeout: NodeJS.Timeout | undefined;
+  try {
+    return await Promise.race([
+      client.close().then(() => ({ closedGracefully: true })),
+      new Promise<{ closedGracefully: boolean }>((resolve) => {
+        timeout = setTimeout(() => {
+          client._ws?.terminate?.();
+          resolve({ closedGracefully: false });
+        }, timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
 }

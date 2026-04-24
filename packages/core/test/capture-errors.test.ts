@@ -5,6 +5,9 @@
  * They exercise conditions that must reject fast (ENOENT, invalid args, ESRCH)
  * so the entire suite stays well under the default 20 s test timeout.
  */
+
+import { readdir } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { describe, expect, it } from 'vitest';
 import type { PreloadContribution, SpawnStartOptions } from '../src/capture/core/types.js';
 import { SpawnSource } from '../src/capture/spawn.js';
@@ -19,6 +22,11 @@ const EMPTY_PRELOAD: PreloadContribution = {
 
 function startSpawnCapture(options: SpawnStartOptions) {
   return new SpawnSource().connect(options, EMPTY_PRELOAD);
+}
+
+async function listCurrentPreloadFiles(): Promise<Set<string>> {
+  const files = await readdir(tmpdir());
+  return new Set(files.filter((file) => file.startsWith(`lanterna-preload-${process.pid}-`)));
 }
 
 // ---------------------------------------------------------------------------
@@ -59,6 +67,24 @@ describe('startSpawnCapture', () => {
           deep: false,
         }),
       ).rejects.toThrow(/target exited before inspector was ready/);
+    },
+  );
+
+  it.runIf(process.platform !== 'win32')(
+    'removes the temporary preload file when startup fails before connect returns',
+    async () => {
+      const before = await listCurrentPreloadFiles();
+
+      await expect(
+        startSpawnCapture({
+          command: ['sh', '-c', 'exit 1'],
+          sampleIntervalMicros: DEFAULT_SAMPLE_INTERVAL_MICROS,
+          deep: false,
+        }),
+      ).rejects.toThrow(/target exited before inspector was ready/);
+
+      const after = await listCurrentPreloadFiles();
+      expect([...after].filter((file) => !before.has(file))).toEqual([]);
     },
   );
 });

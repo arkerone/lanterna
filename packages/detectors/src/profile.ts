@@ -102,11 +102,6 @@ export async function runProfile(
       stopSignal: manualStop.promise,
     });
 
-    onProgress?.({
-      stage: 'finalize-capture',
-      message: 'Stopping the profiler and collecting the final samples...',
-    });
-
     return await analyzeAndBuild(bundle, options, kinds, 'spawn');
   } finally {
     signalHandlers.dispose();
@@ -139,11 +134,6 @@ export async function attachProfile(
       },
       durationMs: options.durationMs,
       stopSignal: manualStop.promise,
-    });
-
-    onProgress?.({
-      stage: 'finalize-capture',
-      message: 'Stopping the profiler and collecting the final samples...',
     });
 
     return await analyzeAndBuild(bundle, options, kinds, 'attach');

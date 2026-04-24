@@ -1,4 +1,4 @@
-import type { CaptureIntegrity } from './types.js';
+import type { CaptureDiagnostic, CaptureIntegrity } from './types.js';
 
 export type CaptureIntegrityCounters = Pick<
   CaptureIntegrity,
@@ -30,4 +30,16 @@ export function mergeCaptureIntegrityCounters(
   captureIntegrity.controlChannelWriteErrors = counters.controlChannelWriteErrors;
   captureIntegrity.gcObserverSetupFailed = counters.gcObserverSetupFailed;
   captureIntegrity.heartbeatDropped = counters.heartbeatDropped;
+}
+
+export function recordCaptureDiagnostic(
+  captureIntegrity: CaptureIntegrity,
+  diagnostic: CaptureDiagnostic,
+): void {
+  captureIntegrity.diagnostics ??= [];
+  captureIntegrity.diagnostics.push(diagnostic);
+}
+
+export function captureDiagnosticMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }

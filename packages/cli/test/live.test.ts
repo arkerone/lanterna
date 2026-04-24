@@ -162,15 +162,21 @@ async function waitForInspectorUrl(child: ChildProcess, timeoutMs = 5_000): Prom
 
 async function terminateChild(child: ChildProcess): Promise<void> {
   if (child.exitCode !== null) return;
-  child.kill('SIGTERM');
   await new Promise<void>((resolve) => {
+    let settled = false;
+    const resolveOnce = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      child.off('exit', resolveOnce);
+      resolve();
+    };
     const timeout = setTimeout(() => {
       if (child.exitCode === null) child.kill('SIGKILL');
     }, 1_000);
-    child.once('exit', () => {
-      clearTimeout(timeout);
-      resolve();
-    });
+    child.once('exit', resolveOnce);
+    if (child.exitCode !== null) resolveOnce();
+    else child.kill('SIGTERM');
   });
 }
 
@@ -237,8 +243,9 @@ async function expectLanternaCommandFailure(
 async function runLanternaAndSignal(
   args: string[],
   stopSignal: NodeJS.Signals,
-  delayMs = 700,
+  options: { delayMs?: number; signalAfterStderr?: RegExp } = {},
 ): Promise<SpawnedCommandResult> {
+  const delayMs = options.delayMs ?? 700;
   const child = spawn('node', [binPath, ...args], {
     cwd: repoRoot,
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -252,22 +259,40 @@ async function runLanternaAndSignal(
     stdout += chunk.toString();
   });
   child.stderr?.on('data', (chunk) => {
-    stderr += chunk.toString();
+    const text = chunk.toString();
+    stderr += text;
+    if (options.signalAfterStderr?.test(normalizeTerminalOutput(stderr))) {
+      sendSignal();
+    }
   });
 
-  const stopTimer = setTimeout(() => {
+  let signalSent = false;
+  const sendSignal = () => {
+    if (signalSent) return;
+    signalSent = true;
     if (child.exitCode === null) {
       child.kill(stopSignal);
     }
-  }, delayMs);
+  };
+  const stopTimer = setTimeout(sendSignal, delayMs);
 
   return await new Promise<SpawnedCommandResult>((resolveResult, reject) => {
+    const hardTimeout = setTimeout(() => {
+      child.kill('SIGKILL');
+      reject(
+        new Error(
+          `lanterna command did not exit after signal ${stopSignal}. stdout=${stdout} stderr=${stderr}`,
+        ),
+      );
+    }, 15_000);
     child.once('error', (error) => {
       clearTimeout(stopTimer);
+      clearTimeout(hardTimeout);
       reject(error);
     });
     child.once('exit', (code, signal) => {
       clearTimeout(stopTimer);
+      clearTimeout(hardTimeout);
       resolveResult({ code, signal, stdout, stderr });
     });
   });
@@ -614,6 +639,10 @@ describe('live profiling', () => {
       const result = await runLanternaAndSignal(
         ['attach', '--inspect-url', wsUrl, '--output', outputPath, '--pretty', '--duration', '30s'],
         'SIGTERM',
+        {
+          delayMs: 2_500,
+          signalAfterStderr: /Capture is running/,
+        },
       );
 
       assert.equal(result.code, 0);

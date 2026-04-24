@@ -35,6 +35,13 @@ export interface RunningNodeProcess {
 
 export type RunningNodeProcessCandidate = Omit<RunningNodeProcess, 'attachMode'>;
 
+export class AttachSelectionCancelledError extends Error {
+  constructor() {
+    super('attach canceled');
+    this.name = 'AttachSelectionCancelledError';
+  }
+}
+
 export async function resolveAttachTarget(
   options: AttachProfileOptions,
 ): Promise<AttachProfileOptions> {
@@ -76,8 +83,7 @@ export async function resolveAttachTarget(
 
   if (isCancel(selection)) {
     cancel('Attach canceled.', { output: process.stderr });
-    process.exitCode = 1;
-    process.exit(1);
+    throw new AttachSelectionCancelledError();
   }
 
   const selectedProcess = processes.find((entry) => entry.pid === selection);

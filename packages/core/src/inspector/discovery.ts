@@ -5,6 +5,8 @@ import { fetchTargetInfo } from './runtime.js';
 
 const INSPECTOR_DISCOVERY_TIMEOUT_MS = 5_000;
 const INSPECTOR_DISCOVERY_INTERVAL_MS = 100;
+const INSPECTOR_DISCOVERY_FETCH_TIMEOUT_MS = 250;
+const INSPECTOR_DISCOVERY_CDP_TIMEOUT_MS = 250;
 const DEFAULT_INSPECTOR_DISCOVERY_PORT = 9229;
 const INSPECTOR_DISCOVERY_PORT_RANGE = 10;
 const INSPECTOR_DISCOVERY_PORT_END =
@@ -108,7 +110,10 @@ export async function readInspectorTargets(): Promise<InspectorTargetDescriptor[
     port += 1
   ) {
     try {
-      const response = await fetch(`http://127.0.0.1:${port}/json/list`);
+      const response = await fetchWithTimeout(
+        `http://127.0.0.1:${port}/json/list`,
+        INSPECTOR_DISCOVERY_FETCH_TIMEOUT_MS,
+      );
       if (!response.ok) continue;
       const value = (await response.json()) as unknown;
       const parsed = inspectorTargetSchema.array().safeParse(value);
@@ -144,12 +149,58 @@ async function inspectorUrlMatchesPid(webSocketDebuggerUrl: string, pid: number)
 async function readPidForInspectorUrl(webSocketDebuggerUrl: string): Promise<number | undefined> {
   let cdp: Awaited<ReturnType<typeof connectCdp>> | undefined;
   try {
-    cdp = await connectCdp(webSocketDebuggerUrl);
-    const targetInfo = await fetchTargetInfo(cdp);
+    cdp = await connectCdpWithTimeout(webSocketDebuggerUrl, INSPECTOR_DISCOVERY_CDP_TIMEOUT_MS);
+    const targetInfo = await withTimeout(fetchTargetInfo(cdp), INSPECTOR_DISCOVERY_CDP_TIMEOUT_MS);
     return targetInfo.pid;
   } catch {
     return undefined;
   } finally {
     await cdp?.close().catch(() => {});
+  }
+}
+
+async function connectCdpWithTimeout(
+  webSocketDebuggerUrl: string,
+  timeoutMs: number,
+): ReturnType<typeof connectCdp> {
+  const connectPromise = connectCdp(webSocketDebuggerUrl);
+  try {
+    return await withTimeout(connectPromise, timeoutMs);
+  } catch (error) {
+    connectPromise.then(
+      (lateCdp) => {
+        void lateCdp.close().catch(() => {});
+      },
+      () => {},
+    );
+    throw error;
+  }
+}
+
+async function fetchWithTimeout(url: string, timeoutMs: number): Promise<Response> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => {
+    controller.abort();
+  }, timeoutMs);
+  try {
+    return await fetch(url, { signal: controller.signal });
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  let timeout: NodeJS.Timeout | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_, reject) => {
+        timeout = setTimeout(() => {
+          reject(new Error(`operation timed out after ${timeoutMs}ms`));
+        }, timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timeout) clearTimeout(timeout);
   }
 }

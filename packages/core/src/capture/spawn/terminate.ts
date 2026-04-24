@@ -4,7 +4,6 @@ import {
   TERMINATE_SIGKILL_FALLBACK_MS,
   TERMINATE_SIGTERM_WAIT_MS,
 } from '../../shared/config.js';
-import { sleep } from '../../shared/sleep.js';
 
 export async function terminateSpawnedChild(
   child: ChildProcess,
@@ -12,14 +11,14 @@ export async function terminateSpawnedChild(
   exited: boolean,
   exitPromise: Promise<void>,
 ): Promise<void> {
-  if (!exited) {
-    await Promise.race([exitPromise, sleep(TERMINATE_GRACE_MS)]);
+  if (!exited && !hasChildExited(child)) {
+    await waitForExitOrDelay(exitPromise, TERMINATE_GRACE_MS);
   }
 
-  if (!exited && !appCompleted) {
+  if (!hasChildExited(child) && !appCompleted) {
     child.kill('SIGTERM');
-    await Promise.race([exitPromise, sleep(TERMINATE_SIGTERM_WAIT_MS)]);
-    if (child.exitCode === null) {
+    await waitForExitOrDelay(exitPromise, TERMINATE_SIGTERM_WAIT_MS);
+    if (!hasChildExited(child)) {
       child.kill('SIGKILL');
     }
   }
@@ -33,4 +32,22 @@ export function terminateChild(child: ChildProcess): void {
       child.kill('SIGKILL');
     }
   }, TERMINATE_SIGKILL_FALLBACK_MS).unref();
+}
+
+function hasChildExited(child: ChildProcess): boolean {
+  return child.exitCode !== null || child.signalCode !== null;
+}
+
+async function waitForExitOrDelay(exitPromise: Promise<void>, ms: number): Promise<void> {
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    await Promise.race([
+      exitPromise,
+      new Promise<void>((resolve) => {
+        timer = setTimeout(resolve, ms);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }
