@@ -11,6 +11,8 @@ Use this skill to run or attach Lanterna against a Node.js process, inspect the 
 
 Core rule: do not guess. Read the report first, then read the implicated source files before proposing changes.
 
+Report path convention: Lanterna schema v2 stores per-kind analysis under `profiles.<kind>.*`. Today the built-in kind is `cpu`, so bare names like `eventLoop`, `gc`, `hotspots`, and `deopts` below are shorthand for `profiles.cpu.eventLoop`, `profiles.cpu.gc`, `profiles.cpu.hotspots`, and `profiles.cpu.deopts`.
+
 ## When to Use
 
 Use when:
@@ -35,8 +37,11 @@ Do not use when:
 - **Every Lanterna invocation needs a subcommand** (`run` or `attach`) *before* the rest. With `npx`, that means `npx -y @lanterna-profiler/cli run -- node server.js`, **not** `npx -y @lanterna-profiler/cli node server.js`. Forgetting `run`/`attach` or the `--` separator is the most common invocation bug.
 - Default duration: `15s` with load, `5s` without load
 - Prefer `--deep` when deopts or type instability are plausible (spawn mode only — `--deep` is rejected by `attach`)
+- `--kind <id>` works on both `run` and `attach`; repeat it or use `--kind cpu,memory`
+- Today the only built-in profile kind is `cpu`, so both modes default to `--kind cpu`
+- Unknown kind ids fail immediately with `unknown profile kind(s): <ids>. Available kinds: cpu`
 - For HTTP servers, profile with load rather than idle traffic
-- If `summary.idleRatio > 0.8`, the run is mostly idle and should usually be repeated with load
+- If `profiles.cpu.summary.idleRatio > 0.8`, the run is mostly idle and should usually be repeated with load
 - If `eventLoop.available` is `false`, avoid strong latency attribution
 - If `eventLoop.measurementBasis` is `"histogram"` or `eventLoop.confidence` is `"low"`/`"none"`, stall intervals are absent or weak — name suspects but do not assert causal attribution
 - If `meta.captureIntegrity.*` contains `false`, call out degraded signal quality (see §5b for gating rules)
@@ -57,7 +62,7 @@ If any of these is true, stop what you are doing:
 - You are about to cite `eventLoop.maxLagMs` / `p99LagMs` while `eventLoop.available === false`, or while `measurementBasis === "histogram"` alone without calling out that stalls are aggregate-only
 - You are about to attach to the first PID returned by `ps` without asking which program matters
 - You are about to recommend `--deep` on an `attach` session (not supported)
-- You are about to draw conclusions from a report where `summary.idleRatio > 0.8`
+- You are about to draw conclusions from a report where `profiles.cpu.summary.idleRatio > 0.8`
 - You are about to infer a number that is not present in the report (totalSamples, ratios, pauses)
 
 When any of these fire: go back to the matching workflow step and collect the missing input.
@@ -161,6 +166,7 @@ After that, every command below uses `$LANTERNA` verbatim — **no mental substi
 | Attach by PID | `$LANTERNA attach --pid 4242 --duration 15s --output /tmp/lanterna-report.json` |
 | Interactive PID picker | `$LANTERNA attach --pid` |
 | Attach by inspector URL | `$LANTERNA attach --inspect-url ws://127.0.0.1:9229/<uuid> --duration 15s` |
+| Explicit CPU kind on either mode | add `--kind cpu` to `$LANTERNA run …` or `$LANTERNA attach …` |
 | Lower sampling interval | add `--sample-interval 500` (halves default; `50` minimum) |
 | Load external detector | add `--detectors <package-or-path>` (repeatable) |
 
@@ -170,6 +176,7 @@ Invocation rules that agents mangle most often:
 - `attach` never takes a trailing `-- <command>`; it takes `--pid` or `--inspect-url`.
 
 Flag notes:
+- `--kind <id>` — accepted on both `run` and `attach`. Repeat it or use `--kind cpu,memory`. Today the only built-in kind is `cpu`, and unknown ids fail before capture with `unknown profile kind(s): <ids>. Available kinds: cpu`.
 - `--sample-interval <us>` — default `1000`. Lower it (e.g. `250`) only when sub-millisecond hotspots are suspected; it inflates the profile size.
 - `--output <path>` — always prefer writing to a file when the report will be post-processed with `jq` or read in multiple passes.
 
@@ -186,7 +193,7 @@ When using `attach`, explicitly call out before profiling:
 First pass — compact summary:
 
 ```bash
-jq '{meta, summary, topHotspot: .hotspots[0], findingsCount: (.findings | length)}' /tmp/lanterna-report.json
+jq '{meta, summary: .profiles.cpu.summary, topHotspot: .profiles.cpu.hotspots[0], findingsCount: (.findings | length)}' /tmp/lanterna-report.json
 ```
 
 Second pass — inspect only the sections you need:
@@ -203,7 +210,7 @@ Read `references/report-schema.md` when a field is unclear. Read `references/com
 Before writing conclusions, check whether the run should be treated as degraded or repeated.
 
 Usually rerun instead of over-interpreting when:
-- `summary.idleRatio > 0.8`
+- `profiles.cpu.summary.idleRatio > 0.8`
 - `meta.totalSamples` is very low for the requested duration
 - `eventLoop.available` is `false` and the user asked specifically about latency or stalls
 - `meta.captureIntegrity.*` contains `false` for the signals you need
@@ -222,7 +229,7 @@ Findings are sorted by `priority.score`, then severity and `evidence.selfPct`. U
 - `categoryTotalPct` in `evidence.extra` is the family-wide cost (e.g. all sync fs APIs together). If it's much larger than the single-API `calleeTotalPct`, the fix is structural (get the family off the hot path) — not "replace this one call".
 - `remediation.kind` / `remediation.replace` / `remediation.with` give you a mechanical patch path for ★★★ detectors (blocking-io, sync-crypto, require-in-hot-path). When present and attribution confidence is `high`, the patch can usually be applied directly at `evidence.file:evidence.line`. When missing (or for other detectors), the fix is judgment — read the caller chain first.
 - `hotStackClusters[]` groups hot stacks by their user-code anchor. When several findings all point at the same anchor, treat them as one problem (one feature) rather than three patches.
-- `summary.topUserHotspot` is context for dominant user CPU, not a finding. Use it to orient the narrative after actionable `findings[]`.
+- `profiles.cpu.summary.topUserHotspot` is context for dominant user CPU, not a finding. Use it to orient the narrative after actionable `findings[]`.
 - `captureIntegrity` gates the confidence of the whole report. If `controlChannelExpected && !controlChannel`, `gcObserverAvailable === false`, or any integrity counter is non-zero, degrade latency/GC claims accordingly.
 
 When in doubt, the strongest lead is the finding where:
@@ -237,7 +244,7 @@ A `critical` finding missing (b) or (c) is a strong *hypothesis*, not an actiona
 Produce the analysis in this order:
 
 1. Executive summary
-   State the command (or PID for attach), duration, top CPU consumer, and the overall signal from `summary.topCategory` and `summary.onCpuRatio`.
+   State the command (or PID for attach), duration, top CPU consumer, and the overall signal from `profiles.cpu.summary.topCategory` and `profiles.cpu.summary.onCpuRatio`.
 
 2. Findings
    For each entry in `findings[]`, include:

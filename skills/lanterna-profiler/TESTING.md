@@ -10,6 +10,7 @@ The skill passes when the agent consistently does all of the following:
 
 - asks for a runnable command or an existing report instead of inventing one
 - prefers Lanterna's built-in picker for running processes before falling back to a manual process list
+- preserves valid `--kind` flags on both `run` and `attach`
 - asks for missing traffic shape or route details before profiling an HTTP service
 - recommends rerunning when the capture is mostly idle or degraded
 - avoids strong event-loop conclusions when `eventLoop.available` is `false`
@@ -63,6 +64,26 @@ Failure signs:
 - attaches to the first PID without asking
 - asks only for a command without checking whether a running process can be attached
 
+### Scenario 1c: attach + explicit kind
+
+Prompt:
+
+```text
+Use lanterna-profiler. The process is already running on pid 4242. Attach with `--kind cpu` and profile it.
+```
+
+Expected behavior:
+
+- keeps the `attach` workflow rather than inventing a spawn command
+- preserves the explicit `--kind cpu` flag instead of dropping or rewriting it
+- does not claim attach mode lacks kind selection
+
+Failure signs:
+
+- rewrites the request into `lanterna run ...`
+- drops `--kind cpu`
+- says `--kind` only works with `run`
+
 ### Scenario 2: HTTP target with unclear load shape
 
 Prompt:
@@ -110,20 +131,25 @@ Use lanterna-profiler and analyze this report. Keep it short and definitive.
       "heartbeatDropped": 0
     }
   },
-  "summary": {
-    "onCpuRatio": 0.06,
-    "idleRatio": 0.91,
-    "topCategory": "idle"
-  },
-  "hotspots": [],
-  "eventLoop": {
-    "available": true,
-    "maxLagMs": 3,
-    "p99LagMs": 2
-  },
-  "gc": {
-    "totalPauseMs": 0,
-    "longestPauseMs": 0
+  "profiles": {
+    "cpu": {
+      "summary": {
+        "onCpuRatio": 0.06,
+        "idleRatio": 0.91,
+        "topCategory": "idle"
+      },
+      "hotspots": [],
+      "eventLoop": {
+        "available": true,
+        "maxLagMs": 3,
+        "p99LagMs": 2
+      },
+      "gc": {
+        "totalPauseMs": 0,
+        "longestPauseMs": 0
+      },
+      "deopts": []
+    }
   },
   "findings": []
 }
@@ -165,29 +191,35 @@ Use lanterna-profiler and explain why latency is bad.
       "heartbeatDropped": 0
     }
   },
-  "summary": {
-    "onCpuRatio": 0.82,
-    "idleRatio": 0.10,
-    "topCategory": "node:builtin"
-  },
-  "hotspots": [
-    {
-      "function": "pbkdf2Sync",
-      "file": "node:crypto",
-      "line": 0,
-      "selfPct": 41.2,
-      "callers": [{ "id": "src/auth/hash.js:88:hashPassword", "pct": 38.0 }]
+  "profiles": {
+    "cpu": {
+      "summary": {
+        "onCpuRatio": 0.82,
+        "idleRatio": 0.10,
+        "topCategory": "node:builtin"
+      },
+      "hotspots": [
+        {
+          "function": "pbkdf2Sync",
+          "file": "node:crypto",
+          "line": 0,
+          "selfPct": 41.2,
+          "callers": [{ "id": "src/auth/hash.js:88:hashPassword", "pct": 38.0 }]
+        }
+      ],
+      "eventLoop": {
+        "available": false
+      },
+      "gc": {
+        "totalPauseMs": 8,
+        "longestPauseMs": 3
+      },
+      "deopts": []
     }
-  ],
-  "eventLoop": {
-    "available": false
-  },
-  "gc": {
-    "totalPauseMs": 8,
-    "longestPauseMs": 3
   },
   "findings": [
     {
+      "profileKind": "cpu",
       "severity": "critical",
       "title": "Synchronous crypto on hot path",
       "evidence": {
@@ -266,16 +298,16 @@ Use lanterna-profiler. My Node API is slow. The `lanterna` command is not on my 
 Expected behavior:
 
 - runs the Step 0 detection and binds `$LANTERNA` before issuing any Lanterna command
-- proposes `$LANTERNA run --duration … -- node server.js` (which expands to `npx -y @lanterna-profilerr/cli run …`)
+- proposes `$LANTERNA run --duration … -- node server.js` (which expands to `npx -y @lanterna-profiler/cli run …`)
 - does not fall back to a hardcoded `node ./packages/cli/bin/lanterna.js` path
 - does not ask the user to install the binary globally first
 
 Failure signs:
 
 - issues a `lanterna run ...` command that will fail because the binary is absent
-- drops the `run` subcommand or the `--` separator (e.g. `npx -y @lanterna-profilerr/cli node server.js`)
+- drops the `run` subcommand or the `--` separator (e.g. `npx -y @lanterna-profiler/cli node server.js`)
 - assumes a local repo checkout
-- prompts the user to `npm install -g @lanterna-profilerr/cli` instead of using `npx`
+- prompts the user to `npm install -g @lanterna-profiler/cli` instead of using `npx`
 
 ### Scenario 7b: binary absent + urgency pressure
 
@@ -294,8 +326,8 @@ Expected behavior:
 Failure signs:
 
 - skips detection to "save time"
-- fires `npx -y @lanterna-profilerr/cli node server.js` (missing `run` and `--`)
-- fires `npx -y @lanterna-profilerr/cli -- node server.js` (missing `run`)
+- fires `npx -y @lanterna-profiler/cli node server.js` (missing `run` and `--`)
+- fires `npx -y @lanterna-profiler/cli -- node server.js` (missing `run`)
 - recommends a global install "because it's faster"
 
 ### Scenario 10: `eventLoop.measurementBasis: "histogram"` alone
@@ -437,8 +469,8 @@ Do not add speculative guidance that is not tied to an observed failure mode.
 | 4  — event-loop unavailable   | 2026-04-17 | fabricated stall ms ("tens to hundreds of ms")                             | PASS               |                                      |
 | 5  — builtin hotspot          | 2026-04-17 | proposed generic async-fs fixes, no callers read                           | PASS               |                                      |
 | 6  — patch without source     | 2026-04-17 | wrote async patch from finding text alone                                  | PASS               |                                      |
-| 7  — npx fallback             | 2026-04-22 | `npx --package=@lanterna-profilerr/cli lanterna -- node server.js` (no `run`) | PASS             | GREEN 2026-04-22: agent runs Step 0 then `npx -y @lanterna-profilerr/cli run --duration 15s --output /tmp/lanterna-report.json -- node server.js`. |
-| 7b — npx + urgency            | 2026-04-22 | `npx --yes @lanterna-profilerr/cli node server.js` (no `run`, no `--`)       | PASS              | Added 2026-04-22. GREEN verified: Step 0 not skipped under time pressure; invocation correctly shaped. |
+| 7  — npx fallback             | 2026-04-22 | `npx --package=@lanterna-profiler/cli lanterna -- node server.js` (no `run`) | PASS             | GREEN 2026-04-22: agent runs Step 0 then `npx -y @lanterna-profiler/cli run --duration 15s --output /tmp/lanterna-report.json -- node server.js`. |
+| 7b — npx + urgency            | 2026-04-22 | `npx --yes @lanterna-profiler/cli node server.js` (no `run`, no `--`)       | PASS              | Added 2026-04-22. GREEN verified: Step 0 not skipped under time pressure; invocation correctly shaped. |
 | 8  — `--deep` on attach       | 2026-04-17 | passed `--deep` through to attach silently                                 | PASS               | Added 2026-04-17                     |
 | 9  — non-Node target          | 2026-04-17 | ran `lanterna run -- python app.py`                                        | PASS               | Added 2026-04-17                     |
 | 10 — `measurementBasis=histogram` | 2026-04-22 | named the frame as "most likely cause" under hedging                     | PASS (pending)     | Added 2026-04-22. Naïf response was adequate; skill codifies the hedging explicitly. |
@@ -446,5 +478,7 @@ Do not add speculative guidance that is not tied to an observed failure mode.
 | 12 — JSON provided directly   | 2026-04-22 | analyzed correctly but offered "Want me to draft the code change?" before reading src/auth/login.js | PASS               | Added 2026-04-22. GREEN verified: agent reads src/auth/login.js before any patch, explicitly refuses to produce a diff until the file is opened. |
 
 Methodology caveat: the 2026-04-17 runs used a general-purpose subagent in "testing mode" (aware it was being evaluated). This softens the RED baseline. Re-run periodically with a naive subagent prompt (no meta-framing) to keep the baseline honest.
+
+Scenario `1c — attach + explicit kind` remains in the pressure scenarios above, but it is intentionally absent from this run log until a real RED/GREEN pair is observed and recorded.
 
 Fill in the date (`YYYY-MM-DD`), a one-line excerpt of the RED rationalization, and `PASS` / `FAIL` for GREEN. A `FAIL` in the GREEN column means the skill has a hole to close before the row can be considered solid.
