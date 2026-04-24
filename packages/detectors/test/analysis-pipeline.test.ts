@@ -1,6 +1,8 @@
 import {
   buildLanternaReport,
+  createAnalysisPipeline,
   defineFindingAnalyzer,
+  defineProfileKind,
   defineSectionAnalyzer,
   serializeReport,
 } from '@lanterna-profiler/core';
@@ -133,6 +135,43 @@ describe('analysis pipeline', () => {
     ).toThrow(/duplicate section namespace/);
   });
 
+  it('rejects duplicate finding analyzer ids', () => {
+    const pipeline = createDefaultAnalysisPipeline();
+    const analyzer = defineFindingAnalyzer({
+      id: 'acme.duplicate',
+      kind: 'finding',
+      run() {
+        return [];
+      },
+    });
+
+    pipeline.register(analyzer);
+
+    expect(() => pipeline.register(analyzer)).toThrow(/duplicate finding analyzer id/);
+  });
+
+  it('rejects duplicate profile kind ids', () => {
+    const kind = defineProfileKind({
+      id: 'duplicate',
+      reportSectionKey: 'duplicate',
+      createProbe() {
+        return {
+          start: async () => {},
+          stop: async () => ({}),
+        };
+      },
+      createAnalysisContributor() {
+        return {
+          analyze() {},
+        };
+      },
+    });
+
+    expect(() => createAnalysisPipeline({ kinds: [kind, kind] })).toThrow(
+      /duplicate profile kind id/,
+    );
+  });
+
   it('fails serialization when builtin finding evidence contains unsupported extras', () => {
     const raw = makeRaw(loadProfile('sync-crypto'));
     const report = buildLanternaReport(
@@ -161,5 +200,67 @@ describe('analysis pipeline', () => {
     });
 
     expect(() => serializeReport(report, { pretty: false })).toThrow(/invalid lanterna report/);
+  });
+
+  it('records diagnostics for non-fatal analyzer failures', () => {
+    const raw = makeRaw(loadProfile('sync-crypto'), {
+      kinds: {
+        broken: { ok: true },
+      },
+    });
+    const pipeline = createAnalysisPipeline({
+      kinds: [
+        defineProfileKind({
+          id: 'broken',
+          reportSectionKey: 'broken',
+          createProbe() {
+            throw new Error('not used');
+          },
+          createAnalysisContributor() {
+            return {
+              analyze() {
+                throw new Error('contributor exploded');
+              },
+            };
+          },
+          finalize() {
+            throw new Error('finalize exploded');
+          },
+        }),
+      ],
+      sectionAnalyzers: [
+        defineSectionAnalyzer({
+          id: 'acme.bad-section',
+          kind: 'section',
+          namespace: 'acme.bad-section',
+          run() {
+            throw new Error('section exploded');
+          },
+        }),
+      ],
+      findingAnalyzers: [
+        defineFindingAnalyzer({
+          id: 'acme.bad-finding',
+          kind: 'finding',
+          run() {
+            throw new Error('finding exploded');
+          },
+        }),
+      ],
+    });
+
+    expect(() => pipeline.run(raw, defaultOptions)).not.toThrow();
+    expect(
+      (
+        raw.captureIntegrity as {
+          diagnostics?: Array<{ stage: string; kindId?: string; analyzerId?: string }>;
+        }
+      ).diagnostics,
+    ).toEqual([
+      expect.objectContaining({ stage: 'analysis-contributor', kindId: 'broken' }),
+      expect.objectContaining({ stage: 'section-analyzer', analyzerId: 'acme.bad-section' }),
+      expect.objectContaining({ stage: 'finding-analyzer', analyzerId: 'acme.bad-finding' }),
+      expect.objectContaining({ stage: 'finalize', kindId: 'broken' }),
+    ]);
   });
 });

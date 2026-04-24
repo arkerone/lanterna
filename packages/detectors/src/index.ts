@@ -16,6 +16,7 @@ export {
   resolveAttribution,
 } from './detectors/shared.js';
 export type { CpuDetectorReport, Detector, FindingContext } from './detectors/types.js';
+export * as extensionApi from './extension-api.js';
 export type {
   LanternaDetectorPlugin,
   LanternaPluginContext,
