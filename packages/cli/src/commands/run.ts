@@ -14,9 +14,15 @@ export async function runCommand(options: RunProfileOptions): Promise<void> {
   const indicator = startActivityIndicator(`Preparing run workflow for ${commandLabel}...`, {
     keepHistory: true,
   });
+  let targetDiagnostics = '';
+  const captureTargetDiagnostic = (chunk: string) => {
+    targetDiagnostics += chunk;
+  };
   try {
     const setupPipeline = await resolveSetupPipeline(options.detectors);
-    const kinds = createDefaultKindRegistry().resolveMany(options.kinds);
+    const kinds = createDefaultKindRegistry({
+      readStderrSoFar: () => targetDiagnostics,
+    }).resolveMany(options.kinds);
     const { detectors: _specs, kinds: _kindIds, ...profileOptions } = options;
     void _specs;
     void _kindIds;
@@ -24,6 +30,7 @@ export async function runCommand(options: RunProfileOptions): Promise<void> {
       {
         ...profileOptions,
         kinds,
+        onTargetDiagnosticChunk: captureTargetDiagnostic,
         ...(setupPipeline ? { setupPipeline } : {}),
       },
       (event) => {

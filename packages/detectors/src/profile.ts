@@ -30,6 +30,7 @@ export interface RunProfileOptions {
   detectors?: Detector[];
   analyzers?: (FindingAnalyzer | SectionAnalyzer)[];
   setupPipeline?: LanternaDetectorPlugin;
+  onTargetDiagnosticChunk?: (chunk: string) => void;
 }
 
 export interface AttachProfileOptions {
@@ -68,13 +69,13 @@ export async function runProfile(
   options: RunProfileOptions,
   onProgress?: (event: RunProgressEvent) => void,
 ): Promise<LanternaReport> {
-  let stderrBuffer = '';
-  const captureStderr = (chunk: string) => {
-    stderrBuffer += chunk;
+  let targetDiagnosticBuffer = '';
+  const captureTargetDiagnostic = (chunk: string) => {
+    targetDiagnosticBuffer += chunk;
+    options.onTargetDiagnosticChunk?.(chunk);
   };
-  void captureStderr;
   const defaultCpuKind = createCpuProfileKind({
-    readStderrSoFar: () => stderrBuffer,
+    readStderrSoFar: () => targetDiagnosticBuffer,
   });
   const kinds = options.kinds ?? [defaultCpuKind];
 
@@ -88,6 +89,8 @@ export async function runProfile(
         command: options.command,
         sampleIntervalMicros: options.sampleIntervalMicros,
         deep: options.deep,
+        onStdoutChunk: captureTargetDiagnostic,
+        onStderrChunk: captureTargetDiagnostic,
         onProgress,
       },
       kinds,

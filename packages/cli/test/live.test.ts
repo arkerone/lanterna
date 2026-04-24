@@ -62,9 +62,15 @@ async function expectInspectorFailure(args: string[]): Promise<void> {
   );
   const stderr = String(failure.stderr ?? '');
   if (stderr.length > 0) {
-    assert.match(
-      stderr,
-      /(unable to start Node inspector for target process: .*Lanterna requires Node inspector support|target exited before inspector was ready .*operation not permitted|timed out waiting for inspector URL .*operation not permitted)/,
+    assert.ok(
+      /(unable to start Node inspector for target process\. Lanterna requires Node inspector support|target exited before inspector was ready|timed out waiting for inspector URL)/.test(
+        stderr,
+      ),
+      `expected inspector startup failure message in stderr: ${stderr}`,
+    );
+    assert.ok(
+      /operation not permitted|not allowed in NODE_OPTIONS/.test(stderr),
+      `expected underlying inspector failure in stderr: ${stderr}`,
     );
   }
 }
@@ -167,6 +173,7 @@ interface SpawnedCommandResult {
 }
 
 interface CpuProfileLike {
+  deopts: unknown[];
   eventLoop: {
     available: boolean;
     stallIntervals: unknown[];
@@ -313,6 +320,71 @@ describe('live profiling', () => {
     assert.equal(report.meta.mode, 'spawn');
     assert.equal(report.meta.captureIntegrity.controlChannel, true);
     assert.ok(report.meta.durationMs > 0);
+  });
+
+  it('relays target stderr while profiling a spawned process', async () => {
+    if (!(await inspectorSupported())) {
+      await expectInspectorFailure([
+        'run',
+        '--pretty',
+        '--',
+        'node',
+        '-e',
+        'console.error("lanterna-target-stderr-marker")',
+      ]);
+      return;
+    }
+
+    const { stderr } = await execFileAsync(
+      'node',
+      [
+        binPath,
+        'run',
+        '--pretty',
+        '--',
+        'node',
+        '-e',
+        'console.error("lanterna-target-stderr-marker")',
+      ],
+      { cwd: repoRoot, timeout: 10_000, maxBuffer: 1024 * 1024 * 4 },
+    );
+
+    assert.match(stderr, /lanterna-target-stderr-marker/);
+  });
+
+  it('collects deopts from target diagnostic output during deep spawned runs', async () => {
+    if (!(await inspectorSupported())) {
+      await expectInspectorFailure([
+        'run',
+        '--deep',
+        '--pretty',
+        '--',
+        'node',
+        '-e',
+        'function churn(value) { return value.x + 1; } const shapes = [{ x: 1 }, { x: 2 }, { x: "3" }, { y: 4 }]; for (let i = 0; i < 2e6; i++) churn(shapes[i % shapes.length]);',
+      ]);
+      return;
+    }
+
+    const { stdout } = await execFileAsync(
+      'node',
+      [
+        binPath,
+        'run',
+        '--deep',
+        '--pretty',
+        '--',
+        'node',
+        '-e',
+        'function churn(value) { return value.x + 1; } const shapes = [{ x: 1 }, { x: 2 }, { x: "3" }, { y: 4 }]; for (let i = 0; i < 2e6; i++) churn(shapes[i % shapes.length]);',
+      ],
+      { cwd: repoRoot, timeout: 10_000, maxBuffer: 1024 * 1024 * 8 },
+    );
+
+    const report = JSON.parse(stdout);
+    const cpuProfile = getCpuProfile(report);
+    assert.equal(report.meta.deep, true);
+    assert.ok(cpuProfile.deopts.length > 0, 'expected --deep to parse target deopts');
   });
 
   it('captures real event-loop stalls and correlated hotspots', async () => {

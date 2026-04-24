@@ -1,7 +1,8 @@
 import { spawn } from 'node:child_process';
+import { writeSync } from 'node:fs';
 import { writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { connectCdp } from '../../inspector/client.js';
 import { attachControlChannel } from '../../runtime-signals/control-channel.js';
 import { createCaptureIntegrity, mergeCaptureIntegrityCounters } from '../core/session.js';
@@ -22,8 +23,10 @@ export class SpawnSource implements ProfileSource<SpawnStartOptions> {
     options: SpawnStartOptions,
     preload: PreloadContribution,
   ): Promise<ConnectedSource> {
-    const [command, ...args] = options.command;
+    const [command, ...rawArgs] = options.command;
     if (!command) throw new Error('command is empty');
+    const args =
+      options.deep && isNodeExecutable(command) ? ['--trace-deopt', ...rawArgs] : rawArgs;
 
     options.onProgress?.({
       stage: 'spawn-target',
@@ -36,9 +39,7 @@ export class SpawnSource implements ProfileSource<SpawnStartOptions> {
     );
     await writeFile(preloadPath, preload.preloadScript, { encoding: 'utf8' });
 
-    const nodeOptions = ['--inspect-brk=0'];
-    if (options.deep) nodeOptions.push('--trace-deopt');
-    nodeOptions.push(`--require=${preloadPath}`);
+    const nodeOptions = ['--inspect-brk=0', `--require=${preloadPath}`];
     const env: NodeJS.ProcessEnv = {
       ...process.env,
       NODE_OPTIONS: [process.env.NODE_OPTIONS, ...nodeOptions].filter(Boolean).join(' '),
@@ -48,13 +49,24 @@ export class SpawnSource implements ProfileSource<SpawnStartOptions> {
 
     const child = spawn(command, args, {
       env,
-      stdio: ['inherit', 'inherit', 'pipe', 'pipe'],
+      stdio: ['inherit', options.deep ? 'pipe' : 'inherit', 'pipe', 'pipe'],
     });
+
+    if (options.deep && child.stdout) {
+      child.stdout.on('data', (chunk: Buffer | string) => {
+        const text = chunk.toString();
+        options.onStdoutChunk?.(text);
+        writeTargetStderr(text);
+      });
+    }
 
     const stderrBuffer: string[] = [];
     if (child.stderr) {
       child.stderr.on('data', (chunk: Buffer | string) => {
-        stderrBuffer.push(chunk.toString());
+        const text = chunk.toString();
+        stderrBuffer.push(text);
+        options.onStderrChunk?.(text);
+        writeTargetStderr(text);
       });
     }
 
@@ -185,4 +197,17 @@ export class SpawnSource implements ProfileSource<SpawnStartOptions> {
 
 export async function createSpawnSource(): Promise<SpawnSource> {
   return new SpawnSource();
+}
+
+function writeTargetStderr(chunk: string): void {
+  try {
+    writeSync(2, chunk);
+  } catch {
+    // Preserve profiling if the parent stderr pipe closes early.
+  }
+}
+
+function isNodeExecutable(command: string): boolean {
+  const executable = basename(command).toLowerCase();
+  return executable === 'node' || executable === 'node.exe';
 }

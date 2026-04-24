@@ -9,6 +9,8 @@ export interface SpawnStartOptions {
   command: string[];
   sampleIntervalMicros: number;
   deep: boolean;
+  onStdoutChunk?: (chunk: string) => void;
+  onStderrChunk?: (chunk: string) => void;
   onProgress?: (event: {
     stage:
       | 'spawn-target'

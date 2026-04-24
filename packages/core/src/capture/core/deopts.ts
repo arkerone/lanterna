@@ -8,6 +8,7 @@ export function parseDeoptsFromStderr(stderr: string): RawDeopt[] {
   const lines = stderr.split('\n');
   const bailoutPattern =
     /bailout .*?kind:\s*([^,]+),\s*reason:\s*([^)]+)\).*?<[^>]*>\s+(\S+)\s+at\s+(\S+):(\d+)/i;
+  const genericBailoutPattern = /bailout .*?kind:\s*([^,]+),\s*reason:\s*([^)]+)\)/i;
   const deoptPattern =
     /deoptimiz\w+\s+.*?\(([^)]+)\):\s*(?:begin|end)\s+\S+\s+<[^>]*>\s+(\S+).*?reason:\s*([^,;]+)/i;
   const deoptCountsByKey = new Map<string, RawDeopt & { count: number }>();
@@ -26,6 +27,26 @@ export function parseDeoptsFromStderr(stderr: string): RawDeopt[] {
         file: match[4] ?? '',
         line: Number(match[5]) || 0,
         reason: (match[2] ?? '').trim(),
+        bailoutType: (match[1] ?? '').trim(),
+        count: 1,
+      });
+      continue;
+    }
+
+    match = genericBailoutPattern.exec(line);
+    if (match) {
+      const reason = (match[2] ?? '').trim();
+      const key = `<unknown>|${reason}`;
+      const existing = deoptCountsByKey.get(key);
+      if (existing) {
+        existing.count += 1;
+        continue;
+      }
+      deoptCountsByKey.set(key, {
+        function: '<unknown>',
+        file: '',
+        line: 0,
+        reason,
         bailoutType: (match[1] ?? '').trim(),
         count: 1,
       });
