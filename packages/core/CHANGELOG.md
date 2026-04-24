@@ -20,7 +20,7 @@
 
   - `ProfileKind` interface + `ProfileKindRegistry` + `defineProfileKind` in `@lanterna-profiler/core` for plugging additional kinds.
   - Built-in `cpuProfileKind` factory (`createCpuProfileKind`) wiring the CPU probe and analysis contributor.
-  - `@lanterna-profiler/detectors` exposes `createDefaultKindRegistry()` for the CLI.
+  - `@lanterna-profiler/core` exposes `createDefaultKindRegistry()` for drivers such as the CLI.
   - CLI gains `--kind <id>` (repeatable or comma-separated), default `cpu`.
 
 ## 0.1.1

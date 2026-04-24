@@ -111,16 +111,16 @@ See [`@lanterna-profiler/detectors`](../detectors) for the plugin contract and h
 
 ## What's inside
 
-The CLI is a thin wrapper around [`@lanterna-profiler/detectors`](../detectors) (which wraps [`@lanterna-profiler/core`](../core)). It adds:
+The CLI is a thin wrapper around [`@lanterna-profiler/core`](../core) for orchestration and [`@lanterna-profiler/detectors`](../detectors) for the built-in detector pack. It adds:
 
 - argument parsing (`commander`)
 - interactive process picker (`@clack/prompts`, `ps-list`, `cli-table3`)
 - progress indicator (`ora`, `chalk`)
 - report output (stdout or file)
 
-If you need programmatic access, prefer `runProfile` / `attachProfile` from `@lanterna-profiler/detectors`.
+If you need programmatic access, prefer `runProfile` / `attachProfile` from `@lanterna-profiler/core` and pass built-in analyzers from `@lanterna-profiler/detectors` when you want the default rules.
 
 ## Related packages
 
-- [`@lanterna-profiler/core`](../core) - headless capture + pipeline primitives.
-- [`@lanterna-profiler/detectors`](../detectors) - default detector pack + programmatic facades.
+- [`@lanterna-profiler/core`](../core) - capture orchestration, profile kinds, pipeline, and report APIs.
+- [`@lanterna-profiler/detectors`](../detectors) - default detector pack and plugin helpers.

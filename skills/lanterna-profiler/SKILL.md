@@ -40,6 +40,7 @@ Do not use when:
 - `--kind <id>` works on both `run` and `attach`; repeat it or use `--kind cpu,memory`
 - Today the only built-in profile kind is `cpu`, so both modes default to `--kind cpu`
 - Unknown kind ids fail immediately with `unknown profile kind(s): <ids>. Available kinds: cpu`
+- Programmatic API boundary: use `runProfile` / `attachProfile` and `createDefaultKindRegistry` from `@lanterna-profiler/core`; use `@lanterna-profiler/detectors` only for built-in detector analyzers, detector adapters such as `createFindingAnalyzerFromDetector`, thresholds, and plugin helper types.
 - For HTTP servers, profile with load rather than idle traffic
 - If `profiles.cpu.summary.idleRatio > 0.8`, the run is mostly idle and should usually be repeated with load
 - If `eventLoop.available` is `false`, avoid strong latency attribution
