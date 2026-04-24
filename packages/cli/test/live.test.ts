@@ -624,7 +624,7 @@ describe('live profiling', () => {
         ['attach', '--inspect-url', wsUrl, '--output', outputPath, '--pretty', '--duration', '30s'],
         'SIGTERM',
         {
-          delayMs: 10_000,
+          delayMs: 2_500,
           signalAfterStderr: /Capture is running/,
         },
       );
