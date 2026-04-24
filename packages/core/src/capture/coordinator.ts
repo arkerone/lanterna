@@ -10,23 +10,18 @@ import { readGcEvents } from '../runtime-signals/readers/gc.js';
 import { readRuntimeIntegrity } from '../runtime-signals/readers/integrity.js';
 import { HEARTBEAT_RESOLUTION_MS } from '../shared/config.js';
 import { logger } from '../shared/logger.js';
+import { emitCaptureProgress } from './coordinator/progress.js';
+import { dedupeTimedEvents, resolveEventLoopHistogram } from './coordinator/runtime-signals.js';
+import { CaptureSession } from './coordinator/session-cleanup.js';
 import {
   captureDiagnosticMessage,
   mergeCaptureIntegrityCounters,
   recordCaptureDiagnostic,
 } from './core/session.js';
-import {
-  isUsableEventLoopSummary,
-  mergeTimedSamples,
-  normalizeTimedEvents,
-  summarizeEventLoop,
-} from './core/timed-signals.js';
+import { mergeTimedSamples, normalizeTimedEvents } from './core/timed-signals.js';
 import type {
   CaptureBundle,
   CaptureIntegrity,
-  ConnectedSource,
-  EventLoopHistogram,
-  EventLoopSample,
   LiveSourceSignals,
   PreloadContribution,
   ProfileSource,
@@ -34,8 +29,12 @@ import type {
   RuntimeSignalsData,
 } from './core/types.js';
 
+export { createManualStopSignal } from './coordinator/stop-handling.js';
+
+import { waitForStop } from './coordinator/stop-handling.js';
+import { withTimeout, withTimeoutResult } from './coordinator/timeouts.js';
+
 const PROBE_STOP_TIMEOUT_MS = 5000;
-const CDP_CLOSE_TIMEOUT_MS = 2000;
 
 export interface RunCaptureOptions<TSourceOptions> {
   source: ProfileSource<TSourceOptions>;
@@ -243,144 +242,4 @@ export async function runCapture<TSourceOptions>(
   } finally {
     await session.cleanup();
   }
-}
-
-class CaptureSession {
-  appCompleted = false;
-  private cdpClosed = false;
-  private finalized = false;
-
-  constructor(private readonly connected: ConnectedSource) {}
-
-  async closeCdp(): Promise<void> {
-    if (this.cdpClosed) return;
-    this.cdpClosed = true;
-    try {
-      const result = await withTimeoutResult(this.connected.cdp.close(), CDP_CLOSE_TIMEOUT_MS);
-      if (!result.ok) {
-        recordCaptureDiagnostic(this.connected.initialIntegrity, {
-          stage: 'finalize',
-          message: `timed out closing CDP connection after ${CDP_CLOSE_TIMEOUT_MS}ms`,
-        });
-      }
-    } catch (error) {
-      recordCaptureDiagnostic(this.connected.initialIntegrity, {
-        stage: 'finalize',
-        message: `failed to close CDP connection: ${captureDiagnosticMessage(error)}`,
-      });
-    }
-  }
-
-  async finalize(options: { suppressErrors: boolean }): Promise<void> {
-    if (this.finalized) return;
-    this.finalized = true;
-    try {
-      await this.connected.finalize({ appCompleted: this.appCompleted });
-    } catch (error) {
-      recordCaptureDiagnostic(this.connected.initialIntegrity, {
-        stage: 'finalize',
-        message: captureDiagnosticMessage(error),
-      });
-      if (!options.suppressErrors) throw error;
-    }
-  }
-
-  async cleanup(): Promise<void> {
-    await this.closeCdp();
-    await this.finalize({ suppressErrors: true });
-  }
-}
-
-function emitCaptureProgress(
-  sourceOptions: unknown,
-  event: { stage: 'start-capture' | 'capture-running' | 'finalize-capture'; message: string },
-): void {
-  if (!sourceOptions || typeof sourceOptions !== 'object') return;
-  const onProgress = (sourceOptions as { onProgress?: unknown }).onProgress;
-  if (typeof onProgress !== 'function') return;
-  onProgress(event);
-}
-
-async function waitForStop<TOptions>(
-  connected: ConnectedSource,
-  options: RunCaptureOptions<TOptions>,
-): Promise<'exit' | 'timeout' | 'signal'> {
-  let timeout: NodeJS.Timeout | undefined;
-  const promises: Array<Promise<'exit' | 'timeout' | 'signal'>> = [
-    connected.waitForExit().then<'exit'>(() => 'exit'),
-  ];
-  if (options.durationMs !== undefined) {
-    promises.push(
-      new Promise<'timeout'>((resolve) => {
-        timeout = setTimeout(() => resolve('timeout'), options.durationMs);
-      }),
-    );
-  }
-  if (options.stopSignal) {
-    promises.push(options.stopSignal.then<'signal'>(() => 'signal'));
-  }
-  try {
-    return await Promise.race(promises);
-  } finally {
-    if (timeout) clearTimeout(timeout);
-  }
-}
-
-async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, fallback: T): Promise<T> {
-  let timeout: NodeJS.Timeout | undefined;
-  try {
-    return await Promise.race([
-      promise.catch(() => fallback),
-      new Promise<T>((resolve) => {
-        timeout = setTimeout(() => resolve(fallback), timeoutMs);
-      }),
-    ]);
-  } finally {
-    if (timeout) clearTimeout(timeout);
-  }
-}
-
-async function withTimeoutResult<T>(
-  promise: Promise<T>,
-  timeoutMs: number,
-): Promise<{ ok: true; value: T } | { ok: false }> {
-  let timeout: NodeJS.Timeout | undefined;
-  try {
-    return await Promise.race([
-      promise.then((value) => ({ ok: true as const, value })),
-      new Promise<{ ok: false }>((resolve) => {
-        timeout = setTimeout(() => resolve({ ok: false }), timeoutMs);
-      }),
-    ]);
-  } finally {
-    if (timeout) clearTimeout(timeout);
-  }
-}
-
-function resolveEventLoopHistogram(
-  eventLoopRead: EventLoopReadResult,
-  normalizedEventLoopSamples: EventLoopSample[],
-  resolutionMs: number | undefined,
-): EventLoopHistogram | undefined {
-  if (isUsableEventLoopSummary(eventLoopRead.summary, resolutionMs ?? 20)) {
-    return eventLoopRead.summary;
-  }
-  return summarizeEventLoop(normalizedEventLoopSamples);
-}
-
-function dedupeTimedEvents(events: RawGcEvent[]): RawGcEvent[] {
-  const byKey = new Map<string, RawGcEvent>();
-  for (const event of events) {
-    const key = `${event.atMs.toFixed(3)}|${event.kind}|${event.durationMs.toFixed(3)}`;
-    byKey.set(key, event);
-  }
-  return [...byKey.values()];
-}
-
-export function createManualStopSignal(): { trigger: () => void; promise: Promise<void> } {
-  let trigger = () => {};
-  const promise = new Promise<void>((resolve) => {
-    trigger = resolve;
-  });
-  return { trigger, promise };
 }
