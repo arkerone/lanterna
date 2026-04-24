@@ -1,11 +1,12 @@
 import {
+  type AttachProfileOptions,
   attachProfile,
   createDefaultKindRegistry,
-  type AttachProfileOptions as DetectorAttachProfileOptions,
-  type RunProfileOptions as DetectorRunProfileOptions,
-  type LanternaDetectorPlugin,
+  type ProfilePipelinePlugin,
+  type RunProfileOptions,
   runProfile,
-} from '@lanterna-profiler/detectors';
+} from '@lanterna-profiler/core';
+import { createBuiltInFindingAnalyzers } from '@lanterna-profiler/detectors';
 import { startActivityIndicator } from '../activity-indicator.js';
 import { loadLanternaConfig } from '../config.js';
 import { writeReportOutput } from '../output.js';
@@ -21,7 +22,7 @@ type ParsedProfileOptions = {
 type ExecuteProfileCommandOptions =
   | {
       mode: 'run';
-      options: ParsedProfileOptions & Omit<DetectorRunProfileOptions, 'kinds' | 'detectors'>;
+      options: ParsedProfileOptions & Omit<RunProfileOptions, 'kinds'>;
       initialMessage: string;
       successMessage: string;
       failureMessage: string;
@@ -30,7 +31,7 @@ type ExecuteProfileCommandOptions =
     }
   | {
       mode: 'attach';
-      options: ParsedProfileOptions & Omit<DetectorAttachProfileOptions, 'kinds' | 'detectors'>;
+      options: ParsedProfileOptions & Omit<AttachProfileOptions, 'kinds'>;
       initialMessage: string;
       successMessage: string;
       failureMessage: string;
@@ -67,8 +68,8 @@ export async function executeProfileCommand(command: ExecuteProfileCommandOption
 
 async function runProfileCommand(
   command: ExecuteProfileCommandOptions,
-  kinds: DetectorRunProfileOptions['kinds'],
-  setupPipeline: LanternaDetectorPlugin | undefined,
+  kinds: RunProfileOptions['kinds'],
+  setupPipeline: ProfilePipelinePlugin | undefined,
   onProgressMessage: (message: string) => void,
 ) {
   if (command.mode === 'run') {
@@ -79,6 +80,7 @@ async function runProfileCommand(
       {
         ...profileOptions,
         kinds,
+        analyzers: createBuiltInFindingAnalyzers(),
         onTargetDiagnosticChunk: command.onTargetDiagnosticChunk,
         ...(setupPipeline ? { setupPipeline } : {}),
       },
@@ -95,6 +97,7 @@ async function runProfileCommand(
     {
       ...profileOptions,
       kinds,
+      analyzers: createBuiltInFindingAnalyzers(),
       ...(setupPipeline ? { setupPipeline } : {}),
     },
     (event) => {
@@ -105,7 +108,7 @@ async function runProfileCommand(
 
 async function resolveSetupPipeline(
   flagSpecs: string[],
-): Promise<LanternaDetectorPlugin | undefined> {
+): Promise<ProfilePipelinePlugin | undefined> {
   const cwd = process.cwd();
   const config = await loadLanternaConfig(cwd);
   const specs = [...(config?.detectors ?? []), ...flagSpecs];

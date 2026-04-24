@@ -2,7 +2,7 @@
 
 Headless capture + analysis primitives for [Lanterna](https://github.com/arkerone/lanterna), the agent-first Node.js profiler.
 
-This package is **TTY-free**: no spinner, no prompts, no process listing. It exposes the building blocks you need to capture profile data, run an analysis pipeline, and build a `LanternaReport`. Bring your own detectors, or install [`@lanterna-profiler/detectors`](../detectors) for the batteries-included pack.
+This package is **TTY-free**: no spinner, no prompts, no process listing. It exposes the orchestration APIs you need to capture profile data, run an analysis pipeline, and build a `LanternaReport`. Bring your own analyzers, or install [`@lanterna-profiler/detectors`](../detectors) for the default detector pack.
 
 ## Install
 
@@ -13,6 +13,7 @@ npm install @lanterna-profiler/core
 ## What's in the box
 
 - **Capture coordinator** — `runCapture({ source, kinds, ... })` orchestrates one or more probes against a live target and returns a `CaptureBundle`.
+- **Profile orchestration** — `runProfile(...)` and `attachProfile(...)` run capture, analysis, and report construction without CLI UI.
 - **Sources** — `SpawnSource` / `AttachSource` obtain a CDP connection (`ProfileSource.connect()`); the coordinator drives everything else.
 - **Profile kinds** — `ProfileKind`, `CaptureProbe`, `KindAnalysisContributor`, plus the built-in `createCpuProfileKind()` factory.
 - **Analysis pipeline** — `createAnalysisPipeline({ kinds, ... })` with `defineFindingAnalyzer` / `defineSectionAnalyzer` to register custom rules.
@@ -83,5 +84,5 @@ Out of the box `core` ships the CPU kind. Future memory/async kinds can be added
 
 ## Related packages
 
-- [`@lanterna-profiler/detectors`](../detectors) — default detector pack + `runProfile` / `attachProfile` facades + `createDefaultKindRegistry()`.
+- [`@lanterna-profiler/detectors`](../detectors) — default detector pack, analyzer adapters, thresholds, and plugin helper types.
 - [`@lanterna-profiler/cli`](../cli) — `lanterna` binary for humans.

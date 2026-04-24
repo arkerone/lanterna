@@ -47,8 +47,8 @@ The profiled target must run on Node.js with inspector support.
 | Package | What it is |
 | --- | --- |
 | [`@lanterna-profiler/cli`](packages/cli) | The `lanterna` binary - spawn/attach, argument parsing, interactive picker, report output. |
-| [`@lanterna-profiler/detectors`](packages/detectors) | Default detector pack + `runProfile` / `attachProfile` programmatic facades. |
-| [`@lanterna-profiler/core`](packages/core) | Headless capture + analysis pipeline primitives. No default detectors. |
+| [`@lanterna-profiler/core`](packages/core) | Capture orchestration, profile kinds, analysis pipeline, report building, and `runProfile` / `attachProfile`. |
+| [`@lanterna-profiler/detectors`](packages/detectors) | Default CPU detector pack, detector adapters, thresholds, and plugin helper types. |
 
 External detectors are first-class: publish a plugin (ES module with a default-exported register function) and load it via `--detectors <spec>` or `.lanterna.json`. See [`@lanterna-profiler/detectors`](packages/detectors#writing-a-detector-plugin) for the contract and [`@lanterna-profiler/cli`](packages/cli#loading-external-detectors) for loading.
 
@@ -60,11 +60,11 @@ npm install -g @lanterna-profiler/cli
 # or, without installing:
 npx @lanterna-profiler/cli --help
 
-# Programmatic (batteries-included)
-npm install @lanterna-profiler/detectors
-
-# Programmatic (headless, bring-your-own detectors)
+# Programmatic orchestration
 npm install @lanterna-profiler/core
+
+# Default detector pack
+npm install @lanterna-profiler/detectors
 ```
 
 ## Quick Start
@@ -289,16 +289,17 @@ Config entries load first, then any flag-specified plugins. See [`@lanterna-prof
 ## Programmatic API
 
 <details>
-<summary><strong>Batteries-included (<code>@lanterna-profiler/detectors</code>)</strong></summary>
+<summary><strong>Profile orchestration + default detectors</strong></summary>
 
 ```ts
 import {
-  analyzeCapture,
   attachProfile,
+  createDefaultKindRegistry,
   runProfile,
   type LanternaReport,
-} from '@lanterna-profiler/detectors';
-import { serializeReport } from '@lanterna-profiler/core';
+  serializeReport,
+} from '@lanterna-profiler/core';
+import { createBuiltInFindingAnalyzers } from '@lanterna-profiler/detectors';
 
 const report: LanternaReport = await runProfile({
   command: ['node', 'app.js'],
@@ -306,18 +307,21 @@ const report: LanternaReport = await runProfile({
   sampleIntervalMicros: 1000,
   deep: false,
   pretty: true,
+  analyzers: createBuiltInFindingAnalyzers(),
 });
 ```
 
 - `runProfile(...)` - spawn a Node process, capture, analyze, return a `LanternaReport`.
 - `attachProfile(...)` - attach to an existing inspector target and return a `LanternaReport`.
-- `analyzeCapture(bundle, options)` - run the default pipeline on a `CaptureBundle`.
 - `createDefaultKindRegistry(...)` - registry pre-loaded with the CPU kind (plug extras here).
+- `createBuiltInFindingAnalyzers()` - default CPU detector pack, wrapped as pipeline analyzers.
 - `DETECTOR_THRESHOLDS` - thresholds used by the built-in rules.
 
-Both `runProfile` and `attachProfile` accept extension options so you can add detectors, analyzers, or additional profile kinds without going through the CLI:
+Both `runProfile` and `attachProfile` accept extension options so you can add analyzers or additional profile kinds without going through the CLI:
 
 ```ts
+import { createFindingAnalyzerFromDetector } from '@lanterna-profiler/detectors';
+
 await runProfile({
   command: ['node', 'app.js'],
   durationMs: 15_000,
@@ -325,8 +329,10 @@ await runProfile({
   deep: false,
   pretty: false,
   // kinds: [cpuKind, myMemoryKind],        // omit to default to [cpu]
-  detectors: [myDetector],                  // wrapped as FindingAnalyzers automatically (tagged profileKind: 'cpu')
-  analyzers: [mySectionAnalyzer],           // raw FindingAnalyzer | SectionAnalyzer
+  analyzers: [
+    createFindingAnalyzerFromDetector(myDetector),
+    mySectionAnalyzer,
+  ],
   setupPipeline: async (pipeline, ctx) => { /* full-control hook */ },
 });
 ```
@@ -355,7 +361,7 @@ import {
 } from '@lanterna-profiler/core';
 ```
 
-Use core when you want full control over the pipeline — no default detectors or kinds are registered. Compose your own `runCapture({ source, kinds, ... })` call, then feed the resulting `CaptureBundle` into a pipeline you built with `createAnalysisPipeline({ kinds })` plus `pipeline.register(defineFindingAnalyzer({...}))` / `defineSectionAnalyzer({...})`.
+Use low-level core APIs when you want full control over capture and analysis. Compose your own `runCapture({ source, kinds, ... })` call, then feed the resulting `CaptureBundle` into a pipeline you built with `createAnalysisPipeline({ kinds })` plus `pipeline.register(defineFindingAnalyzer({...}))` / `defineSectionAnalyzer({...})`.
 
 </details>
 
@@ -371,14 +377,14 @@ Use core when you want full control over the pipeline — no default detectors o
 
 ```
 packages/
-  core/       @lanterna-profiler/core       - capture (spawn/attach), runtime signals, analysis pipeline, report
-  detectors/  @lanterna-profiler/detectors  - default detector pack, runProfile / attachProfile / analyzeCapture
+  core/       @lanterna-profiler/core       - capture orchestration, profile kinds, analysis pipeline, report
+  detectors/  @lanterna-profiler/detectors  - default detector pack, analyzer adapters, analyzeCapture
   cli/        @lanterna-profiler/cli        - `lanterna` binary, argument parsing, output, interactive picker
 skills/
   lanterna-profiler/               - agent-oriented profiling workflow for Claude Code
 ```
 
-Dependency direction: `cli → detectors → core`.
+Dependency direction: `cli → core`, `cli → detectors`, and `detectors → core`. `core` never imports `detectors`.
 
 </details>
 

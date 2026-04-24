@@ -1,9 +1,6 @@
-import {
-  createCpuProfileKind,
-  createKindRegistry,
-  type ProfileKind,
-  type ProfileKindRegistry,
-} from '@lanterna-profiler/core';
+import { createKindRegistry, type ProfileKindRegistry } from '../kinds/core/registry.js';
+import type { ProfileKind } from '../kinds/core/types.js';
+import { createCpuProfileKind } from '../kinds/cpu/index.js';
 
 export interface DefaultKindRegistryOptions {
   /** Supplies captured stderr to the CPU kind (needed for `--deep` deopt parsing). */
@@ -13,8 +10,8 @@ export interface DefaultKindRegistryOptions {
 }
 
 /**
- * Builds a {@link ProfileKindRegistry} containing the built-in CPU kind plus
- * any extra kinds passed in. The CLI uses this to resolve `--kind <id>` flags.
+ * Builds a ProfileKindRegistry containing the built-in CPU kind plus any
+ * extra kinds passed in. Drivers use this to resolve `--kind <id>` flags.
  */
 export function createDefaultKindRegistry(
   options: DefaultKindRegistryOptions = {},

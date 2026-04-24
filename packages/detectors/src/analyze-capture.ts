@@ -3,7 +3,7 @@ import {
   type AnalysisPipeline,
   type AnalysisResult,
   type CaptureBundle,
-  createAnalysisPipeline,
+  createDefaultAnalysisPipeline as createCoreDefaultAnalysisPipeline,
   createCpuProfileKind,
   type ProfileKind,
 } from '@lanterna-profiler/core';
@@ -26,12 +26,12 @@ export function analyzeCapture(bundle: CaptureBundle, options: AnalysisOptions):
 export function createDefaultAnalysisPipeline(extraKinds: ProfileKind[] = []): AnalysisPipeline {
   const cpuKind = createCpuProfileKind({
     // The analysis pipeline doesn't have access to a stderr buffer — this
-    // stub is a no-op. During actual capture (`runCapture`), the caller
-    // should construct the kind with a real stderr reader.
+    // stub is a no-op. During full profiling, the caller should construct the
+    // kind with a real stderr reader.
     readStderrSoFar: () => '',
   });
-  return createAnalysisPipeline({
+  return createCoreDefaultAnalysisPipeline({
     kinds: [cpuKind, ...extraKinds],
-    findingAnalyzers: createBuiltInFindingAnalyzers(),
+    analyzers: createBuiltInFindingAnalyzers(),
   });
 }

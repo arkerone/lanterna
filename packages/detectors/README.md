@@ -1,10 +1,10 @@
 # @lanterna-profiler/detectors
 
-Default detector pack + ready-to-use profiling facades for [Lanterna](https://github.com/arkerone/lanterna), the agent-first Node.js profiler.
+Default detector pack for [Lanterna](https://github.com/arkerone/lanterna), the agent-first Node.js profiler.
 
-This is the **batteries-included** package: one function call captures a profile, runs the built-in detectors, and returns a structured `LanternaReport`. If you want the low-level primitives without the defaults, use [`@lanterna-profiler/core`](../core) directly.
+This package contains the built-in CPU detectors, thresholds, detector adapters, and plugin helper types. Capture orchestration lives in [`@lanterna-profiler/core`](../core).
 
-> Schema v2: CPU data lives under `report.profiles.cpu.*`. `runProfile` / `attachProfile` accept a `kinds` option (default `[cpu]`). The kind registry (`createDefaultKindRegistry`) is the seam where future `memory`/`async` kinds will plug in.
+> Schema v2: CPU data lives under `report.profiles.cpu.*`. Programmatic runs should use `runProfile` / `attachProfile` from `@lanterna-profiler/core` and pass detector analyzers from this package.
 
 ## Install
 
@@ -12,7 +12,7 @@ This is the **batteries-included** package: one function call captures a profile
 npm install @lanterna-profiler/detectors
 ```
 
-`@lanterna-profiler/core` is a direct dependency and comes along automatically.
+Install `@lanterna-profiler/core` as well when your application imports orchestration APIs such as `runProfile` / `attachProfile` directly.
 
 ## Built-in detectors
 
@@ -29,10 +29,11 @@ npm install @lanterna-profiler/detectors
 
 Thresholds live in `DETECTOR_THRESHOLDS` (exported from this package, not core).
 
-## Usage - one-shot profile
+## Usage - profile with built-in detectors
 
 ```ts
-import { runProfile } from '@lanterna-profiler/detectors';
+import { runProfile } from '@lanterna-profiler/core';
+import { createBuiltInFindingAnalyzers } from '@lanterna-profiler/detectors';
 
 const report = await runProfile({
   command: ['node', 'app.js'],
@@ -40,6 +41,7 @@ const report = await runProfile({
   sampleIntervalMicros: 1000,
   deep: false,
   pretty: true,
+  analyzers: createBuiltInFindingAnalyzers(),
 });
 
 console.log(report.findings);
@@ -59,11 +61,8 @@ const report = buildLanternaReport(bundle, analysis, ['cpu'], options);
 
 ## Exports
 
-- `runProfile(options, onProgress?)` - spawn + capture + analyze + report.
-- `attachProfile(options, onProgress?)` - attach to a running process + capture + analyze + report.
 - `analyzeCapture(bundle, options)` - run the default pipeline on a `CaptureBundle`.
 - `createDefaultAnalysisPipeline(extraKinds?)` - pre-populated pipeline (CPU kind + built-ins) you can extend with `register(...)`.
-- `createDefaultKindRegistry(options?)` - `ProfileKindRegistry` pre-loaded with the CPU kind. Used by the CLI to resolve `--kind <id>`.
 - `defaultDetectors` - the raw detector descriptors (for introspection or custom composition).
 - `createBuiltInFindingAnalyzers()` - the same detectors wrapped as `FindingAnalyzer` instances.
 - `createFindingAnalyzerFromDetector(detector)` - wrap a single `Detector` into a `FindingAnalyzer` (auto-tags findings with `profileKind: 'cpu'`).
@@ -121,9 +120,12 @@ export default register;
 
 Publish that module (e.g. `@acme/lanterna-detectors-prisma`) and users can load it from the CLI with `--detectors @acme/lanterna-detectors-prisma` or through `.lanterna.json`. See [`@lanterna-profiler/cli`](../cli) for CLI loading details, and [`@lanterna-profiler/core`](../core) for the pipeline / analyzer primitives.
 
-Programmatically, `runProfile` / `attachProfile` also accept custom detectors and extra kinds directly:
+Programmatically, combine `@lanterna-profiler/core` orchestration with detector adapters from this package:
 
 ```ts
+import { runProfile } from '@lanterna-profiler/core';
+import { createBuiltInFindingAnalyzers, createFindingAnalyzerFromDetector } from '@lanterna-profiler/detectors';
+
 await runProfile({
   command: ['node', 'app.js'],
   durationMs: 15_000,
@@ -131,15 +133,18 @@ await runProfile({
   deep: false,
   pretty: false,
   // kinds: [cpuKind, myMemoryKind],            // override default; omit to get [cpu]
-  detectors: [prismaHotspotDetector],           // auto-wrapped as FindingAnalyzers (tagged profileKind: 'cpu')
-  analyzers: [myCustomSectionAnalyzer],         // raw analyzer registration
+  analyzers: [
+    ...createBuiltInFindingAnalyzers(),
+    createFindingAnalyzerFromDetector(prismaHotspotDetector),
+    myCustomSectionAnalyzer,
+  ],
   setupPipeline: async (pipeline, ctx) => {
-    // full-control hook - runs after detectors/analyzers are registered
+    // full-control hook
   },
 });
 ```
 
 ## Related packages
 
-- [`@lanterna-profiler/core`](../core) - headless capture + pipeline primitives (no defaults).
+- [`@lanterna-profiler/core`](../core) - capture orchestration, profile kinds, pipeline, and report APIs.
 - [`@lanterna-profiler/cli`](../cli) - `lanterna` binary built on top of this package.

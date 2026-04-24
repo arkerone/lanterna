@@ -1,22 +1,16 @@
 import type {
   AnalysisContext,
-  AnalysisPipeline,
   CpuAnalysisView,
   CpuProfileReport,
   Finding,
   FindingAnalyzer,
+  ProfilePipelinePlugin,
+  ProfilePluginContext,
 } from '@lanterna-profiler/core';
 import type { CpuDetectorReport, Detector, FindingContext } from './detectors/types.js';
 
-export interface LanternaPluginContext {
-  readonly cwd: string;
-  readonly mode: 'spawn' | 'attach';
-}
-
-export type LanternaDetectorPlugin = (
-  pipeline: AnalysisPipeline,
-  ctx: LanternaPluginContext,
-) => void | Promise<void>;
+export type LanternaPluginContext = ProfilePluginContext;
+export type LanternaDetectorPlugin = ProfilePipelinePlugin;
 
 /**
  * Wraps a CPU {@link Detector} into a {@link FindingAnalyzer}. The detector

@@ -73,6 +73,25 @@ export {
   createCpuProbe,
   createCpuProfileKind,
 } from './kinds/cpu/index.js';
+// Profile orchestration
+export {
+  configureProfilePipeline,
+  createDefaultAnalysisPipeline,
+} from './profile/pipeline.js';
+export {
+  attachProfile,
+  runProfile,
+} from './profile/profile.js';
+export type { DefaultKindRegistryOptions } from './profile/registry.js';
+export { createDefaultKindRegistry } from './profile/registry.js';
+export type {
+  AttachProfileOptions,
+  AttachProgressEvent,
+  ProfilePipelinePlugin,
+  ProfilePluginContext,
+  RunProfileOptions,
+  RunProgressEvent,
+} from './profile/types.js';
 // Report
 export { buildLanternaReport, serializeReport } from './report/index.js';
 export { LANTERNA_REPORT_SCHEMA_VERSION } from './report/meta.js';

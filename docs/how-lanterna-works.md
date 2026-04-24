@@ -280,15 +280,16 @@ Without `--deep`, deopt tracing is intentionally absent. `profiles.cpu.deopts` i
 
 ## Extending the pipeline
 
-Lanterna is a monorepo of three packages (`cli → detectors → core`). Two extension seams exist:
+Lanterna is a monorepo of three packages. `core` owns capture orchestration, profile kinds, analysis, and report construction; `detectors` supplies the default CPU detector pack; `cli` wires both together. Two extension seams exist:
 
 - **Detectors** — add finding analyzers.
   - `@lanterna-profiler/core` exposes `createAnalysisPipeline`, `defineFindingAnalyzer`, and `defineSectionAnalyzer` for full control with no default detectors registered.
-  - `@lanterna-profiler/detectors` wraps core with the built-in detector pack. `runProfile` / `attachProfile` accept `detectors`, `analyzers`, and a `setupPipeline` hook so custom rules can be injected at call time.
-  - `@lanterna-profiler/cli` loads plugins via `--detectors <spec>` (repeatable) or a `.lanterna.json` file and composes them into `setupPipeline` before calling the facades.
+  - `@lanterna-profiler/core` exposes `runProfile` / `attachProfile`, which accept `analyzers` and a `setupPipeline` hook so custom rules can be injected at call time.
+  - `@lanterna-profiler/detectors` exposes the built-in detector analyzers and `createFindingAnalyzerFromDetector(...)` for CPU detector plugins.
+  - `@lanterna-profiler/cli` loads plugins via `--detectors <spec>` (repeatable) or a `.lanterna.json` file and composes them into `setupPipeline` before calling core orchestration.
 - **Profile kinds** — add a new axis of measurement (memory, async, …).
   - Implement a `ProfileKind` (probe + contributor + optional hook installer) in your own package.
-  - Register it via `createDefaultKindRegistry({ extra: [myKind] })` or pass it directly in `runProfile({ kinds: [...] })`.
+  - Register it via `createDefaultKindRegistry({ extra: [myKind] })` from `@lanterna-profiler/core` or pass it directly in `runProfile({ kinds: [...] })`.
   - The built-in CPU kind (`createCpuProfileKind`) is a reference implementation.
 
 See the root README's [Extending Lanterna](../README.md#extending-lanterna) section for the detector-plugin authoring guide.
