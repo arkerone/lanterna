@@ -2,18 +2,21 @@
 
 Common problems and how to resolve them.
 
+> Field paths below use **schema v2**: CPU data lives under `profiles.cpu.*`. When a bare name like `summary.userCodeRatio` or `eventLoop.confidence` appears in this doc, it is short-hand for `profiles.cpu.summary.userCodeRatio` / `profiles.cpu.eventLoop.confidence` — the kind of thing you'd pass to `jq`.
+
 ## Quick triage
 
 | Symptom | Jump to |
 | --- | --- |
 | `timed out waiting for inspector URL` on `run` | [Inspector timeout](#inspector-timeout) |
 | `timed out waiting for inspector on pid ...` | [Attach by pid times out](#attach-by-pid-times-out) |
-| `findings` / `hotspots` is `[]` | [Empty report](#empty-report) |
-| `summary.userCodeRatio` near 0 | [Ratios look wrong](#ratios-look-wrong) |
+| `findings` / `profiles.cpu.hotspots` is `[]` | [Empty report](#empty-report) |
+| `profiles.cpu.summary.userCodeRatio` near 0 | [Ratios look wrong](#ratios-look-wrong) |
 | `captureIntegrity.*` flags are `false` | [Degraded capture integrity](#degraded-capture-integrity) |
 | Unexpected `event-loop-stall` finding | [Spurious event-loop stall](#spurious-event-loop-stall) |
 | Lots of V8 noise on stderr under `--deep` | [--deep noise](#--deep-noise) |
 | Attach mode emits no deopts | [Attach mode has no deopts](#attach-mode-has-no-deopts) |
+| Unknown `--kind <id>` | [Unknown profile kind](#unknown-profile-kind) |
 
 ---
 
@@ -72,7 +75,7 @@ Common problems and how to resolve them.
 
 **Causes and fixes:**
 
-1. **Profiling window too short, or the process was idle.** Check `summary.idleRatio`. If it is above `0.8`, the process was mostly waiting. Either increase `--duration` or generate load against the process before running. (This matches the rerun threshold used by the `lanterna-profiler` skill.)
+1. **Profiling window too short, or the process was idle.** Check `profiles.cpu.summary.idleRatio`. If it is above `0.8`, the process was mostly waiting. Either increase `--duration` or generate load against the process before running. (This matches the rerun threshold used by the `lanterna-profiler` skill.)
 
 2. **The profiling window missed the hot code.** If your app has a startup phase that loads modules and then settles, the default window may land on idle steady state. Time the window to cover the actual load.
 
@@ -134,6 +137,34 @@ Common problems and how to resolve them.
 2. **One-off startup cost inflated the max.** The very first event-loop tick after module loading may be long. If `stallIntervals` shows a single stall near `atMs: 0`, it may be startup, not steady-state behavior.
 
 3. **Heartbeats not available.** If `measurementBasis === "histogram"`, Lanterna cannot reconstruct which user-code frames ran during the stall window. `correlatedHotspots` in that case is based on overall CPU overlap, not temporal overlap.
+
+---
+
+## Unknown profile kind
+
+**Symptom:** `lanterna run ... --kind <id>` or `lanterna attach ... --kind <id>` exits with:
+
+```text
+unknown profile kind(s): <ids>. Available kinds: cpu
+```
+
+**What it means:**
+
+1. **Today `cpu` is the only built-in kind.** Both `run` and `attach` default to `--kind cpu` when you omit the flag.
+
+2. **`--kind` accepts repeated flags and comma-separated shorthand.** These are equivalent:
+
+   ```bash
+   lanterna run --kind cpu -- node app.js
+   lanterna run --kind cpu --kind memory -- node app.js
+   lanterna run --kind cpu,memory -- node app.js
+   ```
+
+3. **An unknown kind is usually a typo or configuration error.** Double-check the id you passed on the CLI or in any wrapper script.
+
+4. **It can also mean the kind was never registered.** If you expected a non-builtin kind, make sure the plugin or extension that registers it is actually loaded in this process.
+
+**Fix:** Use `cpu` today, or load/register the extension that provides the extra kind before requesting it.
 
 ---
 
