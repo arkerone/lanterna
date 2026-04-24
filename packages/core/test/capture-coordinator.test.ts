@@ -14,6 +14,7 @@ class FakeCdp implements CdpClient {
   readonly events: string[] = [];
   closed = false;
   failTargetInfo = false;
+  hangClose = false;
 
   async send(method: string): Promise<unknown> {
     this.events.push(`send:${method}`);
@@ -44,6 +45,7 @@ class FakeCdp implements CdpClient {
   async close(): Promise<void> {
     this.closed = true;
     this.events.push('close');
+    if (this.hangClose) await new Promise(() => {});
   }
 }
 
@@ -234,6 +236,34 @@ describe('runCapture lifecycle', () => {
     expect(result).not.toBeInstanceOf(Error);
     expect(diagnosticStages(result as Awaited<ReturnType<typeof runCapture>>)).toEqual([
       'probe-stop',
+    ]);
+    expect(source.finalizeCalls).toBe(1);
+    vi.useRealTimers();
+  });
+
+  it('times out a hanging CDP close and still finalizes the session', async () => {
+    vi.useFakeTimers();
+    const cdp = new FakeCdp();
+    cdp.hangClose = true;
+    const source = new FakeSource(cdp);
+
+    const capturePromise = runCapture({
+      source,
+      sourceOptions: undefined,
+      kinds: [successfulKind('ok')],
+      probeOptions: { sampleIntervalMicros: 1000, deep: false },
+    });
+    const resultPromise = capturePromise.then(
+      (bundle) => bundle,
+      (error: unknown) => error,
+    );
+
+    await vi.advanceTimersByTimeAsync(2000);
+    const result = await resultPromise;
+
+    expect(result).not.toBeInstanceOf(Error);
+    expect(diagnosticStages(result as Awaited<ReturnType<typeof runCapture>>)).toEqual([
+      'finalize',
     ]);
     expect(source.finalizeCalls).toBe(1);
     vi.useRealTimers();
