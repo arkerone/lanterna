@@ -2,32 +2,36 @@ import {
   type AnalysisOptions,
   type AnalysisPipeline,
   type AnalysisResult,
+  type CaptureBundle,
   createAnalysisPipeline,
-  type RawCapture,
+  createCpuProfileKind,
+  type ProfileKind,
 } from '@lanterna-profiler/core';
 import { createBuiltInFindingAnalyzers } from './detectors/index.js';
 
 let defaultPipeline: AnalysisPipeline | undefined;
 
 /**
- * Runs all built-in detectors on a raw capture and returns the analysis result.
- *
- * Uses a lazily-initialized shared pipeline. For programmatic use cases that
- * need a fresh pipeline or custom analyzers, use {@link createDefaultAnalysisPipeline}
- * directly.
+ * Runs the default pipeline (CPU kind + all built-in detectors) on a capture.
  */
-export function analyzeCapture(rawCapture: RawCapture, options: AnalysisOptions): AnalysisResult {
+export function analyzeCapture(bundle: CaptureBundle, options: AnalysisOptions): AnalysisResult {
   defaultPipeline ??= createDefaultAnalysisPipeline();
-  return defaultPipeline.run(rawCapture, options);
+  return defaultPipeline.run(bundle, options);
 }
 
 /**
- * Creates a new {@link AnalysisPipeline} pre-loaded with all built-in finding
- * analyzers. Use this when you need a fresh pipeline you can extend with
- * custom analyzers or plugins before running it.
+ * Creates a new {@link AnalysisPipeline} pre-registered with the CPU kind and
+ * all built-in finding analyzers. Pass extra `kinds` to add more.
  */
-export function createDefaultAnalysisPipeline(): AnalysisPipeline {
+export function createDefaultAnalysisPipeline(extraKinds: ProfileKind[] = []): AnalysisPipeline {
+  const cpuKind = createCpuProfileKind({
+    // The analysis pipeline doesn't have access to a stderr buffer — this
+    // stub is a no-op. During actual capture (`runCapture`), the caller
+    // should construct the kind with a real stderr reader.
+    readStderrSoFar: () => '',
+  });
   return createAnalysisPipeline({
+    kinds: [cpuKind, ...extraKinds],
     findingAnalyzers: createBuiltInFindingAnalyzers(),
   });
 }

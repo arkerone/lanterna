@@ -1,9 +1,9 @@
 import type {
   BuiltinFinding,
+  EventLoopReport,
   Finding,
   Hotspot,
   JsonHotPathEvidenceExtra,
-  LanternaReport,
 } from '@lanterna-profiler/core';
 import { defineBuiltinFinding, stripOptPrefix } from '@lanterna-profiler/core';
 import { DETECTOR_THRESHOLDS, JSON_FUNCTION_PATTERNS } from '../config.js';
@@ -44,7 +44,7 @@ function buildFinding(
   hotspot: Hotspot,
   api: string,
   categoryTotalPct: number,
-  report: LanternaReport,
+  report: { eventLoop: EventLoopReport },
   context: FindingContext,
 ): BuiltinFinding<'json-on-hot-path'> {
   const { attribution, caller } = resolveAttribution(hotspot, context);

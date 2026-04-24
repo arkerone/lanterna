@@ -1,42 +1,37 @@
 import type { AnalysisOptions, AnalysisResult } from '../analysis/core/types.js';
-import type { RawCapture } from '../capture/core/types.js';
+import type { CaptureBundle } from '../capture/core/types.js';
+import type { CpuKindData } from '../kinds/cpu/probe.js';
 import { buildReportMeta } from './meta.js';
 import { serializeReport } from './serialize.js';
 import type { LanternaReport } from './types.js';
 
 /**
- * Assembles a {@link LanternaReport} from a raw capture and its analysis result.
- *
- * This is the final step in the programmatic profiling pipeline:
- * `startSpawnCapture` / `startAttachCapture` → `AnalysisPipeline.run` →
- * `buildLanternaReport` → `serializeReport`.
+ * Assembles a {@link LanternaReport} from a capture bundle and its analysis
+ * result. The final step in the programmatic pipeline:
+ * `runCapture` → `AnalysisPipeline.run` → `buildLanternaReport` → `serializeReport`.
  */
 export function buildLanternaReport(
-  rawCapture: RawCapture,
+  bundle: CaptureBundle,
   analysis: AnalysisResult,
+  profileKinds: string[],
   options: AnalysisOptions,
 ): LanternaReport {
   const report: LanternaReport = {
-    meta: buildReportMeta(rawCapture, { totalSamples: countTotalSamples(rawCapture) }, options),
-    summary: analysis.summary,
-    hotspots: analysis.hotspots,
-    hotStacks: analysis.hotStacks,
-    gc: analysis.gc,
-    eventLoop: analysis.eventLoop,
-    deopts: analysis.deopts,
+    meta: buildReportMeta(bundle, profileKinds, countTotalSamples(bundle), options),
+    profiles: analysis.profiles,
     findings: analysis.findings,
   };
-
   if (analysis.extensions && Object.keys(analysis.extensions).length > 0) {
     report.extensions = analysis.extensions;
   }
-
   return report;
 }
 
 export * from './types.js';
 export { serializeReport };
 
-function countTotalSamples(rawCapture: RawCapture): number {
-  return rawCapture.cpuProfile.nodes.reduce((sum, node) => sum + (node.hitCount ?? 0), 0);
+function countTotalSamples(bundle: CaptureBundle): number {
+  const cpu = bundle.kinds.cpu as CpuKindData | undefined;
+  if (!cpu) return 0;
+  return cpu.cpuProfile.nodes.reduce((sum, node) => sum + (node.hitCount ?? 0), 0);
 }

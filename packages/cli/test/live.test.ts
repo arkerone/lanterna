@@ -4,7 +4,7 @@ import { mkdtemp, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { promisify } from 'node:util';
+import { promisify, stripVTControlCharacters } from 'node:util';
 import { describe, it } from 'vitest';
 
 const execFileAsync = promisify(execFile);
@@ -166,6 +166,58 @@ interface SpawnedCommandResult {
   stderr: string;
 }
 
+interface CpuProfileLike {
+  eventLoop: {
+    available: boolean;
+    stallIntervals: unknown[];
+    correlatedHotspots?: Array<{ function: string }>;
+    measurementBasis?: 'none' | 'histogram' | 'both';
+  };
+}
+
+interface ReportWithCpuProfile {
+  profiles?: {
+    cpu?: CpuProfileLike;
+  };
+}
+
+function stripAnsi(value: string): string {
+  return stripVTControlCharacters(value);
+}
+
+function normalizeTerminalOutput(value: string): string {
+  return stripAnsi(value).replace(/\r/g, '\n').trim();
+}
+
+function getCpuProfile(report: ReportWithCpuProfile): CpuProfileLike {
+  const cpuProfile = report.profiles?.cpu;
+  assert.ok(cpuProfile, 'expected cpu profile in report');
+  return cpuProfile;
+}
+
+async function expectLanternaCommandFailure(
+  args: string[],
+  expectedMessage: string,
+): Promise<void> {
+  let failure: ExecFileFailure | undefined;
+  try {
+    await execFileAsync('node', [binPath, ...args], {
+      cwd: repoRoot,
+      timeout: 10_000,
+      maxBuffer: 1024 * 1024 * 4,
+    });
+  } catch (err) {
+    failure = err as ExecFileFailure;
+  }
+
+  assert.ok(failure, 'expected lanterna command to fail');
+  assert.equal(failure.code, 1);
+  assert.equal(failure.killed, false);
+  assert.equal(String(failure.stdout ?? ''), '');
+  const stderr = normalizeTerminalOutput(String(failure.stderr ?? ''));
+  assert.equal(stderr.split('\n').at(-1), expectedMessage);
+}
+
 async function runLanternaAndSignal(
   args: string[],
   stopSignal: NodeJS.Signals,
@@ -216,6 +268,28 @@ function isPidAlive(pid: number | undefined): boolean {
 }
 
 describe('live profiling', () => {
+  it('rejects unknown profile kinds for run before capture starts', async () => {
+    await expectLanternaCommandFailure(
+      ['run', '--kind', 'nope', '--', 'node', '-e', 'setTimeout(() => {}, 10)'],
+      'Lanterna profiling failed: unknown profile kind(s): nope. Available kinds: cpu',
+    );
+  });
+
+  it('rejects unknown profile kinds for attach before capture starts', async () => {
+    await expectLanternaCommandFailure(
+      [
+        'attach',
+        '--inspect-url',
+        'ws://127.0.0.1:9229/test',
+        '--kind',
+        'nope',
+        '--duration',
+        '10ms',
+      ],
+      'Lanterna attach capture failed: unknown profile kind(s): nope. Available kinds: cpu',
+    );
+  });
+
   it('supports the no-duration path on a short-lived process', async () => {
     if (!(await inspectorSupported())) {
       await expectInspectorFailure([
@@ -271,10 +345,12 @@ describe('live profiling', () => {
     );
 
     const report = JSON.parse(stdout);
-    assert.equal(report.eventLoop.available, true);
-    assert.ok(report.eventLoop.stallIntervals.length > 0);
-    assert.ok(report.eventLoop.correlatedHotspots.length > 0);
-    assert.match(report.eventLoop.correlatedHotspots[0].function, /busyWait|tick/);
+    const cpuProfile = getCpuProfile(report);
+    const correlatedHotspots = cpuProfile.eventLoop.correlatedHotspots;
+    assert.ok(Array.isArray(correlatedHotspots) && correlatedHotspots.length > 0);
+    assert.equal(cpuProfile.eventLoop.available, true);
+    assert.ok(cpuProfile.eventLoop.stallIntervals.length > 0);
+    assert.match(correlatedHotspots[0].function, /busyWait|tick/);
     assert.ok(report.findings.some((finding: { id: string }) => finding.id === 'event-loop-stall'));
   });
 
@@ -308,6 +384,7 @@ describe('live profiling', () => {
     );
 
     const report = JSON.parse(stdout);
+    const cpuProfile = getCpuProfile(report);
     const finding = report.findings.find(
       (candidate: { id: string }) => candidate.id === 'sync-crypto-on-hot-path',
     );
@@ -316,13 +393,13 @@ describe('live profiling', () => {
     assert.equal(finding.evidence.extra.attributionConfidence, 'high');
     assert.equal(finding.evidence.extra.proofLevel, 'attributed-caller');
     assert.ok(
-      report.eventLoop.measurementBasis === 'none' ||
-        report.eventLoop.measurementBasis === 'histogram' ||
-        report.eventLoop.measurementBasis === 'both',
+      cpuProfile.eventLoop.measurementBasis === 'none' ||
+        cpuProfile.eventLoop.measurementBasis === 'histogram' ||
+        cpuProfile.eventLoop.measurementBasis === 'both',
     );
   });
 
-  it('attaches to an existing inspector URL', async () => {
+  it('attaches to an existing inspector URL with an explicit cpu kind', async () => {
     if (!(await inspectorSupported())) {
       return;
     }
@@ -336,17 +413,29 @@ describe('live profiling', () => {
     try {
       const { stdout } = await execFileAsync(
         'node',
-        [binPath, 'attach', '--inspect-url', wsUrl, '--duration', '1200ms', '--pretty'],
+        [
+          binPath,
+          'attach',
+          '--inspect-url',
+          wsUrl,
+          '--kind',
+          'cpu',
+          '--duration',
+          '1200ms',
+          '--pretty',
+        ],
         { cwd: repoRoot, timeout: 10_000, maxBuffer: 1024 * 1024 * 4 },
       );
 
       const report = JSON.parse(stdout);
+      const cpuProfile = getCpuProfile(report);
       assert.equal(report.meta.mode, 'attach');
+      assert.ok(report.meta.profileKinds.includes('cpu'));
       assert.equal(report.meta.captureIntegrity.controlChannel, false);
       assert.equal(report.meta.pid, child.pid);
       assert.equal(report.meta.command.length, 0);
-      assert.equal(report.eventLoop.available, true);
-      assert.ok(report.eventLoop.stallIntervals.length > 0);
+      assert.equal(cpuProfile.eventLoop.available, true);
+      assert.ok(cpuProfile.eventLoop.stallIntervals.length > 0);
     } finally {
       await terminateChild(child);
     }
@@ -367,11 +456,12 @@ describe('live profiling', () => {
       );
 
       const report = JSON.parse(stdout);
+      const cpuProfile = getCpuProfile(report);
       assert.equal(report.meta.mode, 'attach');
       assert.equal(report.meta.pid, child.pid);
       assert.equal(report.meta.captureIntegrity.controlChannel, false);
-      assert.equal(report.eventLoop.available, true);
-      assert.ok(report.eventLoop.stallIntervals.length > 0);
+      assert.equal(cpuProfile.eventLoop.available, true);
+      assert.ok(cpuProfile.eventLoop.stallIntervals.length > 0);
     } finally {
       await terminateChild(child);
     }

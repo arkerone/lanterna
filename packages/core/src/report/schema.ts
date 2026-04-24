@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 // ---------------------------------------------------------------------------
-// Shared primitives — enums and value types reused across the schema
+// Shared primitives
 // ---------------------------------------------------------------------------
 
 const findingSeveritySchema = z.enum(['info', 'warning', 'critical']);
@@ -18,10 +18,6 @@ const frameCategorySchema = z.enum([
   'unknown',
 ]);
 const optimizationStateSchema = z.enum(['optimized', 'interpreted', 'unknown']);
-
-// ---------------------------------------------------------------------------
-// Attribution & correlation building blocks
-// ---------------------------------------------------------------------------
 
 const hotspotAttributionSchema = z.object({
   hotspotId: z.string().min(1),
@@ -93,7 +89,7 @@ const stallIntervalSchema = z.object({
 });
 
 // ---------------------------------------------------------------------------
-// Finding evidence extras — one schema per builtin finding category
+// Finding evidence extras
 // ---------------------------------------------------------------------------
 
 const blockingIoExtraSchema = attributionEvidenceSchema.extend({
@@ -161,7 +157,7 @@ const nodeModulesHotspotExtraSchema = attributionEvidenceSchema.extend({
 });
 
 // ---------------------------------------------------------------------------
-// Finding schema — validates category-extra consistency via superRefine
+// Finding
 // ---------------------------------------------------------------------------
 
 const builtinFindingExtraSchema = z.union([
@@ -215,6 +211,7 @@ const findingRemediationSchema = z.object({
 const findingSchema = z
   .object({
     id: z.string().min(1),
+    profileKind: z.string().min(1),
     severity: findingSeveritySchema,
     category: z.string().min(1),
     title: z.string().min(1),
@@ -268,8 +265,7 @@ const findingSchema = z
   });
 
 // ---------------------------------------------------------------------------
-// Report section schemas — meta, summary, hotspots, stacks, gc, event-loop,
-// deopts. Combined into the root schema at the bottom.
+// Meta
 // ---------------------------------------------------------------------------
 
 const metaSchema = z.object({
@@ -288,6 +284,7 @@ const metaSchema = z.object({
   lanternaVersion: z.string().min(1),
   mode: z.enum(['spawn', 'attach', 'in-process']),
   deep: z.boolean(),
+  profileKinds: z.array(z.string().min(1)),
   captureIntegrity: z.object({
     controlChannel: z.boolean(),
     controlChannelExpected: z.boolean(),
@@ -301,7 +298,11 @@ const metaSchema = z.object({
   }),
 });
 
-const summarySchema = z.object({
+// ---------------------------------------------------------------------------
+// CPU profile section
+// ---------------------------------------------------------------------------
+
+const cpuSummarySchema = z.object({
   totalCpuMs: z.number().finite(),
   onCpuRatio: z.number().finite(),
   userCodeRatio: z.number().finite(),
@@ -410,19 +411,29 @@ const deoptEntrySchema = z.object({
   explanation: z.string(),
 });
 
-// ---------------------------------------------------------------------------
-// Root schema — validates the complete LanternaReport JSON
-// ---------------------------------------------------------------------------
-
-export const lanternaReportSchema = z.object({
-  meta: metaSchema,
-  summary: summarySchema,
+const cpuProfileReportSchema = z.object({
+  summary: cpuSummarySchema,
   hotspots: z.array(hotspotSchema),
   hotStacks: z.array(hotStackSchema),
   hotStackClusters: z.array(hotStackClusterSchema).optional(),
   gc: gcReportSchema,
   eventLoop: eventLoopReportSchema,
   deopts: z.array(deoptEntrySchema),
+});
+
+// ---------------------------------------------------------------------------
+// Root schema — schema v2
+// ---------------------------------------------------------------------------
+
+const profilesSchema = z
+  .object({
+    cpu: cpuProfileReportSchema.optional(),
+  })
+  .catchall(z.unknown());
+
+export const lanternaReportSchema = z.object({
+  meta: metaSchema,
+  profiles: profilesSchema,
   findings: z.array(findingSchema),
   extensions: z.record(z.string(), z.unknown()).optional(),
 });

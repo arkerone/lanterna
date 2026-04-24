@@ -170,8 +170,9 @@ export function buildHotspotAnalysis(
       if (aggregatePath.length === 0) continue;
 
       for (let pathIndex = 0; pathIndex < aggregatePath.length - 1; pathIndex++) {
-        const childAggregateKey = aggregatePath[pathIndex]!;
-        const parentAggregateKey = aggregatePath[pathIndex + 1]!;
+        const childAggregateKey = aggregatePath[pathIndex];
+        const parentAggregateKey = aggregatePath[pathIndex + 1];
+        if (childAggregateKey === undefined || parentAggregateKey === undefined) continue;
         if (childAggregateKey === parentAggregateKey) continue;
         const childAggregate = hotspotAggregatesByKey.get(childAggregateKey);
         const parentAggregate = hotspotAggregatesByKey.get(parentAggregateKey);
@@ -187,12 +188,15 @@ export function buildHotspotAnalysis(
       }
 
       for (const aggregateKey of new Set(aggregatePath)) {
-        hotspotAggregatesByKey.get(aggregateKey)!.pathSamples += 1;
+        const aggregate = hotspotAggregatesByKey.get(aggregateKey);
+        if (!aggregate) continue;
+        aggregate.pathSamples += 1;
       }
 
       let nearestUserAncestorKey: string | undefined;
       for (const aggregateKey of [...aggregatePath].reverse()) {
-        const aggregate = hotspotAggregatesByKey.get(aggregateKey)!;
+        const aggregate = hotspotAggregatesByKey.get(aggregateKey);
+        if (!aggregate) continue;
         if (aggregate.category === 'user') {
           nearestUserAncestorKey = aggregateKey;
           continue;
@@ -298,7 +302,8 @@ function subtreeSamples(tree: EnrichedTree, rootId: number): number {
   let totalSamples = 0;
   const pendingNodeIds: number[] = [rootId];
   while (pendingNodeIds.length) {
-    const nodeId = pendingNodeIds.pop()!;
+    const nodeId = pendingNodeIds.pop();
+    if (nodeId === undefined) continue;
     const node = tree.nodes.get(nodeId);
     if (!node) continue;
     totalSamples += node.hitCount;

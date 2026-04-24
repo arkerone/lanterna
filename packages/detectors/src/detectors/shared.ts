@@ -4,12 +4,12 @@ import type {
   BaseFinding,
   BlockingIoEvidenceExtra,
   BuiltinFindingCategory,
+  EventLoopReport,
   FindingMeasurements,
   FindingRemediation,
   Hotspot,
   HotspotAttribution,
   JsonHotPathEvidenceExtra,
-  LanternaReport,
   NodeModulesHotspotEvidenceExtra,
   RequireInHotPathEvidenceExtra,
   StallCorrelation,
@@ -37,7 +37,7 @@ export function resolveAttribution(hotspot: Hotspot, context: FindingContext): R
 
 export function findStallCorrelation(
   caller: { file: string; line: number; function: string } | undefined,
-  report: LanternaReport,
+  report: { eventLoop: EventLoopReport },
 ): StallCorrelation | undefined {
   if (!caller) return undefined;
   const match = report.eventLoop.correlatedHotspots?.find(
@@ -197,6 +197,7 @@ export function buildAttributedFinding<
 
   return {
     id,
+    profileKind: 'cpu',
     severity,
     category,
     title,

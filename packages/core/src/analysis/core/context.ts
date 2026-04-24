@@ -1,34 +1,33 @@
-import type { RawCapture } from '../../capture/core/types.js';
-import { buildTimedSamples } from '../model/correlations.js';
-import { buildHotspotAnalysis, enrichCpuTree } from '../model/hotspots.js';
+import type { CaptureBundle } from '../../capture/core/types.js';
+import type { KindViews } from '../../kinds/core/types.js';
 import type { AnalysisContext, AnalysisOptions } from './types.js';
 
-export function createAnalysisContext(
-  rawCapture: RawCapture,
-  options: AnalysisOptions,
-): AnalysisContext {
-  let cachedTree: ReturnType<typeof enrichCpuTree> | undefined;
-  let cachedHotspotAnalysis: ReturnType<typeof buildHotspotAnalysis> | undefined;
-  let cachedTimedSamples: ReturnType<typeof buildTimedSamples> | undefined;
+export interface MutableAnalysisContext extends AnalysisContext {
+  setView<K extends keyof KindViews>(id: K, view: KindViews[K]): void;
+}
 
+export function createAnalysisContext(
+  bundle: CaptureBundle,
+  options: AnalysisOptions,
+): MutableAnalysisContext {
+  const views = new Map<string, unknown>();
   return {
-    rawCapture,
+    bundle,
     options,
-    getTree() {
-      cachedTree ??= enrichCpuTree(
-        rawCapture.cpuProfile,
-        rawCapture.target.cwd,
-        options.sampleIntervalMicros,
-      );
-      return cachedTree;
+    hasKind(id) {
+      return views.has(id as string);
     },
-    getHotspotAnalysis() {
-      cachedHotspotAnalysis ??= buildHotspotAnalysis(rawCapture.cpuProfile, this.getTree());
-      return cachedHotspotAnalysis;
+    forKind(id) {
+      const view = views.get(id as string);
+      if (view === undefined) {
+        throw new Error(
+          `profile kind "${String(id)}" is not available in this analysis context; did the kind run?`,
+        );
+      }
+      return view as KindViews[typeof id];
     },
-    getTimedSamples() {
-      cachedTimedSamples ??= buildTimedSamples(rawCapture, options.sampleIntervalMicros);
-      return cachedTimedSamples;
+    setView(id, view) {
+      views.set(id as string, view);
     },
   };
 }

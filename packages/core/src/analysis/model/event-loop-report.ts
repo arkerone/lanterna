@@ -1,4 +1,4 @@
-import type { RawCapture } from '../../capture/core/types.js';
+import type { CaptureBundle } from '../../capture/core/types.js';
 import type {
   EventLoopReport,
   MeasurementBasis,
@@ -7,14 +7,25 @@ import type {
 import { EVENT_LOOP_STALL_INTERVAL_MS, HEARTBEAT_RESOLUTION_MS } from '../../shared/config.js';
 import { percentile } from '../../shared/percentile.js';
 
-export function buildEventLoopReport(raw: RawCapture): EventLoopReport {
-  const hasTimedHeartbeats = raw.captureIntegrity.eventLoopTimed && raw.eventLoopSamples.length > 0;
-  const histogram = raw.eventLoopHistogram
+/**
+ * Narrow view over a {@link CaptureBundle} that the event-loop report needs.
+ */
+interface EventLoopInput {
+  captureIntegrity: CaptureBundle['captureIntegrity'];
+  durationMs: number;
+  runtimeSignals: CaptureBundle['runtimeSignals'];
+}
+
+export function buildEventLoopReport(input: EventLoopInput): EventLoopReport {
+  const samples = input.runtimeSignals.eventLoopSamples;
+  const rawHistogram = input.runtimeSignals.eventLoopHistogram;
+  const hasTimedHeartbeats = input.captureIntegrity.eventLoopTimed && samples.length > 0;
+  const histogram = rawHistogram
     ? {
-        maxLagMs: raw.eventLoopHistogram.maxMs,
-        p99LagMs: raw.eventLoopHistogram.p99Ms,
-        p50LagMs: raw.eventLoopHistogram.p50Ms,
-        meanLagMs: raw.eventLoopHistogram.meanMs,
+        maxLagMs: rawHistogram.maxMs,
+        p99LagMs: rawHistogram.p99Ms,
+        p50LagMs: rawHistogram.p50Ms,
+        meanLagMs: rawHistogram.meanMs,
       }
     : undefined;
   const measurementBasis = deriveMeasurementBasis(hasTimedHeartbeats, Boolean(histogram));
@@ -34,23 +45,21 @@ export function buildEventLoopReport(raw: RawCapture): EventLoopReport {
     };
   }
 
-  const heartbeatSummary = hasTimedHeartbeats ? summarizeHeartbeatLag(raw) : undefined;
+  const heartbeatSummary = hasTimedHeartbeats ? summarizeHeartbeatLag(input) : undefined;
   const metrics = histogram ??
-    heartbeatSummary ?? {
-      maxLagMs: 0,
-      p99LagMs: 0,
-      p50LagMs: 0,
-      meanLagMs: 0,
-    };
+    heartbeatSummary ?? { maxLagMs: 0, p99LagMs: 0, p50LagMs: 0, meanLagMs: 0 };
 
   return {
     maxLagMs: metrics.maxLagMs,
     p99LagMs: metrics.p99LagMs,
     p50LagMs: metrics.p50LagMs,
     meanLagMs: metrics.meanLagMs,
-    sampleCount: raw.eventLoopSamples.length,
+    sampleCount: samples.length,
     stallIntervals: hasTimedHeartbeats
-      ? deriveStallIntervals(raw, raw.eventLoopResolutionMs ?? HEARTBEAT_RESOLUTION_MS)
+      ? deriveStallIntervals(
+          input,
+          input.runtimeSignals.eventLoopResolutionMs ?? HEARTBEAT_RESOLUTION_MS,
+        )
       : [],
     available: true,
     measurementBasis,
@@ -60,12 +69,13 @@ export function buildEventLoopReport(raw: RawCapture): EventLoopReport {
 }
 
 function deriveStallIntervals(
-  raw: RawCapture,
+  input: EventLoopInput,
   resolutionMs: number,
 ): EventLoopReport['stallIntervals'] {
+  const samples = input.runtimeSignals.eventLoopSamples;
   const intervals: EventLoopReport['stallIntervals'] = [];
 
-  for (const sample of raw.eventLoopSamples) {
+  for (const sample of samples) {
     if (sample.lagMs < EVENT_LOOP_STALL_INTERVAL_MS) continue;
     intervals.push({
       startMs: Math.max(0, sample.atMs - sample.lagMs),
@@ -74,12 +84,12 @@ function deriveStallIntervals(
     });
   }
 
-  const trailingLagMs = inferTrailingLag(raw);
+  const trailingLagMs = inferTrailingLag(input);
   if (trailingLagMs >= EVENT_LOOP_STALL_INTERVAL_MS) {
-    const lastSampleAtMs = raw.eventLoopSamples[raw.eventLoopSamples.length - 1]?.atMs ?? 0;
+    const lastSampleAtMs = samples[samples.length - 1]?.atMs ?? 0;
     intervals.push({
       startMs: Math.max(0, lastSampleAtMs + resolutionMs),
-      endMs: raw.durationMs,
+      endMs: input.durationMs,
       maxLagMs: trailingLagMs,
     });
   }
@@ -87,7 +97,7 @@ function deriveStallIntervals(
   return mergeIntervals(intervals);
 }
 
-function summarizeHeartbeatLag(raw: RawCapture):
+function summarizeHeartbeatLag(input: EventLoopInput):
   | {
       maxLagMs: number;
       p99LagMs: number;
@@ -95,11 +105,10 @@ function summarizeHeartbeatLag(raw: RawCapture):
       meanLagMs: number;
     }
   | undefined {
-  const trailingLagMs = inferTrailingLag(raw);
-  const lagValues = raw.eventLoopSamples.map((sample) => sample.lagMs);
-  if (trailingLagMs > 0) {
-    lagValues.push(trailingLagMs);
-  }
+  const samples = input.runtimeSignals.eventLoopSamples;
+  const trailingLagMs = inferTrailingLag(input);
+  const lagValues = samples.map((sample) => sample.lagMs);
+  if (trailingLagMs > 0) lagValues.push(trailingLagMs);
   lagValues.sort((left, right) => left - right);
   if (lagValues.length === 0) return undefined;
 
@@ -111,11 +120,12 @@ function summarizeHeartbeatLag(raw: RawCapture):
   };
 }
 
-function inferTrailingLag(raw: RawCapture): number {
-  const lastSampleAtMs = raw.eventLoopSamples[raw.eventLoopSamples.length - 1]?.atMs;
-  const resolutionMs = raw.eventLoopResolutionMs ?? HEARTBEAT_RESOLUTION_MS;
+function inferTrailingLag(input: EventLoopInput): number {
+  const samples = input.runtimeSignals.eventLoopSamples;
+  const lastSampleAtMs = samples[samples.length - 1]?.atMs;
+  const resolutionMs = input.runtimeSignals.eventLoopResolutionMs ?? HEARTBEAT_RESOLUTION_MS;
   if (lastSampleAtMs === undefined) return 0;
-  return Math.max(0, raw.durationMs - lastSampleAtMs - resolutionMs);
+  return Math.max(0, input.durationMs - lastSampleAtMs - resolutionMs);
 }
 
 function deriveMeasurementBasis(hasHeartbeats: boolean, hasHistogram: boolean): MeasurementBasis {

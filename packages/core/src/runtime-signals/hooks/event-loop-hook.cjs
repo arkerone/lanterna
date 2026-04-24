@@ -176,7 +176,7 @@ process.once('uncaughtExceptionMonitor', (err) => {
     type: 'crash',
     atMs: relativeMs(performance.now()),
     kind: 'uncaughtException',
-    message: String(err && err.message ? err.message : err),
+    message: String(err?.message ? err.message : err),
   });
 });
 

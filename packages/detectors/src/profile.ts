@@ -1,15 +1,19 @@
 import {
   type AnalysisPipeline,
+  AttachSource,
   buildLanternaReport,
-  type CaptureHandle,
+  type CaptureBundle,
+  createCpuProfileKind,
+  createManualStopSignal,
   type FindingAnalyzer,
   type LanternaReport,
+  type ProfileKind,
+  runCapture,
   type SectionAnalyzer,
+  SpawnSource,
   sleep,
-  startAttachCapture,
-  startSpawnCapture,
 } from '@lanterna-profiler/core';
-import { createDefaultAnalysisPipeline } from './analyze-capture.js';
+import { createBuiltInFindingAnalyzers } from './detectors/index.js';
 import type { Detector } from './detectors/types.js';
 import type { LanternaDetectorPlugin, LanternaPluginContext } from './plugin.js';
 import { createFindingAnalyzerFromDetector } from './plugin.js';
@@ -21,6 +25,8 @@ export interface RunProfileOptions {
   pretty: boolean;
   deep: boolean;
   sampleIntervalMicros: number;
+  /** Profile kinds to capture. Defaults to `[cpu]`. */
+  kinds?: ProfileKind[];
   detectors?: Detector[];
   analyzers?: (FindingAnalyzer | SectionAnalyzer)[];
   setupPipeline?: LanternaDetectorPlugin;
@@ -34,6 +40,7 @@ export interface AttachProfileOptions {
   output?: string;
   pretty: boolean;
   sampleIntervalMicros: number;
+  kinds?: ProfileKind[];
   detectors?: Detector[];
   analyzers?: (FindingAnalyzer | SectionAnalyzer)[];
   setupPipeline?: LanternaDetectorPlugin;
@@ -57,112 +64,134 @@ export type RunProgressEvent =
   | { stage: 'capture-running'; message: string }
   | { stage: 'finalize-capture'; message: string };
 
-/**
- * Spawns a child process, profiles it, and returns a complete
- * {@link LanternaReport}.
- *
- * High-level facade over `startSpawnCapture` + `AnalysisPipeline.run` +
- * `buildLanternaReport`. Use the `onProgress` callback to stream stage
- * updates to a UI or logger.
- */
 export async function runProfile(
   options: RunProfileOptions,
   onProgress?: (event: RunProgressEvent) => void,
 ): Promise<LanternaReport> {
-  const handle = await startSpawnCapture({
-    command: options.command,
-    sampleIntervalMicros: options.sampleIntervalMicros,
-    deep: options.deep,
-    onProgress,
-  });
-
-  onProgress?.({
-    stage: 'capture-running',
-    message:
-      options.durationMs === undefined
-        ? 'CPU profiling is running until the child exits...'
-        : `CPU profiling is running for ${options.durationMs}ms...`,
-  });
-  const stopReason = await waitForStopReason(handle, options.durationMs);
-
-  onProgress?.({
-    stage: 'finalize-capture',
-    message: 'Stopping the profiler and collecting the final samples...',
-  });
-  const rawCapture = await handle.stop();
-  const analysisOptions = {
-    sampleIntervalMicros: options.sampleIntervalMicros,
-    deep: options.deep,
-    command: options.command,
-    mode: 'spawn' as const,
+  let stderrBuffer = '';
+  const captureStderr = (chunk: string) => {
+    stderrBuffer += chunk;
   };
-  const pipeline = await buildInjectedPipeline(options, 'spawn');
-  const analysis = pipeline.run(rawCapture, analysisOptions);
-  const report = buildLanternaReport(rawCapture, analysis, analysisOptions);
+  void captureStderr;
+  const defaultCpuKind = createCpuProfileKind({
+    readStderrSoFar: () => stderrBuffer,
+  });
+  const kinds = options.kinds ?? [defaultCpuKind];
 
-  if (stopReason.type === 'signal') {
-    process.exitCode = 0;
+  const manualStop = createManualStopSignal();
+  const signalHandlers = bindStopSignals(manualStop.trigger);
+
+  try {
+    const bundle = await runCapture({
+      source: new SpawnSource(),
+      sourceOptions: {
+        command: options.command,
+        sampleIntervalMicros: options.sampleIntervalMicros,
+        deep: options.deep,
+        onProgress,
+      },
+      kinds,
+      probeOptions: {
+        sampleIntervalMicros: options.sampleIntervalMicros,
+        deep: options.deep,
+      },
+      durationMs: options.durationMs,
+      stopSignal: manualStop.promise,
+    });
+
+    onProgress?.({
+      stage: 'finalize-capture',
+      message: 'Stopping the profiler and collecting the final samples...',
+    });
+
+    return await analyzeAndBuild(bundle, options, kinds, 'spawn');
+  } finally {
+    signalHandlers.dispose();
   }
-
-  return report;
 }
 
-/**
- * Attaches to a running Node.js process, profiles it for the given duration
- * (or until it exits), and returns a complete {@link LanternaReport}.
- *
- * High-level facade over `startAttachCapture` + `AnalysisPipeline.run` +
- * `buildLanternaReport`. The target process must already be listening on an
- * inspector port or be reachable via SIGUSR1 (POSIX only).
- */
 export async function attachProfile(
   options: AttachProfileOptions,
   onProgress?: (event: AttachProgressEvent) => void,
 ): Promise<LanternaReport> {
-  const handle = await startAttachCapture({
-    pid: options.pid,
-    inspectUrl: options.inspectUrl,
-    sampleIntervalMicros: options.sampleIntervalMicros,
-    onProgress,
-  });
+  const defaultCpuKind = createCpuProfileKind({ readStderrSoFar: () => '' });
+  const kinds = options.kinds ?? [defaultCpuKind];
 
-  onProgress?.({
-    stage: 'capture-running',
-    message:
-      options.durationMs === undefined
-        ? 'CPU profiling is running. Stop with Ctrl+C or wait for the process to exit.'
-        : `CPU profiling is running for ${options.durationMs}ms...`,
-  });
+  const manualStop = createManualStopSignal();
+  const signalHandlers = bindStopSignals(manualStop.trigger);
 
-  const stopReason = await waitForStopReason(handle, options.durationMs);
+  try {
+    const bundle = await runCapture({
+      source: new AttachSource(),
+      sourceOptions: {
+        pid: options.pid,
+        inspectUrl: options.inspectUrl,
+        sampleIntervalMicros: options.sampleIntervalMicros,
+        onProgress,
+      },
+      kinds,
+      probeOptions: {
+        sampleIntervalMicros: options.sampleIntervalMicros,
+        deep: false,
+      },
+      durationMs: options.durationMs,
+      stopSignal: manualStop.promise,
+    });
 
-  onProgress?.({
-    stage: 'finalize-capture',
-    message: 'Stopping the profiler and collecting the final samples...',
-  });
-  const rawCapture = await handle.stop();
+    onProgress?.({
+      stage: 'finalize-capture',
+      message: 'Stopping the profiler and collecting the final samples...',
+    });
+
+    return await analyzeAndBuild(bundle, options, kinds, 'attach');
+  } finally {
+    signalHandlers.dispose();
+  }
+}
+
+async function analyzeAndBuild(
+  bundle: CaptureBundle,
+  options: {
+    sampleIntervalMicros: number;
+    deep?: boolean;
+    detectors?: Detector[];
+    analyzers?: (FindingAnalyzer | SectionAnalyzer)[];
+    setupPipeline?: LanternaDetectorPlugin;
+    command?: string[];
+  },
+  kinds: ProfileKind[],
+  mode: 'spawn' | 'attach',
+): Promise<LanternaReport> {
   const analysisOptions = {
     sampleIntervalMicros: options.sampleIntervalMicros,
-    deep: false,
-    command: [],
-    mode: 'attach' as const,
+    deep: Boolean(options.deep),
+    command: options.command ?? [],
+    mode: mode as 'spawn' | 'attach',
   };
-  const pipeline = await buildInjectedPipeline(options, 'attach');
-  const analysis = pipeline.run(rawCapture, analysisOptions);
-  const report = buildLanternaReport(rawCapture, analysis, analysisOptions);
-
-  if (stopReason.type === 'signal') {
-    process.exitCode = 0;
-  }
-
-  return report;
+  const pipeline = await buildInjectedPipeline(options, kinds, mode);
+  const analysis = pipeline.run(bundle, analysisOptions);
+  return buildLanternaReport(
+    bundle,
+    analysis,
+    kinds.map((k) => k.id),
+    analysisOptions,
+  );
 }
 
 async function buildInjectedPipeline(
-  options: Pick<RunProfileOptions, 'detectors' | 'analyzers' | 'setupPipeline'>,
+  options: {
+    detectors?: Detector[];
+    analyzers?: (FindingAnalyzer | SectionAnalyzer)[];
+    setupPipeline?: LanternaDetectorPlugin;
+  },
+  kinds: ProfileKind[],
   mode: 'spawn' | 'attach',
 ): Promise<AnalysisPipeline> {
-  const pipeline = createDefaultAnalysisPipeline();
+  const { createAnalysisPipeline } = await import('@lanterna-profiler/core');
+  const pipeline = createAnalysisPipeline({
+    kinds,
+    findingAnalyzers: createBuiltInFindingAnalyzers(),
+  });
   if (options.detectors) {
     for (const detector of options.detectors) {
       pipeline.register(createFindingAnalyzerFromDetector(detector));
@@ -180,57 +209,16 @@ async function buildInjectedPipeline(
   return pipeline;
 }
 
-type StopReason =
-  | { type: 'signal'; signal: NodeJS.Signals }
-  | { type: 'timeout' }
-  | { type: 'exit' };
-
-async function waitForStopReason(
-  handle: Pick<CaptureHandle, 'waitForExit'>,
-  durationMs?: number,
-): Promise<StopReason> {
-  const manualStop = createManualStopWatcher();
-  try {
-    const pending = [
-      handle.waitForExit().then<StopReason>(() => ({ type: 'exit' })),
-      manualStop.promise,
-    ];
-    if (durationMs !== undefined) {
-      pending.push(sleep(durationMs).then<StopReason>(() => ({ type: 'timeout' })));
-    }
-    return await Promise.race(pending);
-  } finally {
-    manualStop.dispose();
-  }
-}
-
-function createManualStopWatcher(): {
-  promise: Promise<StopReason>;
-  dispose: () => void;
-} {
-  let resolved = false;
-  let resolveStop!: (reason: StopReason) => void;
-  const listeners = new Map<NodeJS.Signals, () => void>();
-  const promise = new Promise<StopReason>((resolve) => {
-    resolveStop = resolve;
-  });
-
-  const dispose = () => {
-    for (const [signal, listener] of listeners) {
-      process.off(signal, listener);
-    }
-    listeners.clear();
+function bindStopSignals(trigger: () => void): { dispose: () => void } {
+  const listener = () => trigger();
+  const signals: NodeJS.Signals[] = ['SIGINT', 'SIGTERM'];
+  for (const signal of signals) process.on(signal, listener);
+  return {
+    dispose: () => {
+      for (const signal of signals) process.off(signal, listener);
+    },
   };
-
-  for (const signal of ['SIGINT', 'SIGTERM'] as const) {
-    const listener = () => {
-      if (resolved) return;
-      resolved = true;
-      resolveStop({ type: 'signal', signal });
-    };
-    listeners.set(signal, listener);
-    process.on(signal, listener);
-  }
-
-  return { promise, dispose };
 }
+
+// Silence unused import warning (kept for type access above).
+void sleep;

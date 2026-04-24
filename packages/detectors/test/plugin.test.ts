@@ -19,6 +19,7 @@ const alwaysDetector: Detector = {
     return [
       {
         id: 'custom-test:always',
+        profileKind: 'cpu',
         severity: 'info',
         category: 'custom-test',
         title: 'Custom always-on finding',
@@ -43,7 +44,12 @@ describe('plugin API', () => {
     const pipeline = createDefaultAnalysisPipeline();
     pipeline.register(createFindingAnalyzerFromDetector(alwaysDetector));
 
-    const report = buildLanternaReport(raw, pipeline.run(raw, defaultOptions), defaultOptions);
+    const report = buildLanternaReport(
+      raw,
+      pipeline.run(raw, defaultOptions),
+      ['cpu'],
+      defaultOptions,
+    );
     expect(report.findings.some((f) => f.id === 'custom-test:always')).toBe(true);
   });
 

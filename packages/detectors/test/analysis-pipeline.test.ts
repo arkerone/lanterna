@@ -21,11 +21,13 @@ describe('analysis pipeline', () => {
     const directReport = buildLanternaReport(
       raw,
       analyzeCapture(raw, defaultOptions),
+      ['cpu'],
       defaultOptions,
     );
     const pipelineReport = buildLanternaReport(
       raw,
       createDefaultAnalysisPipeline().run(raw, defaultOptions),
+      ['cpu'],
       defaultOptions,
     );
 
@@ -42,9 +44,10 @@ describe('analysis pipeline', () => {
         kind: 'section',
         namespace: 'acme.top-hotspot',
         run(_context, snapshot) {
+          const cpu = snapshot.profiles.cpu;
           return {
-            topHotspot: snapshot.hotspots[0]?.function ?? null,
-            hotspotCount: snapshot.hotspots.length,
+            topHotspot: cpu?.hotspots[0]?.function ?? null,
+            hotspotCount: cpu?.hotspots.length ?? 0,
           };
         },
       }),
@@ -65,6 +68,7 @@ describe('analysis pipeline', () => {
           return [
             {
               id: 'acme.extension-finding',
+              profileKind: 'cpu',
               severity: 'info',
               category: 'acme.extension-finding',
               title: 'Extension-derived hotspot summary',
@@ -84,11 +88,16 @@ describe('analysis pipeline', () => {
       }),
     );
 
-    const report = buildLanternaReport(raw, pipeline.run(raw, defaultOptions), defaultOptions);
+    const report = buildLanternaReport(
+      raw,
+      pipeline.run(raw, defaultOptions),
+      ['cpu'],
+      defaultOptions,
+    );
 
     expect(report.extensions?.['acme.top-hotspot']).toEqual({
       topHotspot: 'pbkdf2Sync',
-      hotspotCount: report.hotspots.length,
+      hotspotCount: report.profiles.cpu?.hotspots.length ?? 0,
     });
     expect(report.findings).toContainEqual(
       expect.objectContaining({ id: 'acme.extension-finding' }),
@@ -129,11 +138,13 @@ describe('analysis pipeline', () => {
     const report = buildLanternaReport(
       raw,
       createDefaultAnalysisPipeline().run(raw, defaultOptions),
+      ['cpu'],
       defaultOptions,
     );
 
     report.findings.push({
       id: 'broken-sync-crypto',
+      profileKind: 'cpu',
       severity: 'warning',
       category: 'sync-crypto',
       title: 'Broken finding',

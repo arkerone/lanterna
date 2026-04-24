@@ -39,6 +39,7 @@ export const eventLoopStallDetector: Detector = {
     return [
       defineBuiltinFinding<BuiltinFinding<'event-loop-stall'>['category']>({
         id: 'event-loop-stall',
+        profileKind: 'cpu',
         severity,
         category: 'event-loop-stall',
         title: `Event loop stalled (max ${maxLagMs.toFixed(0)}ms)`,

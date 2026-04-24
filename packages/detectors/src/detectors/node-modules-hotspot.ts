@@ -1,8 +1,8 @@
 import type {
   BuiltinFinding,
+  EventLoopReport,
   Finding,
   Hotspot,
-  LanternaReport,
   NodeModulesHotspotEvidenceExtra,
 } from '@lanterna-profiler/core';
 import { defineBuiltinFinding } from '@lanterna-profiler/core';
@@ -43,7 +43,7 @@ export const nodeModulesHotspotDetector: Detector = {
 function buildFinding(
   hotspot: Hotspot,
   alternatives: Hotspot[],
-  report: LanternaReport,
+  report: { eventLoop: EventLoopReport },
   context: FindingContext,
 ): BuiltinFinding<'node-modules-hotspot'> {
   const { attribution, caller } = resolveAttribution(hotspot, context);

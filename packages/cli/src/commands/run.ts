@@ -1,4 +1,8 @@
-import { type LanternaDetectorPlugin, runProfile } from '@lanterna-profiler/detectors';
+import {
+  createDefaultKindRegistry,
+  type LanternaDetectorPlugin,
+  runProfile,
+} from '@lanterna-profiler/detectors';
 import { startActivityIndicator } from '../activity-indicator.js';
 import { loadLanternaConfig } from '../config.js';
 import { writeReportOutput } from '../output.js';
@@ -12,9 +16,16 @@ export async function runCommand(options: RunProfileOptions): Promise<void> {
   });
   try {
     const setupPipeline = await resolveSetupPipeline(options.detectors);
-    const { detectors: _specs, ...profileOptions } = options;
+    const kinds = createDefaultKindRegistry().resolveMany(options.kinds);
+    const { detectors: _specs, kinds: _kindIds, ...profileOptions } = options;
+    void _specs;
+    void _kindIds;
     const report = await runProfile(
-      { ...profileOptions, ...(setupPipeline ? { setupPipeline } : {}) },
+      {
+        ...profileOptions,
+        kinds,
+        ...(setupPipeline ? { setupPipeline } : {}),
+      },
       (event) => {
         indicator.update(event.message);
       },
@@ -22,9 +33,7 @@ export async function runCommand(options: RunProfileOptions): Promise<void> {
     indicator.update('Writing the Lanterna report output...');
     await writeReportOutput(report, options.output, options.pretty);
     indicator.succeed('Lanterna profile complete');
-    if (process.exitCode === 0) {
-      process.exit(0);
-    }
+    process.exit(0);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     indicator.fail(`Lanterna profiling failed: ${message}`);

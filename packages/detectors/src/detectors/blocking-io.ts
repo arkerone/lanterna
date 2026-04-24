@@ -1,10 +1,10 @@
 import type {
   BlockingIoEvidenceExtra,
   BuiltinFinding,
+  EventLoopReport,
   Finding,
   FindingRemediation,
   Hotspot,
-  LanternaReport,
 } from '@lanterna-profiler/core';
 import { defineBuiltinFinding, stripOptPrefix } from '@lanterna-profiler/core';
 import { BLOCKING_IO_PATTERNS, DETECTOR_THRESHOLDS } from '../config.js';
@@ -152,7 +152,7 @@ function buildFinding(
   hotspot: Hotspot,
   api: string,
   categoryTotalPct: number,
-  report: LanternaReport,
+  report: { eventLoop: EventLoopReport },
   context: FindingContext,
 ): BuiltinFinding<'blocking-io'> {
   const asyncApi = api.replace(/Sync$/, '');
