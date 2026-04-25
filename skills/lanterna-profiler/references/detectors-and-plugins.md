@@ -16,17 +16,17 @@ Do not import `runProfile`, `attachProfile`, or `createKindRegistry` from `@lant
 import { runProfile } from '@lanterna-profiler/core';
 import { createCpuProfileKindWithBuiltInDetectors } from '@lanterna-profiler/detectors';
 
-let stderr = '';
+let diagnostics = '';
 const report = await runProfile({
   command: ['node', 'app.js'],
   durationMs: 15_000,
   pretty: true,
   onTargetDiagnosticChunk: (chunk) => {
-    stderr += chunk;
+    diagnostics += chunk;
   },
   kinds: [
     createCpuProfileKindWithBuiltInDetectors({
-      readStderrSoFar: () => stderr,
+      readStderrSoFar: () => diagnostics,
       sampleIntervalMicros: 1000,
       deep: true,
     }),
@@ -34,7 +34,7 @@ const report = await runProfile({
 });
 ```
 
-If `deep: true`, append target diagnostics through `onTargetDiagnosticChunk` and return that buffer from `readStderrSoFar`. Use `deep: false` when diagnostics are not collected.
+If `deep: true`, append target diagnostics through `onTargetDiagnosticChunk` and return that buffer from `readStderrSoFar`. Use `deep: false` and return an empty string when diagnostics are not collected.
 
 ## Kind-Scoped Detectors
 
@@ -76,7 +76,7 @@ pipeline.register(createFindingAnalyzerFromKindScopedDetector(detector));
 
 ## Multi-Kind Contract
 
-- `ProfileKind.id`: CLI/runtime identity, `meta.profileKinds[]`, and `meta.kinds.<kindId>`.
+- `ProfileKind.id`: CLI/runtime identity and `meta.kinds.<kindId>`; it appears in `meta.profileKinds[]` only when capture data was produced.
 - `ProfileKind.reportSectionKey`: report namespace under `profiles.<reportSectionKey>`.
 - These are usually equal, but custom kinds may differ.
 - `KindScopedDetector.kindIds` refers to kind ids, not report section keys.

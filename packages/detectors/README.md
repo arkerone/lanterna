@@ -35,17 +35,17 @@ Thresholds live in `DETECTOR_THRESHOLDS` (exported from this package, not core).
 import { runProfile } from '@lanterna-profiler/core';
 import { createCpuProfileKindWithBuiltInDetectors } from '@lanterna-profiler/detectors';
 
-let stderr = '';
+let diagnostics = '';
 const report = await runProfile({
   command: ['node', 'app.js'],
   durationMs: 15_000,
   pretty: true,
   onTargetDiagnosticChunk: (chunk) => {
-    stderr += chunk;
+    diagnostics += chunk;
   },
   kinds: [
     createCpuProfileKindWithBuiltInDetectors({
-      readStderrSoFar: () => stderr,
+      readStderrSoFar: () => diagnostics,
       sampleIntervalMicros: 1000,
       deep: true,
     }),
@@ -57,7 +57,7 @@ console.log(report.findings);
 
 `createCpuProfileKindWithBuiltInDetectors(opts)` returns a `ProfileKind<CpuKindData>` whose `builtInAnalyzers` are this package's CPU detectors. `runProfile` flat-maps every kind's `builtInAnalyzers`, so you only need to register the kind — no separate `analyzers` injection.
 
-If you enable `deep: true`, capture target diagnostics with `onTargetDiagnosticChunk` and append them to the buffer returned by `readStderrSoFar`; deopt parsing reads from that stream. Use `deep: false` when you do not collect it.
+If you enable `deep: true`, capture target diagnostics with `onTargetDiagnosticChunk` and append them to the buffer returned by `readStderrSoFar`; deopt parsing reads from that stream. Use `deep: false` and return an empty string when you do not collect it.
 
 ## Usage - analyze an existing capture
 
@@ -176,14 +176,13 @@ import {
 } from '@lanterna-profiler/core';
 import { createCpuProfileKindWithBuiltInDetectors } from '@lanterna-profiler/detectors';
 
-let stderr = '';
 await runProfile({
   command: ['node', 'app.js'],
   durationMs: 15_000,
   pretty: false,
   kinds: [
     createCpuProfileKindWithBuiltInDetectors({
-      readStderrSoFar: () => stderr,
+      readStderrSoFar: () => '',
       sampleIntervalMicros: 1000,
       deep: false,
     }),

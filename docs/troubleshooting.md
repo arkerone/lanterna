@@ -14,7 +14,7 @@ Common problems and how to resolve them.
 | `profiles.cpu.summary.userCodeRatio` near 0 | [Ratios look wrong](#ratios-look-wrong) |
 | `captureIntegrity.*` flags are `false` | [Degraded capture integrity](#degraded-capture-integrity) |
 | Unexpected `event-loop-stall` finding | [Spurious event-loop stall](#spurious-event-loop-stall) |
-| Lots of V8 noise on stderr under `--deep` | [--deep noise](#--deep-noise) |
+| Lots of V8 noise under `--deep` | [--deep noise](#--deep-noise) |
 | Attach mode emits no deopts | [Attach mode has no deopts](#attach-mode-has-no-deopts) |
 | Unknown `--kind <id>` | [Unknown profile kind](#unknown-profile-kind) |
 
@@ -171,7 +171,7 @@ unknown profile kind(s): <ids>. Available kinds: cpu
 ## `--deep` noise
 
 > [!NOTE]
-> **This is expected.** `--trace-deopt` tells V8 to print deoptimisation events to the child's stderr, and Lanterna forwards child stderr to your terminal so you can correlate it with `deopts[]`. Redirect stderr if needed:
+> **This is expected.** `--trace-deopt` tells V8 to print deoptimisation events. Lanterna captures those trace diagnostics for `deopts[]` and filters V8 trace lines out of JSON stdout; ordinary child stderr is still forwarded to your terminal. Redirect stderr if needed:
 >
 > ```bash
 > lanterna run --deep --duration 30s -- node app.js 2>/dev/null

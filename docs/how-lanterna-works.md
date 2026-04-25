@@ -55,7 +55,7 @@ The coordinator builds a single preload script from the active kinds' hook insta
 | --- | --- |
 | `--inspect-brk=0` | Start the Node inspector on a random port, pause before user code runs. |
 | `--require=<composed preload>` | Inject the runtime-signals installer + any kind hook fragments. |
-| `--trace-deopt` | Added only when `--deep` is enabled (CPU kind uses stderr to build `deopts[]`). |
+| `--trace-deopt` | Added only when `--deep` is enabled (CPU kind uses target diagnostics to build `deopts[]`). |
 | `LANTERNA_ACTIVE=1` | Marker for the child process. |
 | `LANTERNA_CONTROL_FD=3` | FD the preload writes control-channel events to. |
 
@@ -95,13 +95,13 @@ From that moment, signal families accumulate:
 - event-loop heartbeats + histogram (runtime-signals)
 - GC events (runtime-signals)
 
-With `--deep`, V8 deopt traces are also collected from the child's `stderr` and parsed later into grouped `deopts[]`.
+With `--deep`, V8 deopt traces are also collected from the child's diagnostic output and parsed later into grouped `deopts[]`. V8 may emit those trace lines on stdout or stderr; Lanterna keeps trace diagnostics out of JSON stdout while preserving normal target stdout/stderr.
 
 ### 6. Stop capture
 
 Lanterna stops when the requested duration elapses, the target finishes first, or a signal (SIGINT/SIGTERM) is received. During shutdown it:
 
-- calls each probe's `stop(cdp)` — the CPU probe retrieves the raw CPU profile and (if `deep`) parses deopts from the stderr buffer
+- calls each probe's `stop(cdp)` — the CPU probe retrieves the raw CPU profile and (if `deep`) parses deopts from the diagnostics buffer
 - reads the final event-loop + GC summaries from the target
 - normalizes timed samples to the capture window
 - merges capture-integrity counters from the control channel + CDP

@@ -22,7 +22,7 @@ Use this for report navigation and multi-kind path conventions. For CPU-specific
 
 ## Kind Identity vs Report Section
 
-- `ProfileKind.id` identifies the kind for CLI selection, capture data, `meta.profileKinds[]`, `meta.kinds.<kindId>`, and `meta.captureIntegrity.kinds.<kindId>`.
+- `ProfileKind.id` identifies the kind for CLI selection, capture data, `meta.kinds.<kindId>`, and `meta.captureIntegrity.kinds.<kindId>`. When that kind produces capture data, the id also appears in `meta.profileKinds[]`.
 - `ProfileKind.reportSectionKey` identifies the key under `report.profiles`.
 - Built-in CPU uses `cpu` for both.
 - Custom kinds may use different values, so do not assume `kind.id === reportSectionKey`.
@@ -54,7 +54,7 @@ Common fields:
 | `pid`, `cwd`, `startedAt`, `durationMs` | Capture context |
 | `command` | Spawned command, or `[]` in attach mode |
 | `mode` | `"spawn"`, `"attach"`, or `"in-process"` |
-| `profileKinds` | Ordered kind ids that contributed to the report |
+| `profileKinds` | Ordered kind ids that successfully produced capture data |
 | `kinds` | Per-kind metadata keyed by kind id |
 | `captureIntegrity` | Global and per-kind capture quality indicators |
 

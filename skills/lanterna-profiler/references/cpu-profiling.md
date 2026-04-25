@@ -6,7 +6,7 @@ Use this when interpreting the built-in CPU profile kind. The current built-in k
 
 - Ask the user how long to profile before starting a new capture, unless they already provided a duration.
 - For servers and APIs, recommend running traffic that represents the workload during the chosen capture window.
-- Use `--deep` only with `lanterna run`; it enables deopt tracing and can make stderr noisier.
+- Use `--deep` only with `lanterna run`; it enables deopt tracing and can make target diagnostics noisier.
 - Attach mode cannot enable `--deep`; `profiles.cpu.deopts[]` will stay empty.
 - Use `--sample-interval <us>` below `1000` only for suspected sub-millisecond hotspots; minimum is `50`.
 - If `profiles.cpu.summary.idleRatio > 0.8`, treat the capture as mostly idle and usually rerun with load.

@@ -38,9 +38,8 @@ import {
   SpawnSource,
 } from '@lanterna-profiler/core';
 
-let stderr = '';
 const cpuKind = createCpuProfileKind({
-  readStderrSoFar: () => stderr,
+  readStderrSoFar: () => '',
   sampleIntervalMicros: 1000,
   deep: false,
 });

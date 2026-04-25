@@ -239,7 +239,7 @@ Lanterna is extensible: you can ship your own detectors as plugins. See [Extendi
 jq '.findings[] | select(.severity != "info") | {id, severity, file: .evidence.file, line: .evidence.line}' report.json
 
 # Top 5 hotspots
-jq '.profiles.cpu.hotspots[:5] | .[] | {fn: .functionName, selfPct, totalPct, file}' report.json
+jq '.profiles.cpu.hotspots[:5] | .[] | {fn: .function, selfPct, totalPct, file}' report.json
 
 # Event-loop summary
 jq '{basis: .profiles.cpu.eventLoop.measurementBasis, confidence: .profiles.cpu.eventLoop.confidence, maxLagMs: .profiles.cpu.eventLoop.maxLagMs, p99LagMs: .profiles.cpu.eventLoop.p99LagMs}' report.json
@@ -321,17 +321,17 @@ import {
 } from '@lanterna-profiler/core';
 import { createCpuProfileKindWithBuiltInDetectors } from '@lanterna-profiler/detectors';
 
-let stderr = '';
+let diagnostics = '';
 const report: LanternaReport = await runProfile({
   command: ['node', 'app.js'],
   durationMs: 15_000,
   pretty: true,
   onTargetDiagnosticChunk: (chunk) => {
-    stderr += chunk;
+    diagnostics += chunk;
   },
   kinds: [
     createCpuProfileKindWithBuiltInDetectors({
-      readStderrSoFar: () => stderr,
+      readStderrSoFar: () => diagnostics,
       sampleIntervalMicros: 1000,
       deep: true,
     }),
@@ -355,14 +355,13 @@ import {
 } from '@lanterna-profiler/core';
 import { createCpuProfileKindWithBuiltInDetectors } from '@lanterna-profiler/detectors';
 
-let stderr = '';
 await runProfile({
   command: ['node', 'app.js'],
   durationMs: 15_000,
   pretty: false,
   kinds: [
     createCpuProfileKindWithBuiltInDetectors({
-      readStderrSoFar: () => stderr,
+      readStderrSoFar: () => '',
       sampleIntervalMicros: 1000,
       deep: false,
     }),
@@ -376,7 +375,7 @@ await runProfile({
 });
 ```
 
-When you enable `deep: true`, also pass `onTargetDiagnosticChunk` and append chunks to the buffer read by `readStderrSoFar`; deopt parsing depends on those target diagnostics. Leave `deep: false` when you do not collect that stream.
+When you enable `deep: true`, also pass `onTargetDiagnosticChunk` and append chunks to the buffer read by `readStderrSoFar`; deopt parsing depends on those target diagnostics. Leave `deep: false` and return an empty string when you do not collect that stream.
 
 </details>
 
@@ -433,7 +432,7 @@ Dependency direction: `cli → core`, `cli → detectors`, and `detectors → co
 
 ```bash
 npm install
-npm run build       # builds all three packages (tsc -b + copy .cjs hook)
+npm run build       # builds all three packages
 npm test            # runs every package's vitest suite
 ```
 
