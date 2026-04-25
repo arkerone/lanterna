@@ -16,6 +16,12 @@ export type {
   FindingAnalyzer,
   SectionAnalyzer,
 } from './analysis/core/types.js';
+export {
+  createFindingAnalyzerFromKindScopedDetector,
+  type KindScopedDetector,
+  type KindScopedDetectorBundle,
+  type KindScopedDetectorShared,
+} from './analysis/kind-scoped-detector.js';
 export type { HotspotAttribution } from './analysis/model/hotspots.js';
 export { AttachSource, createAttachSource } from './capture/attach.js';
 export type { RunCaptureOptions } from './capture/coordinator.js';
@@ -55,7 +61,6 @@ export type {
   KindAnalysisContext as KindContributorContext,
   KindAnalysisContributor,
   KindFinalizeHook,
-  KindProbeOptions,
   KindViews,
   ProfileKind,
   ProfileSectionMap,
@@ -73,6 +78,7 @@ export {
   createCpuProbe,
   createCpuProfileKind,
 } from './kinds/cpu/index.js';
+export type { CpuProbeOptions } from './kinds/cpu/probe.js';
 // Profile orchestration
 export {
   configureProfilePipeline,
@@ -82,8 +88,6 @@ export {
   attachProfile,
   runProfile,
 } from './profile/profile.js';
-export type { DefaultKindRegistryOptions } from './profile/registry.js';
-export { createDefaultKindRegistry } from './profile/registry.js';
 export type {
   AttachProfileOptions,
   AttachProgressEvent,
@@ -95,6 +99,7 @@ export type {
 // Report
 export { buildLanternaReport, serializeReport } from './report/index.js';
 export { LANTERNA_REPORT_SCHEMA_VERSION } from './report/meta.js';
+export { buildReportSchema } from './report/schema.js';
 export type {
   AlternativeHotspotEvidence,
   AttributionEvidence,

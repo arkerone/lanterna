@@ -68,11 +68,11 @@ export function makeRaw(
       controlChannelExpected: true,
       eventLoopTimed: false,
       gcTimed: false,
-      cpuSamplesTimed: true,
       gcObserverAvailable: true,
       controlChannelWriteErrors: 0,
       gcObserverSetupFailed: 0,
       heartbeatDropped: 0,
+      kinds: {},
       ...(captureIntegrityOverride ?? {}),
     },
     runtimeSignals: {
@@ -84,7 +84,7 @@ export function makeRaw(
       ...(runtimeSignalsOverride ?? {}),
     },
     kinds: {
-      cpu: { cpuProfile, deopts: deopts ?? [] },
+      cpu: { cpuProfile, deopts: deopts ?? [], samplesTimed: true },
       ...((kindsOverride ?? {}) as CaptureBundle['kinds']),
     },
     ...rest,

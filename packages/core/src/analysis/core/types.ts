@@ -2,9 +2,12 @@ import type { CaptureBundle } from '../../capture/core/types.js';
 import type { KindViews, ProfileSectionMap } from '../../kinds/core/types.js';
 import type { Finding, LanternaReport } from '../../report/types.js';
 
+/**
+ * Options shared by every analyzer at pipeline run time. Kind-agnostic by
+ * design — kind-specific config (sampling intervals, depth flags, etc.) is
+ * closed over by each kind at construction.
+ */
 export interface AnalysisOptions {
-  sampleIntervalMicros: number;
-  deep: boolean;
   command: string[];
   mode?: LanternaReport['meta']['mode'];
 }

@@ -104,12 +104,13 @@ export interface CaptureIntegrity {
   controlChannelExpected: boolean;
   eventLoopTimed: boolean;
   gcTimed: boolean;
-  cpuSamplesTimed: boolean;
   gcObserverAvailable: boolean;
   controlChannelWriteErrors: number;
   gcObserverSetupFailed: number;
   heartbeatDropped: number;
   diagnostics?: CaptureDiagnostic[];
+  /** Per-kind integrity bucket. Populated by each kind's `contributeIntegrity`. */
+  kinds: Record<string, unknown>;
 }
 
 /**

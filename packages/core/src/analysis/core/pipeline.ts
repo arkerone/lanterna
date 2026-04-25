@@ -76,7 +76,7 @@ export class AnalysisPipeline {
   run(bundle: CaptureBundle, options: AnalysisOptions): AnalysisResult {
     const context = createAnalysisContext(bundle, options);
     const snapshot: AnalysisSnapshot = {
-      meta: buildStubMeta(bundle, options),
+      meta: buildStubMeta(bundle, options, this.kinds),
       profiles: {},
       findings: [],
       extensions: {},
@@ -289,7 +289,19 @@ function computeImpactEstimateMs(
   return Math.round((durationMs * pct) / 100);
 }
 
-function buildStubMeta(bundle: CaptureBundle, options: AnalysisOptions): AnalysisSnapshot['meta'] {
+function buildStubMeta(
+  bundle: CaptureBundle,
+  options: AnalysisOptions,
+  kinds: ReadonlyArray<ProfileKind>,
+): AnalysisSnapshot['meta'] {
+  const kindsMeta: Record<string, unknown> = {};
+  const kindsIntegrity: Record<string, unknown> = { ...bundle.captureIntegrity.kinds };
+  for (const kind of kinds) {
+    const data = bundle.kinds?.[kind.id as keyof CaptureKindDataMap];
+    if (data === undefined) continue;
+    if (kind.contributeMeta) kindsMeta[kind.id] = kind.contributeMeta(data);
+    if (kind.contributeIntegrity) kindsIntegrity[kind.id] = kind.contributeIntegrity(data);
+  }
   return {
     schemaVersion: LANTERNA_REPORT_SCHEMA_VERSION,
     nodeVersion: '',
@@ -299,15 +311,13 @@ function buildStubMeta(bundle: CaptureBundle, options: AnalysisOptions): Analysi
     pid: 0,
     startedAt: '',
     durationMs: bundle.durationMs,
-    sampleIntervalMicros: options.sampleIntervalMicros,
-    totalSamples: 0,
     cwd: '',
     command: options.command,
     lanternaVersion: '',
     mode: options.mode ?? 'spawn',
-    deep: options.deep,
-    profileKinds: [],
-    captureIntegrity: bundle.captureIntegrity,
+    profileKinds: kinds.map((kind) => kind.id),
+    kinds: kindsMeta,
+    captureIntegrity: { ...bundle.captureIntegrity, kinds: kindsIntegrity },
   };
 }
 

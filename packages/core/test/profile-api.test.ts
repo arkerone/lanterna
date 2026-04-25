@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { z } from 'zod';
 import { defineFindingAnalyzer } from '../src/analysis/core/pipeline.js';
 import { createCaptureIntegrity } from '../src/capture/core/session.js';
 import { defineProfileKind } from '../src/kinds/core/types.js';
@@ -30,6 +31,7 @@ const { attachProfile, runProfile } = await import('../src/profile/profile.js');
 const testKind = defineProfileKind({
   id: 'test',
   reportSectionKey: 'test',
+  reportSchema: z.unknown(),
   createProbe() {
     return {
       start: async () => {},
@@ -113,14 +115,13 @@ describe('profile API', () => {
       deep: true,
       sampleIntervalMicros: 1000,
       kinds: [testKind],
-      analyzers: [testFinding],
+      extraAnalyzers: [testFinding],
     });
 
     expect(report).toEqual({ meta: {}, profiles: {}, findings: [] });
     expect(mocks.runCapture).toHaveBeenCalledWith(
       expect.objectContaining({
         kinds: [testKind],
-        probeOptions: { sampleIntervalMicros: 1000, deep: true },
         sourceOptions: expect.objectContaining({
           command: ['node', 'app.js'],
           deep: true,
@@ -133,7 +134,7 @@ describe('profile API', () => {
         profiles: { test: { ok: true } },
         findings: [expect.objectContaining({ id: 'test.finding' })],
       }),
-      ['test'],
+      [testKind],
       expect.objectContaining({ mode: 'spawn' }),
     );
   });
@@ -149,7 +150,6 @@ describe('profile API', () => {
     expect(mocks.runCapture).toHaveBeenCalledWith(
       expect.objectContaining({
         kinds: [testKind],
-        probeOptions: { sampleIntervalMicros: 1000, deep: false },
         sourceOptions: expect.objectContaining({
           pid: 1234,
         }),
@@ -160,7 +160,7 @@ describe('profile API', () => {
       expect.objectContaining({
         profiles: { test: { ok: true } },
       }),
-      ['test'],
+      [testKind],
       expect.objectContaining({ mode: 'attach' }),
     );
   });

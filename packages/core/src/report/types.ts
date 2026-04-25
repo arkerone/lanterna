@@ -43,26 +43,26 @@ export interface ReportMeta {
   pid: number;
   startedAt: string;
   durationMs: number;
-  sampleIntervalMicros: number;
-  totalSamples: number;
   cwd: string;
   command: string[];
   lanternaVersion: string;
   mode: 'spawn' | 'attach' | 'in-process';
-  deep: boolean;
   /** Ordered list of profile kind ids that contributed to this report. */
   profileKinds: string[];
+  /** Per-kind meta contributions. Each kind writes under `kinds[kind.id]`. */
+  kinds: Record<string, unknown>;
   captureIntegrity: {
     controlChannel: boolean;
     controlChannelExpected: boolean;
     eventLoopTimed: boolean;
     gcTimed: boolean;
-    cpuSamplesTimed: boolean;
     gcObserverAvailable: boolean;
     controlChannelWriteErrors: number;
     gcObserverSetupFailed: number;
     heartbeatDropped: number;
     diagnostics?: CaptureDiagnostic[];
+    /** Per-kind integrity contributions. */
+    kinds: Record<string, unknown>;
   };
 }
 

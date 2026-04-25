@@ -15,12 +15,10 @@ export type {
   KindAnalysisContext,
   KindAnalysisContributor,
   KindFinalizeHook,
-  KindProbeOptions,
   ProfileKind,
 } from './kinds/core/types.js';
 export { defineProfileKind } from './kinds/core/types.js';
 export { createDefaultAnalysisPipeline } from './profile/pipeline.js';
-export { createDefaultKindRegistry } from './profile/registry.js';
 export type {
   ProfilePipelinePlugin,
   ProfilePluginContext,

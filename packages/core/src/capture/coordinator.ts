@@ -1,5 +1,5 @@
 import { fetchTargetInfo, markCaptureStart, readRuntimeClockNow } from '../inspector/runtime.js';
-import type { KindProbeOptions, ProfileKind } from '../kinds/core/types.js';
+import type { ProfileKind } from '../kinds/core/types.js';
 import { composeAttachScript, composePreloadScript } from '../runtime-signals/hooks/framework.js';
 import { runtimeSignalsInstaller } from '../runtime-signals/hooks/installers/runtime-signals.js';
 import {
@@ -40,7 +40,6 @@ export interface RunCaptureOptions<TSourceOptions> {
   source: ProfileSource<TSourceOptions>;
   sourceOptions: TSourceOptions;
   kinds: ProfileKind[];
-  probeOptions: KindProbeOptions;
   /** Duration of the capture (ms). Omit to run until exit / manual stop. */
   durationMs?: number;
   /** External stop signal. When it resolves, the coordinator stops. */
@@ -92,7 +91,7 @@ export async function runCapture<TSourceOptions>(
       probe: ReturnType<ProfileKind['createProbe']>;
     }>;
     for (const kind of options.kinds) {
-      const probe = kind.createProbe(options.probeOptions);
+      const probe = kind.createProbe();
       try {
         await probe.install?.(cdp);
       } catch (error) {
@@ -190,16 +189,6 @@ export async function runCapture<TSourceOptions>(
       ? undefined
       : await withTimeout(readRuntimeIntegrity(cdp), 1500, undefined);
     mergeCaptureIntegrityCounters(captureIntegrity, live.integrityCounters ?? runtimeIntegrity);
-
-    const cpuData = kindsData.cpu as
-      | { cpuProfile?: { samples?: number[]; timeDeltas?: number[] } }
-      | undefined;
-    if (
-      cpuData?.cpuProfile?.samples?.length &&
-      cpuData.cpuProfile.timeDeltas?.length === cpuData.cpuProfile.samples.length
-    ) {
-      captureIntegrity.cpuSamplesTimed = true;
-    }
 
     const normalizedGcEvents = normalizeTimedEvents(
       absoluteGcEvents,

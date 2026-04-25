@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { z } from 'zod';
 import { createManualStopSignal, runCapture } from '../src/capture/coordinator.js';
 import { createCaptureIntegrity } from '../src/capture/core/session.js';
 import type {
@@ -109,6 +110,7 @@ function failingKind(id: string, phase: 'install' | 'start' | 'stop'): ProfileKi
   return defineProfileKind({
     id,
     reportSectionKey: id,
+    reportSchema: z.unknown(),
     createProbe() {
       return {
         install:
@@ -138,6 +140,7 @@ function successfulKind(id: string): ProfileKind {
   return defineProfileKind({
     id,
     reportSectionKey: id,
+    reportSchema: z.unknown(),
     createProbe() {
       return {
         start: async () => {},
@@ -156,6 +159,7 @@ function hangingStopKind(id: string): ProfileKind {
   return defineProfileKind({
     id,
     reportSectionKey: id,
+    reportSchema: z.unknown(),
     createProbe() {
       return {
         start: async () => {},

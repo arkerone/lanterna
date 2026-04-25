@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
+import { createCpuProfileKind } from '../src/kinds/cpu/index.js';
 import { LANTERNA_REPORT_SCHEMA_VERSION } from '../src/report/meta.js';
-import { lanternaReportSchema } from '../src/report/schema.js';
+import { buildReportSchema } from '../src/report/schema.js';
 import type { CpuProfileReport, LanternaReport } from '../src/report/types.js';
+
+const lanternaReportSchema = buildReportSchema([
+  createCpuProfileKind({ readStderrSoFar: () => '' }),
+]);
 
 function makeCpuSection(overrides: Partial<CpuProfileReport> = {}): CpuProfileReport {
   return {
@@ -54,23 +59,23 @@ function makeReport(overrides: Partial<LanternaReport> = {}): unknown {
       startedAt: '2024-01-01T00:00:00.000Z',
       durationMs: 5000,
       sampleIntervalMicros: 1000,
-      totalSamples: 200,
       cwd: '/app',
       command: ['node', 'server.js'],
       lanternaVersion: '0.1.0',
       mode: 'spawn',
       deep: false,
       profileKinds: ['cpu'],
+      kinds: { cpu: { samplesTotal: 200 } },
       captureIntegrity: {
         controlChannel: true,
         controlChannelExpected: true,
         eventLoopTimed: false,
         gcTimed: false,
-        cpuSamplesTimed: true,
         gcObserverAvailable: true,
         controlChannelWriteErrors: 0,
         gcObserverSetupFailed: 0,
         heartbeatDropped: 0,
+        kinds: { cpu: { samplesTimed: true } },
       },
     },
     profiles: { cpu: makeCpuSection() },
