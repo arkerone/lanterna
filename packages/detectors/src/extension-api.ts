@@ -3,18 +3,12 @@ export type {
   AnalysisPipeline,
   AnalysisSnapshot,
   FindingAnalyzer,
+  KindScopedDetector,
   SectionAnalyzer,
 } from '@lanterna-profiler/core';
 export {
+  createFindingAnalyzerFromKindScopedDetector,
   defineFindingAnalyzer,
   defineSectionAnalyzer,
 } from '@lanterna-profiler/core';
-export type { Detector, FindingContext } from './detectors/types.js';
-export type {
-  LanternaDetectorPlugin,
-  LanternaPluginContext,
-} from './plugin.js';
-export {
-  buildFindingContext,
-  createFindingAnalyzerFromDetector,
-} from './plugin.js';
+export type { CpuHotspotContext } from './detectors/shared.js';

@@ -15,13 +15,15 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('@lanterna-profiler/core', () => ({
-  createDefaultKindRegistry: vi.fn(() => ({ resolveMany: mocks.resolveMany })),
+  createKindRegistry: vi.fn(() => ({ resolveMany: mocks.resolveMany })),
   runProfile: mocks.runProfile,
   attachProfile: mocks.attachProfile,
 }));
 
 vi.mock('@lanterna-profiler/detectors', () => ({
   createBuiltInFindingAnalyzers: vi.fn(() => []),
+  withBuiltInCpuDetectors: vi.fn((kind) => kind),
+  createCpuProfileKindWithBuiltInDetectors: vi.fn(() => ({ id: 'cpu' })),
 }));
 
 vi.mock('../src/activity-indicator.js', () => ({
@@ -48,7 +50,7 @@ describe('profile commands', () => {
     mocks.runProfile.mockResolvedValue({ meta: {}, profiles: {}, findings: [] });
     mocks.attachProfile.mockResolvedValue({ meta: {}, profiles: {}, findings: [] });
     mocks.loadLanternaConfig.mockResolvedValue(undefined);
-    mocks.loadPlugins.mockResolvedValue([]);
+    mocks.loadPlugins.mockResolvedValue({ kinds: [], setups: [] });
   });
 
   afterEach(() => {
@@ -79,7 +81,12 @@ describe('profile commands', () => {
     });
 
     expect(exit).not.toHaveBeenCalled();
-    expect(mocks.writeReportOutput).toHaveBeenCalledWith(report, undefined, true);
+    expect(mocks.writeReportOutput).toHaveBeenCalledWith(
+      report,
+      undefined,
+      true,
+      expect.any(Array),
+    );
     expect(mocks.indicator.succeed).toHaveBeenCalledWith('Lanterna profile complete');
   });
 
@@ -97,7 +104,12 @@ describe('profile commands', () => {
     });
 
     expect(exit).not.toHaveBeenCalled();
-    expect(mocks.writeReportOutput).toHaveBeenCalledWith(report, undefined, false);
+    expect(mocks.writeReportOutput).toHaveBeenCalledWith(
+      report,
+      undefined,
+      false,
+      expect.any(Array),
+    );
     expect(mocks.indicator.succeed).toHaveBeenCalledWith('Lanterna attach capture complete');
   });
 
@@ -106,7 +118,7 @@ describe('profile commands', () => {
     const configPlugin = vi.fn(() => calls.push('config'));
     const flagPlugin = vi.fn(() => calls.push('flag'));
     mocks.loadLanternaConfig.mockResolvedValue({ detectors: ['./config-plugin.mjs'] });
-    mocks.loadPlugins.mockResolvedValue([configPlugin, flagPlugin]);
+    mocks.loadPlugins.mockResolvedValue({ kinds: [], setups: [configPlugin, flagPlugin] });
 
     await runCommand({
       command: ['node', 'app.js'],

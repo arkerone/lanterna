@@ -5,6 +5,7 @@ import type {
   Finding,
   FindingRemediation,
   Hotspot,
+  KindScopedDetector,
 } from '@lanterna-profiler/core';
 import { defineBuiltinFinding, stripOptPrefix } from '@lanterna-profiler/core';
 import { BLOCKING_IO_PATTERNS, DETECTOR_THRESHOLDS } from '../config.js';
@@ -114,6 +115,7 @@ const BLOCKING_IO_REMEDIATION: ReadonlyMap<string, FindingRemediation> = new Map
   ],
 ]);
 
+import type { CpuHotspotContext } from './shared.js';
 import {
   aggregateByPatterns,
   buildAttributedFinding,
@@ -121,11 +123,13 @@ import {
   findStallCorrelation,
   resolveAttribution,
 } from './shared.js';
-import type { Detector, FindingContext } from './types.js';
 
-export const blockingIoDetector: Detector = {
+export const blockingIoDetector: KindScopedDetector<'cpu'> = {
   id: 'blocking-io',
-  detect(report, context): Finding[] {
+  kindIds: ['cpu'],
+  detect({ cpu }): Finding[] {
+    const report = cpu.report;
+    const context: CpuHotspotContext = cpu.view.hotspotAnalysis;
     const thresholds = DETECTOR_THRESHOLDS.blockingIo;
     const { categoryTotalPct } = aggregateByPatterns(context.fullHotspots, BLOCKING_IO_PATTERNS, {
       normalize: stripOptPrefix,
@@ -153,7 +157,7 @@ function buildFinding(
   api: string,
   categoryTotalPct: number,
   report: { eventLoop: EventLoopReport },
-  context: FindingContext,
+  context: CpuHotspotContext,
 ): BuiltinFinding<'blocking-io'> {
   const asyncApi = api.replace(/Sync$/, '');
   const { attribution, caller } = resolveAttribution(hotspot, context);

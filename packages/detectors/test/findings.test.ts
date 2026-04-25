@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {
   buildLanternaReport,
   type CaptureBundle,
+  createCpuProfileKind,
   LANTERNA_VERSION,
   type LanternaReport,
   type RawCpuProfile,
@@ -10,6 +11,16 @@ import {
 import { describe, it } from 'vitest';
 import { analyzeCapture } from '../src/analyze-capture.js';
 import { CWD, loadProfile, makeRaw } from './helpers.js';
+
+function buildCpuKinds(opts: { sampleIntervalMicros: number; deep: boolean }) {
+  return [
+    createCpuProfileKind({
+      readStderrSoFar: () => '',
+      sampleIntervalMicros: opts.sampleIntervalMicros,
+      deep: opts.deep,
+    }),
+  ];
+}
 
 function makeReport(profileName: string, overrides: Partial<CaptureBundle> = {}): LanternaReport {
   const profile = loadProfile(profileName);
@@ -25,8 +36,17 @@ function createReport(
   raw: CaptureBundle,
   options: { sampleIntervalMicros: number; deep: boolean; command: string[] },
 ): LanternaReport {
-  return buildLanternaReport(raw, analyzeCapture(raw, options), ['cpu'], options);
+  const kinds = buildCpuKinds(options);
+  const analysisOptions = { command: options.command };
+  return buildLanternaReport(
+    raw,
+    analyzeCapture(raw, analysisOptions, kinds),
+    kinds,
+    analysisOptions,
+  );
 }
+
+const cpuKinds = buildCpuKinds({ sampleIntervalMicros: 1000, deep: false });
 
 function findFindingOrFail(
   report: LanternaReport,
@@ -234,7 +254,6 @@ describe('capture integrity – attach mode clean regression', () => {
       controlChannelExpected: false,
       eventLoopTimed: true,
       gcTimed: false,
-      cpuSamplesTimed: true,
       gcObserverAvailable: true,
       controlChannelWriteErrors: 0,
       gcObserverSetupFailed: 0,
@@ -325,7 +344,6 @@ describe('findings – excessive-gc confidence gating', () => {
         controlChannelExpected: true,
         eventLoopTimed: false,
         gcTimed: false,
-        cpuSamplesTimed: true,
         gcObserverAvailable: true,
         controlChannelWriteErrors: 0,
         gcObserverSetupFailed: 0,
@@ -354,7 +372,6 @@ describe('findings – event-loop-stall', () => {
       controlChannelExpected: true,
       eventLoopTimed: true,
       gcTimed: false,
-      cpuSamplesTimed: true,
       gcObserverAvailable: true,
       controlChannelWriteErrors: 0,
       gcObserverSetupFailed: 0,
@@ -398,7 +415,6 @@ describe('event loop report – hook without usable timing signal', () => {
       controlChannelExpected: true,
       eventLoopTimed: false,
       gcTimed: false,
-      cpuSamplesTimed: true,
       gcObserverAvailable: true,
       controlChannelWriteErrors: 0,
       gcObserverSetupFailed: 0,
@@ -1009,7 +1025,7 @@ describe('findings – node-modules-hotspot', () => {
     delete extra.calleeFile;
     delete extra.calleeLine;
 
-    assert.doesNotThrow(() => serializeReport(report, { pretty: false }));
+    assert.doesNotThrow(() => serializeReport(report, { pretty: false, kinds: cpuKinds }));
   });
 });
 
@@ -1411,7 +1427,7 @@ describe('report structure – meta is complete', () => {
   it('meta has required fields', () => {
     assert.ok(report.meta.nodeVersion.startsWith('v'));
     assert.ok(report.meta.durationMs > 0);
-    assert.ok(report.meta.totalSamples > 0);
+    assert.ok((report.meta.kinds.cpu as { samplesTotal: number }).samplesTotal > 0);
     assert.ok(report.meta.cwd === CWD);
     assert.equal(report.meta.lanternaVersion, LANTERNA_VERSION);
     assert.equal(report.meta.mode, 'spawn');

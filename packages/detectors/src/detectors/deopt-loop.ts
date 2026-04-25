@@ -1,12 +1,21 @@
-import type { BuiltinFinding, DeoptLoopEvidenceExtra, Finding } from '@lanterna-profiler/core';
+import type {
+  BuiltinFinding,
+  DeoptLoopEvidenceExtra,
+  Finding,
+  KindScopedDetector,
+} from '@lanterna-profiler/core';
 import { defineBuiltinFinding } from '@lanterna-profiler/core';
 import { DETECTOR_THRESHOLDS } from '../config.js';
-import type { Detector, FindingContext } from './types.js';
+import type { CpuHotspotContext } from './shared.js';
 
-export const deoptLoopDetector: Detector = {
+export const deoptLoopDetector: KindScopedDetector<'cpu'> = {
   id: 'deopt-loop',
-  detect(report, context): Finding[] {
-    if (!report.meta.deep) return [];
+  kindIds: ['cpu'],
+  detect({ cpu }, shared): Finding[] {
+    const cpuMeta = shared.meta.kinds.cpu as { deep?: boolean } | undefined;
+    if (!cpuMeta?.deep) return [];
+    const report = cpu.report;
+    const context: CpuHotspotContext = cpu.view.hotspotAnalysis;
     const thresholds = DETECTOR_THRESHOLDS.deoptLoop;
     const findings: Finding[] = [];
     for (const deopt of report.deopts) {
@@ -54,7 +63,7 @@ function findHotDeoptHotspot(
   functionName: string,
   file: string,
   line: number,
-  context: FindingContext,
+  context: CpuHotspotContext,
 ) {
   return context.fullHotspots.find(
     (hotspot) =>

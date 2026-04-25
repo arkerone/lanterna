@@ -4,6 +4,7 @@ import type {
   BaseFinding,
   BlockingIoEvidenceExtra,
   BuiltinFindingCategory,
+  CpuAnalysisView,
   EventLoopReport,
   FindingMeasurements,
   FindingRemediation,
@@ -15,7 +16,16 @@ import type {
   StallCorrelation,
   SyncCryptoEvidenceExtra,
 } from '@lanterna-profiler/core';
-import type { FindingContext } from './types.js';
+
+/**
+ * Subset of {@link CpuAnalysisView}'s hotspot analysis used by detector helpers.
+ * Detectors receive this via `kinds.cpu.view.hotspotAnalysis` from the
+ * `KindScopedDetector<'cpu'>` wrapper.
+ */
+export type CpuHotspotContext = Pick<
+  CpuAnalysisView['hotspotAnalysis'],
+  'fullHotspots' | 'hotspotById' | 'userAttributionById'
+>;
 
 export interface ResolvedAttribution {
   attribution: HotspotAttribution | undefined;
@@ -29,7 +39,10 @@ export interface ResolvedAttribution {
  * frame appears on ≥80% of the hotspot's sampled call paths). Use `attribution`
  * when you need to surface the candidate regardless of confidence.
  */
-export function resolveAttribution(hotspot: Hotspot, context: FindingContext): ResolvedAttribution {
+export function resolveAttribution(
+  hotspot: Hotspot,
+  context: CpuHotspotContext,
+): ResolvedAttribution {
   const attribution = context.userAttributionById.get(hotspot.id);
   const caller = attribution?.confidence === 'high' ? attribution : undefined;
   return { attribution, caller };

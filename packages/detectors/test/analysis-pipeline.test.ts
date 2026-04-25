@@ -1,14 +1,18 @@
 import {
   buildLanternaReport,
   createAnalysisPipeline,
+  createCpuProfileKind,
   defineFindingAnalyzer,
   defineProfileKind,
   defineSectionAnalyzer,
   serializeReport,
 } from '@lanterna-profiler/core';
 import { describe, expect, it } from 'vitest';
+import { z } from 'zod';
 import { analyzeCapture, createDefaultAnalysisPipeline } from '../src/index.js';
 import { loadProfile, makeRaw } from './helpers.js';
+
+const cpuKinds = [createCpuProfileKind({ readStderrSoFar: () => '' })];
 
 const defaultOptions = {
   sampleIntervalMicros: 1000,
@@ -22,14 +26,14 @@ describe('analysis pipeline', () => {
 
     const directReport = buildLanternaReport(
       raw,
-      analyzeCapture(raw, defaultOptions),
-      ['cpu'],
+      analyzeCapture(raw, defaultOptions, cpuKinds),
+      cpuKinds,
       defaultOptions,
     );
     const pipelineReport = buildLanternaReport(
       raw,
-      createDefaultAnalysisPipeline().run(raw, defaultOptions),
-      ['cpu'],
+      createDefaultAnalysisPipeline(cpuKinds).run(raw, defaultOptions),
+      cpuKinds,
       defaultOptions,
     );
 
@@ -38,7 +42,7 @@ describe('analysis pipeline', () => {
 
   it('supports custom sections and findings that flow through report serialization', () => {
     const raw = makeRaw(loadProfile('sync-crypto'));
-    const pipeline = createDefaultAnalysisPipeline();
+    const pipeline = createDefaultAnalysisPipeline(cpuKinds);
 
     pipeline.register(
       defineSectionAnalyzer({
@@ -93,7 +97,7 @@ describe('analysis pipeline', () => {
     const report = buildLanternaReport(
       raw,
       pipeline.run(raw, defaultOptions),
-      ['cpu'],
+      cpuKinds,
       defaultOptions,
     );
 
@@ -104,11 +108,11 @@ describe('analysis pipeline', () => {
     expect(report.findings).toContainEqual(
       expect.objectContaining({ id: 'acme.extension-finding' }),
     );
-    expect(() => serializeReport(report, { pretty: false })).not.toThrow();
+    expect(() => serializeReport(report, { pretty: false, kinds: cpuKinds })).not.toThrow();
   });
 
   it('rejects duplicate extension namespaces', () => {
-    const pipeline = createDefaultAnalysisPipeline();
+    const pipeline = createDefaultAnalysisPipeline(cpuKinds);
 
     pipeline.register(
       defineSectionAnalyzer({
@@ -136,7 +140,7 @@ describe('analysis pipeline', () => {
   });
 
   it('rejects duplicate finding analyzer ids', () => {
-    const pipeline = createDefaultAnalysisPipeline();
+    const pipeline = createDefaultAnalysisPipeline(cpuKinds);
     const analyzer = defineFindingAnalyzer({
       id: 'acme.duplicate',
       kind: 'finding',
@@ -154,6 +158,7 @@ describe('analysis pipeline', () => {
     const kind = defineProfileKind({
       id: 'duplicate',
       reportSectionKey: 'duplicate',
+      reportSchema: z.unknown(),
       createProbe() {
         return {
           start: async () => {},
@@ -176,8 +181,8 @@ describe('analysis pipeline', () => {
     const raw = makeRaw(loadProfile('sync-crypto'));
     const report = buildLanternaReport(
       raw,
-      createDefaultAnalysisPipeline().run(raw, defaultOptions),
-      ['cpu'],
+      createDefaultAnalysisPipeline(cpuKinds).run(raw, defaultOptions),
+      cpuKinds,
       defaultOptions,
     );
 
@@ -199,7 +204,9 @@ describe('analysis pipeline', () => {
       references: [],
     });
 
-    expect(() => serializeReport(report, { pretty: false })).toThrow(/invalid lanterna report/);
+    expect(() => serializeReport(report, { pretty: false, kinds: cpuKinds })).toThrow(
+      /invalid lanterna report/,
+    );
   });
 
   it('records diagnostics for non-fatal analyzer failures', () => {
@@ -213,6 +220,7 @@ describe('analysis pipeline', () => {
         defineProfileKind({
           id: 'broken',
           reportSectionKey: 'broken',
+          reportSchema: z.unknown(),
           createProbe() {
             throw new Error('not used');
           },

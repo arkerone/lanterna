@@ -419,7 +419,7 @@ describe('live profiling', () => {
 
     const report = JSON.parse(stdout);
     const cpuProfile = getCpuProfile(report);
-    assert.equal(report.meta.deep, true);
+    assert.equal(report.meta.kinds.cpu.deep, true);
     assert.ok(cpuProfile.deopts.length > 0, 'expected --deep to parse target deopts');
   });
 

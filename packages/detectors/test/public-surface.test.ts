@@ -16,7 +16,7 @@ describe('detectors public surface', () => {
     expect(detectors).toEqual(
       expect.objectContaining({
         createBuiltInFindingAnalyzers: expect.any(Function),
-        createFindingAnalyzerFromDetector: expect.any(Function),
+        withBuiltInCpuDetectors: expect.any(Function),
       }),
     );
   });

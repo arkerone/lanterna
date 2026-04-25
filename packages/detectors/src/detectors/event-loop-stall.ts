@@ -1,11 +1,17 @@
-import type { BuiltinFinding, EventLoopStallEvidenceExtra, Finding } from '@lanterna-profiler/core';
+import type {
+  BuiltinFinding,
+  EventLoopStallEvidenceExtra,
+  Finding,
+  KindScopedDetector,
+} from '@lanterna-profiler/core';
 import { defineBuiltinFinding } from '@lanterna-profiler/core';
 import { DETECTOR_THRESHOLDS } from '../config.js';
-import type { Detector } from './types.js';
 
-export const eventLoopStallDetector: Detector = {
+export const eventLoopStallDetector: KindScopedDetector<'cpu'> = {
   id: 'event-loop-stall',
-  detect(report): Finding[] {
+  kindIds: ['cpu'],
+  detect({ cpu }): Finding[] {
+    const report = cpu.report;
     const thresholds = DETECTOR_THRESHOLDS.eventLoopStall;
     const eventLoop = report.eventLoop;
     if (!eventLoop.available) return [];

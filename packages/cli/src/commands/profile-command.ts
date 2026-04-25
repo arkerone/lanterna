@@ -1,12 +1,13 @@
 import {
   type AttachProfileOptions,
   attachProfile,
-  createDefaultKindRegistry,
+  createKindRegistry,
+  type ProfileKind,
   type ProfilePipelinePlugin,
   type RunProfileOptions,
   runProfile,
 } from '@lanterna-profiler/core';
-import { createBuiltInFindingAnalyzers } from '@lanterna-profiler/detectors';
+import { createCpuProfileKindWithBuiltInDetectors } from '@lanterna-profiler/detectors';
 import { startActivityIndicator } from '../activity-indicator.js';
 import { loadLanternaConfig } from '../config.js';
 import { writeReportOutput } from '../output.js';
@@ -43,18 +44,18 @@ export async function executeProfileCommand(command: ExecuteProfileCommandOption
   });
 
   try {
-    const setupPipeline = await resolveSetupPipeline(command.options.detectors);
-    const kindRegistry =
-      command.mode === 'run'
-        ? createDefaultKindRegistry({ readStderrSoFar: command.readStderrSoFar })
-        : createDefaultKindRegistry();
-    const kinds = kindRegistry.resolveMany(command.options.kinds);
+    const { kinds: pluginKinds, setupPipeline } = await resolvePluginContributions(
+      command.options.detectors,
+    );
+    const cpuKind = buildCpuKind(command);
+    const registry = createKindRegistry([cpuKind, ...pluginKinds]);
+    const kinds = registry.resolveMany(command.options.kinds);
     const report = await runProfileCommand(command, kinds, setupPipeline, (message) => {
       indicator.update(message);
     });
 
     indicator.update('Writing the Lanterna report output...');
-    await writeReportOutput(report, command.options.output, command.options.pretty);
+    await writeReportOutput(report, command.options.output, command.options.pretty, kinds);
     indicator.succeed(command.successMessage);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -64,6 +65,21 @@ export async function executeProfileCommand(command: ExecuteProfileCommandOption
     }
     throw error;
   }
+}
+
+function buildCpuKind(command: ExecuteProfileCommandOptions): ProfileKind {
+  const sampleIntervalMicros = command.options.sampleIntervalMicros;
+  if (command.mode === 'run') {
+    return createCpuProfileKindWithBuiltInDetectors({
+      readStderrSoFar: command.readStderrSoFar,
+      sampleIntervalMicros,
+      deep: command.options.deep,
+    });
+  }
+  return createCpuProfileKindWithBuiltInDetectors({
+    readStderrSoFar: () => '',
+    sampleIntervalMicros,
+  });
 }
 
 async function runProfileCommand(
@@ -80,7 +96,6 @@ async function runProfileCommand(
       {
         ...profileOptions,
         kinds,
-        analyzers: createBuiltInFindingAnalyzers(),
         onTargetDiagnosticChunk: command.onTargetDiagnosticChunk,
         ...(setupPipeline ? { setupPipeline } : {}),
       },
@@ -97,7 +112,6 @@ async function runProfileCommand(
     {
       ...profileOptions,
       kinds,
-      analyzers: createBuiltInFindingAnalyzers(),
       ...(setupPipeline ? { setupPipeline } : {}),
     },
     (event) => {
@@ -106,17 +120,19 @@ async function runProfileCommand(
   );
 }
 
-async function resolveSetupPipeline(
+async function resolvePluginContributions(
   flagSpecs: string[],
-): Promise<ProfilePipelinePlugin | undefined> {
+): Promise<{ kinds: ProfileKind[]; setupPipeline: ProfilePipelinePlugin | undefined }> {
   const cwd = process.cwd();
   const config = await loadLanternaConfig(cwd);
   const specs = [...(config?.detectors ?? []), ...flagSpecs];
-  if (specs.length === 0) return undefined;
-  const plugins = await loadPlugins(specs, cwd);
-  return async (pipeline, ctx) => {
-    for (const plugin of plugins) {
-      await plugin(pipeline, ctx);
+  if (specs.length === 0) return { kinds: [], setupPipeline: undefined };
+  const { kinds, setups } = await loadPlugins(specs, cwd);
+  if (setups.length === 0) return { kinds, setupPipeline: undefined };
+  const setupPipeline: ProfilePipelinePlugin = async (pipeline, ctx) => {
+    for (const setup of setups) {
+      await setup(pipeline, ctx);
     }
   };
+  return { kinds, setupPipeline };
 }
