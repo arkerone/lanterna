@@ -12,6 +12,9 @@ export function buildReportSchema(
 ): ZodType {
   const profileShape: Record<string, ZodType> = {};
   for (const kind of kinds) {
+    if (profileShape[kind.reportSectionKey] !== undefined) {
+      throw new Error(`duplicate profile kind report section key: ${kind.reportSectionKey}`);
+    }
     profileShape[kind.reportSectionKey] = kind.reportSchema.optional();
   }
   const profilesSchema = z.object(profileShape).catchall(z.unknown());

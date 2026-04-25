@@ -39,8 +39,7 @@ export async function runProfile(
       source: new SpawnSource(),
       sourceOptions: {
         command: options.command,
-        sampleIntervalMicros: options.sampleIntervalMicros,
-        deep: options.deep,
+        traceDeopt: options.deep,
         onStdoutChunk: captureTargetDiagnostic,
         onStderrChunk: captureTargetDiagnostic,
         onProgress,
@@ -76,7 +75,6 @@ export async function attachProfile(
       sourceOptions: {
         pid: options.pid,
         inspectUrl: options.inspectUrl,
-        sampleIntervalMicros: options.sampleIntervalMicros,
         onProgress,
       },
       kinds,

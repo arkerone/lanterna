@@ -124,7 +124,7 @@ describe('profile API', () => {
         kinds: [testKind],
         sourceOptions: expect.objectContaining({
           command: ['node', 'app.js'],
-          deep: true,
+          traceDeopt: true,
         }),
       }),
     );
@@ -137,6 +137,19 @@ describe('profile API', () => {
       [testKind],
       expect.objectContaining({ mode: 'spawn' }),
     );
+  });
+
+  it('runProfile accepts non-CPU kinds without CPU-specific options', async () => {
+    await runProfile({
+      command: ['node', 'app.js'],
+      pretty: false,
+      kinds: [testKind],
+    });
+
+    const call = mocks.runCapture.mock.calls[0]?.[0];
+    expect(call).toEqual(expect.objectContaining({ kinds: [testKind] }));
+    expect(call.sourceOptions).not.toHaveProperty('deep');
+    expect(call.sourceOptions).not.toHaveProperty('sampleIntervalMicros');
   });
 
   it('attachProfile captures an inspector target and builds an attach-mode report', async () => {
@@ -163,5 +176,17 @@ describe('profile API', () => {
       [testKind],
       expect.objectContaining({ mode: 'attach' }),
     );
+  });
+
+  it('attachProfile accepts non-CPU kinds without CPU-specific options', async () => {
+    await attachProfile({
+      pid: 1234,
+      pretty: false,
+      kinds: [testKind],
+    });
+
+    const call = mocks.runCapture.mock.calls[0]?.[0];
+    expect(call).toEqual(expect.objectContaining({ kinds: [testKind] }));
+    expect(call.sourceOptions).not.toHaveProperty('sampleIntervalMicros');
   });
 });

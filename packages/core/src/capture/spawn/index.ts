@@ -26,7 +26,7 @@ export class SpawnSource implements ProfileSource<SpawnStartOptions> {
     const [command, ...rawArgs] = options.command;
     if (!command) throw new Error('command is empty');
     const args =
-      options.deep && isNodeExecutable(command) ? ['--trace-deopt', ...rawArgs] : rawArgs;
+      options.traceDeopt && isNodeExecutable(command) ? ['--trace-deopt', ...rawArgs] : rawArgs;
 
     options.onProgress?.({
       stage: 'spawn-target',
@@ -49,10 +49,10 @@ export class SpawnSource implements ProfileSource<SpawnStartOptions> {
 
     const child = spawn(command, args, {
       env,
-      stdio: ['inherit', options.deep ? 'pipe' : 'inherit', 'pipe', 'pipe'],
+      stdio: ['inherit', options.traceDeopt ? 'pipe' : 'inherit', 'pipe', 'pipe'],
     });
 
-    if (options.deep && child.stdout) {
+    if (options.traceDeopt && child.stdout) {
       child.stdout.on('data', (chunk: Buffer | string) => {
         const text = chunk.toString();
         options.onStdoutChunk?.(text);
@@ -137,7 +137,7 @@ export class SpawnSource implements ProfileSource<SpawnStartOptions> {
 
       options.onProgress?.({
         stage: 'prepare-runtime',
-        message: options.deep
+        message: options.traceDeopt
           ? 'Preparing runtime hooks and deopt tracing...'
           : 'Preparing runtime hooks and control signals...',
       });

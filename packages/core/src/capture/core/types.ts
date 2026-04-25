@@ -7,8 +7,7 @@ import type {
 
 export interface SpawnStartOptions {
   command: string[];
-  sampleIntervalMicros: number;
-  deep: boolean;
+  traceDeopt?: boolean;
   onStdoutChunk?: (chunk: string) => void;
   onStderrChunk?: (chunk: string) => void;
   onProgress?: (event: {
@@ -27,7 +26,6 @@ export interface SpawnStartOptions {
 export interface AttachStartOptions {
   pid?: number;
   inspectUrl?: string;
-  sampleIntervalMicros: number;
   onProgress?: (event: {
     stage:
       | 'resolve-target'

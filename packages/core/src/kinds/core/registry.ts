@@ -9,12 +9,20 @@ import type { ProfileKind } from './types.js';
  */
 export class ProfileKindRegistry {
   private readonly kinds = new Map<string, ProfileKind>();
+  private readonly reportSectionKeys = new Map<string, string>();
 
   register(kind: ProfileKind): this {
     if (this.kinds.has(kind.id)) {
       throw new Error(`duplicate profile kind id: ${kind.id}`);
     }
+    const existingKindId = this.reportSectionKeys.get(kind.reportSectionKey);
+    if (existingKindId !== undefined) {
+      throw new Error(
+        `duplicate profile kind report section key: ${kind.reportSectionKey} (${existingKindId}, ${kind.id})`,
+      );
+    }
     this.kinds.set(kind.id, kind);
+    this.reportSectionKeys.set(kind.reportSectionKey, kind.id);
     return this;
   }
 

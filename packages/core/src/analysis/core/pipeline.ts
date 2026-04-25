@@ -64,6 +64,14 @@ export class AnalysisPipeline {
     if (this.kinds.some((entry) => entry.id === kind.id)) {
       throw new Error(`duplicate profile kind id: ${kind.id}`);
     }
+    const existingKind = this.kinds.find(
+      (entry) => entry.reportSectionKey === kind.reportSectionKey,
+    );
+    if (existingKind) {
+      throw new Error(
+        `duplicate profile kind report section key: ${kind.reportSectionKey} (${existingKind.id}, ${kind.id})`,
+      );
+    }
     this.kinds.push(kind);
     return this;
   }
