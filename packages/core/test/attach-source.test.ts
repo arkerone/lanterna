@@ -57,7 +57,6 @@ describe('AttachSource', () => {
     const connectPromise = new AttachSource().connect(
       {
         inspectUrl: 'ws://127.0.0.1:9229/test',
-        sampleIntervalMicros: 1000,
       },
       {
         preloadScript: '',
@@ -85,7 +84,6 @@ describe('AttachSource', () => {
     await new AttachSource().connect(
       {
         inspectUrl: 'ws://127.0.0.1:9229/test',
-        sampleIntervalMicros: 1000,
         onProgress(event) {
           stages.push(event.stage);
         },
