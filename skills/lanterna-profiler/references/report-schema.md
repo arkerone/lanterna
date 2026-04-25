@@ -43,15 +43,21 @@ Per-kind analysis lives under `report.profiles.<kind>.*`. Today the built-in kin
 | `pid` | number | PID of the profiled process |
 | `startedAt` | string (ISO 8601) | When profiling started |
 | `durationMs` | number | Wall-clock duration of the profiling session |
-| `sampleIntervalMicros` | number | V8 sampling interval in microseconds |
-| `totalSamples` | number | Number of V8 tick samples collected |
 | `cwd` | string | Working directory of the profiled process |
 | `command` | string[] | Spawned command, or `[]` in attach mode |
 | `lanternaVersion` | string | Lanterna version that produced the report |
 | `mode` | `"spawn"` \| `"attach"` \| `"in-process"` | How the profiler connected |
-| `deep` | boolean | Whether deopt tracing was enabled |
 | `profileKinds` | string[] | Kinds captured in declared order, e.g. `["cpu"]` |
+| `kinds` | `Record<string, unknown>` | Per-kind meta contributions, keyed by kind id (see below) |
 | `captureIntegrity.*` | object | Quality indicators for runtime signals and timing |
+
+### `meta.kinds.cpu` (CPU-flavoured fields, used to live at the top of `meta`)
+
+| Field | Type | Description |
+|---|---|---|
+| `samplesTotal` | number | Number of V8 tick samples collected |
+| `sampleIntervalMicros` | number | V8 sampling interval in microseconds |
+| `deep` | boolean | Whether deopt tracing was enabled (`--deep`) |
 
 Important `captureIntegrity` flags:
 
@@ -61,8 +67,13 @@ Important `captureIntegrity` flags:
 | `controlChannelExpected` | Control channel should have existed for this mode |
 | `eventLoopTimed` | Event-loop timing fell back to histogram-only or was absent |
 | `gcTimed` | GC events have no real timestamps |
-| `cpuSamplesTimed` | CPU timing had to degrade from exact `timeDeltas[]` |
 | `gcObserverAvailable` | Runtime GC observer could not be installed |
+
+### `meta.captureIntegrity.kinds.cpu` (CPU-specific integrity signal)
+
+| Flag | Meaning when `false` |
+|---|---|
+| `samplesTimed` | CPU timing had to degrade from exact `timeDeltas[]` |
 
 ---
 
@@ -160,7 +171,7 @@ Interpretation rule:
 
 ### `profiles.cpu.deopts[]`
 
-Only populated when `meta.deep === true`.
+Only populated when `meta.kinds.cpu.deep === true`.
 
 | Field | Type | Description |
 |---|---|---|

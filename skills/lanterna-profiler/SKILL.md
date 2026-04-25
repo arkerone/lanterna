@@ -11,7 +11,7 @@ Use this skill to run or attach Lanterna against a Node.js process, inspect the 
 
 Core rule: do not guess. Read the report first, then read the implicated source files before proposing changes.
 
-Report path convention: Lanterna schema v2 stores per-kind analysis under `profiles.<kind>.*`. Today the built-in kind is `cpu`, so bare names like `eventLoop`, `gc`, `hotspots`, and `deopts` below are shorthand for `profiles.cpu.eventLoop`, `profiles.cpu.gc`, `profiles.cpu.hotspots`, and `profiles.cpu.deopts`.
+Report path convention: Lanterna schema v2 stores per-kind analysis under `profiles.<kind>.*`, and per-kind meta + integrity contributions under `meta.kinds.<kind>.*` and `meta.captureIntegrity.kinds.<kind>.*`. Today the built-in kind is `cpu`, so bare names like `eventLoop`, `gc`, `hotspots`, and `deopts` below are shorthand for `profiles.cpu.eventLoop`, `profiles.cpu.gc`, `profiles.cpu.hotspots`, and `profiles.cpu.deopts`. CPU-flavoured meta fields live at `meta.kinds.cpu.{samplesTotal, sampleIntervalMicros, deep}` (no longer at the top of `meta`).
 
 ## When to Use
 
@@ -40,7 +40,7 @@ Do not use when:
 - `--kind <id>` works on both `run` and `attach`; repeat it or use `--kind cpu,memory`
 - Today the only built-in profile kind is `cpu`, so both modes default to `--kind cpu`
 - Unknown kind ids fail immediately with `unknown profile kind(s): <ids>. Available kinds: cpu`
-- Programmatic API boundary: use `runProfile` / `attachProfile` and `createDefaultKindRegistry` from `@lanterna-profiler/core`; use `@lanterna-profiler/detectors` only for built-in detector analyzers, detector adapters such as `createFindingAnalyzerFromDetector`, thresholds, and plugin helper types.
+- Programmatic API boundary: use `runProfile` / `attachProfile` and `createKindRegistry` from `@lanterna-profiler/core`; use `@lanterna-profiler/detectors` for `createCpuProfileKindWithBuiltInDetectors` (CPU kind pre-wired with the default detectors), `withBuiltInCpuDetectors` (composable form), thresholds, attribution helpers, and the `KindScopedDetector` adapter `createFindingAnalyzerFromKindScopedDetector` (re-exported from core).
 - For HTTP servers, profile with load rather than idle traffic
 - If `profiles.cpu.summary.idleRatio > 0.8`, the run is mostly idle and should usually be repeated with load
 - If `eventLoop.available` is `false`, avoid strong latency attribution
@@ -64,7 +64,7 @@ If any of these is true, stop what you are doing:
 - You are about to attach to the first PID returned by `ps` without asking which program matters
 - You are about to recommend `--deep` on an `attach` session (not supported)
 - You are about to draw conclusions from a report where `profiles.cpu.summary.idleRatio > 0.8`
-- You are about to infer a number that is not present in the report (totalSamples, ratios, pauses)
+- You are about to infer a number that is not present in the report (`meta.kinds.cpu.samplesTotal`, ratios, pauses)
 
 When any of these fire: go back to the matching workflow step and collect the missing input.
 
@@ -202,7 +202,7 @@ Second pass — inspect only the sections you need:
 - `hotspots[]` for raw hot code
 - `eventLoop` for lag signal
 - `gc` for pause pressure
-- `deopts[]` when `meta.deep` is `true`
+- `deopts[]` when `meta.kinds.cpu.deep` is `true`
 
 Read `references/report-schema.md` when a field is unclear. Read `references/common-pitfalls.md` when turning a finding into a fix.
 
@@ -212,7 +212,7 @@ Before writing conclusions, check whether the run should be treated as degraded 
 
 Usually rerun instead of over-interpreting when:
 - `profiles.cpu.summary.idleRatio > 0.8`
-- `meta.totalSamples` is very low for the requested duration
+- `meta.kinds.cpu.samplesTotal` is very low for the requested duration
 - `eventLoop.available` is `false` and the user asked specifically about latency or stalls
 - `meta.captureIntegrity.*` contains `false` for the signals you need
 - The hottest frames are startup-only work and the user asked about steady-state throughput
@@ -264,7 +264,7 @@ Produce the analysis in this order:
    - If capture integrity is degraded, say so explicitly
 
 5. Deopts
-   When `meta.deep` is true, surface repeated deopts and explain them using `references/common-pitfalls.md`.
+   When `meta.kinds.cpu.deep` is true, surface repeated deopts and explain them using `references/common-pitfalls.md`.
 
 ### 7. Read code before proposing patches
 
@@ -287,7 +287,7 @@ For spawn (`lanterna run`):
 ## Lanterna Profile — <command> (<durationMs>ms)
 
 ### Summary
-<onCpuRatio>% on-CPU | top category: <topCategory> | <totalSamples> samples @ <sampleIntervalMicros>us
+<onCpuRatio>% on-CPU | top category: <topCategory> | <meta.kinds.cpu.samplesTotal> samples @ <meta.kinds.cpu.sampleIntervalMicros>us
 
 ### Findings
 #### [CRITICAL] <title>

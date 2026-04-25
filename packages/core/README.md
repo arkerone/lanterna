@@ -12,12 +12,14 @@ npm install @lanterna-profiler/core
 
 ## What's in the box
 
-- **Capture coordinator** — `runCapture({ source, kinds, ... })` orchestrates one or more probes against a live target and returns a `CaptureBundle`.
-- **Profile orchestration** — `runProfile(...)` and `attachProfile(...)` run capture, analysis, and report construction without CLI UI.
+- **Capture coordinator** — `runCapture({ source, kinds, ... })` orchestrates one or more probes against a live target and returns a `CaptureBundle`. Each kind closes over its own probe options at construction time — there is no global `probeOptions`.
+- **Profile orchestration** — `runProfile(...)` and `attachProfile(...)` run capture, analysis, and report construction without CLI UI. Both accept `extraAnalyzers` and `setupPipeline` for extensibility.
 - **Sources** — `SpawnSource` / `AttachSource` obtain a CDP connection (`ProfileSource.connect()`); the coordinator drives everything else.
-- **Profile kinds** — `ProfileKind`, `CaptureProbe`, `KindAnalysisContributor`, plus the built-in `createCpuProfileKind()` factory.
+- **Profile kinds** — `ProfileKind` (with optional `contributeMeta` / `contributeIntegrity` / `builtInAnalyzers` / `reportSchema`), `CaptureProbe`, `KindAnalysisContributor`, plus the built-in `createCpuProfileKind()` factory.
+- **Kind registry** — `createKindRegistry([...])` resolves CLI `--kind <id>` strings.
+- **Kind-scoped detectors** — `KindScopedDetector<K>` + `createFindingAnalyzerFromKindScopedDetector(detector)` for typed multi-kind detectors.
 - **Analysis pipeline** — `createAnalysisPipeline({ kinds, ... })` with `defineFindingAnalyzer` / `defineSectionAnalyzer` to register custom rules.
-- **Report** — `buildLanternaReport` + `serializeReport` (zod-validated JSON, schema v2 nests CPU data under `profiles.cpu.*`).
+- **Report** — `buildLanternaReport(bundle, analysis, kinds, options)` + `serializeReport(report, { pretty, kinds })` + `buildReportSchema(kinds)` (Zod schema is composed dynamically from the active kinds — schema v2 nests CPU data under `profiles.cpu.*` and per-kind meta under `meta.kinds.<id>.*`).
 - **Types** — `CaptureBundle`, `LanternaReport`, `Finding`, `Hotspot`, `AnalysisContext`, `FindingAnalyzer`, etc.
 - **Runtime hook framework** — `composePreloadScript` / `composeAttachScript` build a single preload from a set of `HookInstaller` fragments (always includes the cross-cutting runtime-signals installer for GC + event-loop lag).
 
@@ -37,7 +39,11 @@ import {
 } from '@lanterna-profiler/core';
 
 let stderr = '';
-const cpuKind = createCpuProfileKind({ readStderrSoFar: () => stderr });
+const cpuKind = createCpuProfileKind({
+  readStderrSoFar: () => stderr,
+  sampleIntervalMicros: 1000,
+  deep: false,
+});
 
 const bundle = await runCapture({
   source: new SpawnSource(),
@@ -47,7 +53,6 @@ const bundle = await runCapture({
     deep: false,
   },
   kinds: [cpuKind],
-  probeOptions: { sampleIntervalMicros: 1000, deep: false },
   durationMs: 15_000,
 });
 
@@ -72,10 +77,10 @@ pipeline.register(defineFindingAnalyzer({
   },
 }));
 
-const options = { sampleIntervalMicros: 1000, deep: false, command: ['node', 'app.js'], mode: 'spawn' as const };
+const options = { command: ['node', 'app.js'], mode: 'spawn' as const };
 const analysis = pipeline.run(bundle, options);
-const report = buildLanternaReport(bundle, analysis, ['cpu'], options);
-process.stdout.write(serializeReport(report, { pretty: true }));
+const report = buildLanternaReport(bundle, analysis, [cpuKind], options);
+process.stdout.write(serializeReport(report, { pretty: true, kinds: [cpuKind] }));
 ```
 
 ## Adding a new profile kind

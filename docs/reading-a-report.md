@@ -15,7 +15,7 @@ Lanterna emits a structured `LanternaReport` (schema v2). This guide walks throu
 | 5 | `profiles.cpu.eventLoop` | Latency signal + stall windows. | `confidence = low` or `measurementBasis = histogram` alone. |
 | 6 | `profiles.cpu.gc` | Pause counts, duration, correlated hotspots. | Very short runs with no `gcTimed`. |
 | 7 | `profiles.cpu.hotStacks` | Complete sampled call paths, weighted. | Not always needed — use when a single hotspot is ambiguous. |
-| 8 | `profiles.cpu.deopts` | V8 deoptimisation clusters. | Empty unless `meta.deep === true`. |
+| 8 | `profiles.cpu.deopts` | V8 deoptimisation clusters. | Empty unless `meta.kinds.cpu.deep === true`. |
 
 ---
 
@@ -24,19 +24,26 @@ Lanterna emits a structured `LanternaReport` (schema v2). This guide walks throu
 | Field | Meaning |
 | --- | --- |
 | `durationMs` | Wall-clock duration of the capture. |
-| `sampleIntervalMicros` | V8 CPU sampling interval. |
 | `command` | The executed command, or `[]` in attach mode. |
 | `mode` | `"spawn"` or `"attach"`. |
-| `deep` | Whether deopt tracing was enabled. |
 | `profileKinds` | Profile kinds captured, in declared order (e.g. `["cpu"]`). |
-| `captureIntegrity` | Quality indicators for timed signals. |
+| `kinds` | Per-kind meta contributions. CPU lives under `meta.kinds.cpu` (see below). |
+| `captureIntegrity` | Quality indicators for timed signals (and per-kind under `captureIntegrity.kinds.<id>`). |
+
+Per-kind CPU fields under `meta.kinds.cpu`:
+
+| Field | Meaning |
+| --- | --- |
+| `samplesTotal` | Number of V8 tick samples collected. |
+| `sampleIntervalMicros` | V8 CPU sampling interval. |
+| `deep` | Whether deopt tracing was enabled. |
 
 Sanity-check pattern:
 
 - Short `durationMs` → treat ratios and rankings as less stable.
 - `captureIntegrity.controlChannel = false` in `spawn` mode → event-loop and GC timing likely degraded.
 - In `attach` mode, `controlChannel = false` is **expected** (no FD 3 channel).
-- `deep = false` → ignore `deopts[]` entirely.
+- `meta.kinds.cpu.deep === false` → ignore `deopts[]` entirely.
 
 ---
 
@@ -218,7 +225,7 @@ Use hot stacks when:
 
 ## 8. `deopts` - V8 JIT instability
 
-Populated only when `meta.deep === true`.
+Populated only when `meta.kinds.cpu.deep === true`.
 
 | Field | Meaning |
 | --- | --- |

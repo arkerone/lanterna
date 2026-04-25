@@ -114,12 +114,12 @@ Common problems and how to resolve them.
 | `controlChannel` | The preload hook's FD 3 pipe never sent events. GC and event-loop heartbeats are absent. |
 | `eventLoopTimed` | No heartbeat events received. Event-loop measurements come from the histogram only. |
 | `gcTimed` | GC events have no timestamps. GC-hotspot correlation is unavailable. |
-| `cpuSamplesTimed` | `samples[]` and `timeDeltas[]` lengths differ. CPU stack correlation is approximate. |
+| `kinds.cpu.samplesTimed` | `samples[]` and `timeDeltas[]` lengths differ. CPU stack correlation is approximate. (Under `meta.captureIntegrity.kinds.cpu`.) |
 
 **What to do:**
 
 - A fully degraded capture (`controlChannel: false` in spawn mode) can happen if the child closes FD 3 early. Some process managers (pm2, Docker entrypoints) close extra file descriptors. Try running the process directly.
-- In **attach mode**, `controlChannel: false` is expected - judge quality from `eventLoopTimed`, `gcTimed`, `cpuSamplesTimed`.
+- In **attach mode**, `controlChannel: false` is expected - judge quality from `eventLoopTimed`, `gcTimed`, `meta.captureIntegrity.kinds.cpu.samplesTimed`.
 - On an interrupted attach capture, Lanterna prefers a partial report with degraded flags over hanging while waiting for late runtime reads.
 - `eventLoopTimed: false` with `gcTimed: false` is normal for very short processes (< 200 ms) - measurements didn't have time to land.
 - Always read `captureIntegrity` before drawing conclusions from correlation evidence.

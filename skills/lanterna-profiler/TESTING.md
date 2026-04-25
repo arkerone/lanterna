@@ -117,18 +117,25 @@ Use lanterna-profiler and analyze this report. Keep it short and definitive.
 {
   "meta": {
     "durationMs": 15000,
-    "totalSamples": 140,
-    "deep": false,
+    "kinds": {
+      "cpu": {
+        "samplesTotal": 140,
+        "sampleIntervalMicros": 1000,
+        "deep": false
+      }
+    },
     "captureIntegrity": {
       "controlChannel": true,
       "controlChannelExpected": true,
       "eventLoopTimed": true,
       "gcTimed": true,
-      "cpuSamplesTimed": true,
       "gcObserverAvailable": true,
       "controlChannelWriteErrors": 0,
       "gcObserverSetupFailed": 0,
-      "heartbeatDropped": 0
+      "heartbeatDropped": 0,
+      "kinds": {
+        "cpu": { "samplesTimed": true }
+      }
     }
   },
   "profiles": {
@@ -177,18 +184,25 @@ Use lanterna-profiler and explain why latency is bad.
 {
   "meta": {
     "durationMs": 15000,
-    "totalSamples": 12000,
-    "deep": false,
+    "kinds": {
+      "cpu": {
+        "samplesTotal": 12000,
+        "sampleIntervalMicros": 1000,
+        "deep": false
+      }
+    },
     "captureIntegrity": {
       "controlChannel": true,
       "controlChannelExpected": true,
       "eventLoopTimed": false,
       "gcTimed": true,
-      "cpuSamplesTimed": true,
       "gcObserverAvailable": true,
       "controlChannelWriteErrors": 0,
       "gcObserverSetupFailed": 0,
-      "heartbeatDropped": 0
+      "heartbeatDropped": 0,
+      "kinds": {
+        "cpu": { "samplesTimed": true }
+      }
     }
   },
   "profiles": {

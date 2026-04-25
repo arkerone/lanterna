@@ -217,7 +217,7 @@ Lanterna exposes several indicators so consumers can judge how trustworthy a rep
 | `controlChannel` | The preload hook successfully talked to the parent (spawn mode only). |
 | `eventLoopTimed` | Timed event-loop heartbeat data was observed. |
 | `gcTimed` | Timed GC events were observed. |
-| `cpuSamplesTimed` | The CPU profile included timing deltas. |
+| `kinds.cpu.samplesTimed` | The CPU profile included timing deltas (under `meta.captureIntegrity.kinds.cpu`). |
 
 If one of these flags is `false`, the report is still usable — but some interpretation should be more cautious.
 
@@ -283,14 +283,15 @@ Without `--deep`, deopt tracing is intentionally absent. `profiles.cpu.deopts` i
 Lanterna is a monorepo of three packages. `core` owns capture orchestration, profile kinds, analysis, and report construction; `detectors` supplies the default CPU detector pack; `cli` wires both together. Two extension seams exist:
 
 - **Detectors** — add finding analyzers.
-  - `@lanterna-profiler/core` exposes `createAnalysisPipeline`, `defineFindingAnalyzer`, and `defineSectionAnalyzer` for full control with no default detectors registered.
-  - `@lanterna-profiler/core` exposes `runProfile` / `attachProfile`, which accept `analyzers` and a `setupPipeline` hook so custom rules can be injected at call time.
-  - `@lanterna-profiler/detectors` exposes the built-in detector analyzers and `createFindingAnalyzerFromDetector(...)` for CPU detector plugins.
+  - `@lanterna-profiler/core` exposes `createAnalysisPipeline`, `defineFindingAnalyzer`, `defineSectionAnalyzer`, and the kind-scoped seam (`KindScopedDetector<K>` + `createFindingAnalyzerFromKindScopedDetector`) for typed detectors against any profile kind.
+  - `@lanterna-profiler/core` exposes `runProfile` / `attachProfile`, which accept `extraAnalyzers` and a `setupPipeline` hook so custom rules can be injected at call time.
+  - `@lanterna-profiler/detectors` exposes the built-in CPU detector pack, `createCpuProfileKindWithBuiltInDetectors(...)` (CPU kind pre-wired with the pack), and attribution helpers (`buildAttributedFinding`, `resolveAttribution`, `buildAttributionEvidence`, `CpuHotspotContext`).
   - `@lanterna-profiler/cli` loads plugins via `--detectors <spec>` (repeatable) or a `.lanterna.json` file and composes them into `setupPipeline` before calling core orchestration.
 - **Profile kinds** — add a new axis of measurement (memory, async, …).
-  - Implement a `ProfileKind` (probe + contributor + optional hook installer) in your own package.
-  - Register it via `createDefaultKindRegistry({ extra: [myKind] })` from `@lanterna-profiler/core` or pass it directly in `runProfile({ kinds: [...] })`.
-  - The built-in CPU kind (`createCpuProfileKind`) is a reference implementation.
+  - Implement a `ProfileKind` (probe + contributor + optional hook installer + `reportSchema` + optional `contributeMeta`/`contributeIntegrity`/`builtInAnalyzers`) in your own package.
+  - Register it via `createKindRegistry([myKind, ...])` from `@lanterna-profiler/core` or pass it directly in `runProfile({ kinds: [...] })`.
+  - A plugin module loaded by the CLI can also export `export const kinds: ProfileKind[]` (named export) — `lanterna run --kind <id> --detectors <pkg>` then resolves `<id>` to the plugin-provided kind.
+  - The built-in CPU kind (`createCpuProfileKind`) is a reference implementation; pair it with `withBuiltInCpuDetectors(kind)` (or use the one-shot `createCpuProfileKindWithBuiltInDetectors`) to attach the default detector pack.
 
 See the root README's [Extending Lanterna](../README.md#extending-lanterna) section for the detector-plugin authoring guide.
 
