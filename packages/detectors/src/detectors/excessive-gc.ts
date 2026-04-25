@@ -1,11 +1,17 @@
-import type { BuiltinFinding, ExcessiveGcEvidenceExtra, Finding } from '@lanterna-profiler/core';
+import type {
+  BuiltinFinding,
+  ExcessiveGcEvidenceExtra,
+  Finding,
+  KindScopedDetector,
+} from '@lanterna-profiler/core';
 import { defineBuiltinFinding } from '@lanterna-profiler/core';
 import { DETECTOR_THRESHOLDS } from '../config.js';
-import type { Detector } from './types.js';
 
-export const excessiveGcDetector: Detector = {
+export const excessiveGcDetector: KindScopedDetector<'cpu'> = {
   id: 'excessive-gc',
-  detect(report): Finding[] {
+  kindIds: ['cpu'],
+  detect({ cpu }, shared): Finding[] {
+    const report = cpu.report;
     const thresholds = DETECTOR_THRESHOLDS.excessiveGc;
     const gcRatio = report.summary.gcRatio;
     const longestPauseMs = report.gc.longestPauseMs;
@@ -18,9 +24,10 @@ export const excessiveGcDetector: Detector = {
       0,
     );
     const hasTimedGcEvidence = totalTimedGcEvents > 0 || report.gc.totalPauseMs > 0;
+    const cpuMeta = shared.meta.kinds.cpu as { samplesTotal?: number } | undefined;
     const hasEnoughCpuSamplesForRatioOnly =
-      report.meta.durationMs >= thresholds.minDurationMs &&
-      report.meta.totalSamples >= thresholds.minSamples;
+      shared.meta.durationMs >= thresholds.minDurationMs &&
+      (cpuMeta?.samplesTotal ?? 0) >= thresholds.minSamples;
     if (ratioTrigger && !pauseTrigger && !hasTimedGcEvidence && !hasEnoughCpuSamplesForRatioOnly) {
       return [];
     }

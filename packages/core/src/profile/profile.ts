@@ -26,6 +26,8 @@ export async function runProfile(
   const kinds = options.kinds ?? [
     createCpuProfileKind({
       readStderrSoFar: () => targetDiagnosticBuffer,
+      sampleIntervalMicros: options.sampleIntervalMicros,
+      deep: options.deep,
     }),
   ];
 
@@ -37,17 +39,12 @@ export async function runProfile(
       source: new SpawnSource(),
       sourceOptions: {
         command: options.command,
-        sampleIntervalMicros: options.sampleIntervalMicros,
-        deep: options.deep,
+        traceDeopt: options.deep,
         onStdoutChunk: captureTargetDiagnostic,
         onStderrChunk: captureTargetDiagnostic,
         onProgress,
       },
       kinds,
-      probeOptions: {
-        sampleIntervalMicros: options.sampleIntervalMicros,
-        deep: options.deep,
-      },
       durationMs: options.durationMs,
       stopSignal: manualStop.promise,
     });
@@ -65,6 +62,7 @@ export async function attachProfile(
   const kinds = options.kinds ?? [
     createCpuProfileKind({
       readStderrSoFar: () => '',
+      sampleIntervalMicros: options.sampleIntervalMicros,
     }),
   ];
 
@@ -77,14 +75,9 @@ export async function attachProfile(
       sourceOptions: {
         pid: options.pid,
         inspectUrl: options.inspectUrl,
-        sampleIntervalMicros: options.sampleIntervalMicros,
         onProgress,
       },
       kinds,
-      probeOptions: {
-        sampleIntervalMicros: options.sampleIntervalMicros,
-        deep: false,
-      },
       durationMs: options.durationMs,
       stopSignal: manualStop.promise,
     });
@@ -98,9 +91,7 @@ export async function attachProfile(
 async function analyzeAndBuild(
   bundle: CaptureBundle,
   options: {
-    sampleIntervalMicros: number;
-    deep?: boolean;
-    analyzers?: RunProfileOptions['analyzers'];
+    extraAnalyzers?: RunProfileOptions['extraAnalyzers'];
     setupPipeline?: RunProfileOptions['setupPipeline'];
     command?: string[];
   },
@@ -108,26 +99,21 @@ async function analyzeAndBuild(
   mode: 'spawn' | 'attach',
 ) {
   const analysisOptions = {
-    sampleIntervalMicros: options.sampleIntervalMicros,
-    deep: Boolean(options.deep),
     command: options.command ?? [],
     mode,
   };
+  const builtIn = kinds.flatMap((kind) => kind.builtInAnalyzers ?? []);
+  const analyzers = [...builtIn, ...(options.extraAnalyzers ?? [])];
   const pipeline = await configureProfilePipeline(
     {
       kinds,
-      analyzers: options.analyzers,
+      analyzers,
       setupPipeline: options.setupPipeline,
     },
     mode,
   );
   const analysis = pipeline.run(bundle, analysisOptions);
-  return buildLanternaReport(
-    bundle,
-    analysis,
-    kinds.map((kind) => kind.id),
-    analysisOptions,
-  );
+  return buildLanternaReport(bundle, analysis, kinds, analysisOptions);
 }
 
 function bindStopSignals(trigger: () => void): { dispose: () => void } {

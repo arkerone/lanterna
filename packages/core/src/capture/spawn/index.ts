@@ -26,7 +26,7 @@ export class SpawnSource implements ProfileSource<SpawnStartOptions> {
     const [command, ...rawArgs] = options.command;
     if (!command) throw new Error('command is empty');
     const args =
-      options.deep && isNodeExecutable(command) ? ['--trace-deopt', ...rawArgs] : rawArgs;
+      options.traceDeopt && isNodeExecutable(command) ? ['--trace-deopt', ...rawArgs] : rawArgs;
 
     options.onProgress?.({
       stage: 'spawn-target',
@@ -49,14 +49,19 @@ export class SpawnSource implements ProfileSource<SpawnStartOptions> {
 
     const child = spawn(command, args, {
       env,
-      stdio: ['inherit', options.deep ? 'pipe' : 'inherit', 'pipe', 'pipe'],
+      stdio: ['inherit', options.traceDeopt ? 'pipe' : 'inherit', 'pipe', 'pipe'],
     });
 
-    if (options.deep && child.stdout) {
+    if (options.traceDeopt && child.stdout) {
+      const routeTraceDeoptStdout = createTraceDeoptStdoutRouter({
+        onDiagnosticChunk: options.onStdoutChunk,
+        onTargetStdoutChunk: writeTargetStdout,
+      });
       child.stdout.on('data', (chunk: Buffer | string) => {
-        const text = chunk.toString();
-        options.onStdoutChunk?.(text);
-        writeTargetStderr(text);
+        routeTraceDeoptStdout(chunk.toString());
+      });
+      child.stdout.on('end', () => {
+        routeTraceDeoptStdout('', true);
       });
     }
 
@@ -137,7 +142,7 @@ export class SpawnSource implements ProfileSource<SpawnStartOptions> {
 
       options.onProgress?.({
         stage: 'prepare-runtime',
-        message: options.deep
+        message: options.traceDeopt
           ? 'Preparing runtime hooks and deopt tracing...'
           : 'Preparing runtime hooks and control signals...',
       });
@@ -214,6 +219,43 @@ function writeTargetStderr(chunk: string): void {
   } catch {
     // Preserve profiling if the parent stderr pipe closes early.
   }
+}
+
+function writeTargetStdout(chunk: string): void {
+  try {
+    writeSync(1, chunk);
+  } catch {
+    // Preserve profiling if the parent stdout pipe closes early.
+  }
+}
+
+function createTraceDeoptStdoutRouter(options: {
+  onDiagnosticChunk?: (chunk: string) => void;
+  onTargetStdoutChunk: (chunk: string) => void;
+}): (chunk: string, flush?: boolean) => void {
+  let pending = '';
+  return (chunk, flush = false) => {
+    const combined = pending + chunk;
+    const lines = combined.split(/(?<=\n)/);
+    pending = '';
+
+    if (!flush && lines.length > 0 && !lines[lines.length - 1]?.endsWith('\n')) {
+      pending = lines.pop() ?? '';
+    }
+
+    for (const line of lines) {
+      if (line.length === 0) continue;
+      if (isV8TraceDiagnostic(line)) {
+        options.onDiagnosticChunk?.(line);
+      } else {
+        options.onTargetStdoutChunk(line);
+      }
+    }
+  };
+}
+
+function isV8TraceDiagnostic(line: string): boolean {
+  return /^\[(?:marking|bailout|deoptimiz)/i.test(line);
 }
 
 function isNodeExecutable(command: string): boolean {

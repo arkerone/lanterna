@@ -17,7 +17,7 @@ flowchart LR
 1. **Capture** — a `ProfileSource` (spawn / attach) hands a live CDP connection to the `runCapture` coordinator. The coordinator runs the installed **profile kinds'** probes against that connection, plus the always-on runtime-signals installer (event-loop + GC). Output: `CaptureBundle` — `{ target, runtimeSignals, kinds, captureIntegrity, … }`.
 2. **Enrichment** — each kind contributes its analysis section (`profiles.<kind>`), detectors emit cross-kind `findings[]`, and `buildLanternaReport` assembles the final `LanternaReport`.
 
-**Profile kinds** are the extensibility seam. The built-in kind is `cpu`. Future kinds (memory, async) plug in through the same interface: they provide a `CaptureProbe` + `KindAnalysisContributor` and optionally a preload-hook fragment. The CLI selects active kinds with `--kind <id>` (repeatable, default `cpu`); the JSON report lists them in `meta.profileKinds` and puts their section under `profiles.<kind>`.
+**Profile kinds** are the extensibility seam. The built-in kind is `cpu`. Future kinds (memory, async) plug in through the same interface: they provide a `CaptureProbe` + `KindAnalysisContributor` and optionally a preload-hook fragment. The CLI selects active kinds with `--kind <id>` (repeatable, default `cpu`); the JSON report lists successfully captured kinds in `meta.profileKinds` and puts their sections under `profiles.<kind>`.
 
 ### Spawn vs attach
 
@@ -55,7 +55,7 @@ The coordinator builds a single preload script from the active kinds' hook insta
 | --- | --- |
 | `--inspect-brk=0` | Start the Node inspector on a random port, pause before user code runs. |
 | `--require=<composed preload>` | Inject the runtime-signals installer + any kind hook fragments. |
-| `--trace-deopt` | Added only when `--deep` is enabled (CPU kind uses stderr to build `deopts[]`). |
+| `--trace-deopt` | Added only when `--deep` is enabled (CPU kind uses target diagnostics to build `deopts[]`). |
 | `LANTERNA_ACTIVE=1` | Marker for the child process. |
 | `LANTERNA_CONTROL_FD=3` | FD the preload writes control-channel events to. |
 
@@ -95,13 +95,13 @@ From that moment, signal families accumulate:
 - event-loop heartbeats + histogram (runtime-signals)
 - GC events (runtime-signals)
 
-With `--deep`, V8 deopt traces are also collected from the child's `stderr` and parsed later into grouped `deopts[]`.
+With `--deep`, V8 deopt traces are also collected from the child's diagnostic output and parsed later into grouped `deopts[]`. V8 may emit those trace lines on stdout or stderr; Lanterna keeps trace diagnostics out of JSON stdout while preserving normal target stdout/stderr.
 
 ### 6. Stop capture
 
 Lanterna stops when the requested duration elapses, the target finishes first, or a signal (SIGINT/SIGTERM) is received. During shutdown it:
 
-- calls each probe's `stop(cdp)` — the CPU probe retrieves the raw CPU profile and (if `deep`) parses deopts from the stderr buffer
+- calls each probe's `stop(cdp)` — the CPU probe retrieves the raw CPU profile and (if `deep`) parses deopts from the diagnostics buffer
 - reads the final event-loop + GC summaries from the target
 - normalizes timed samples to the capture window
 - merges capture-integrity counters from the control channel + CDP
@@ -217,7 +217,7 @@ Lanterna exposes several indicators so consumers can judge how trustworthy a rep
 | `controlChannel` | The preload hook successfully talked to the parent (spawn mode only). |
 | `eventLoopTimed` | Timed event-loop heartbeat data was observed. |
 | `gcTimed` | Timed GC events were observed. |
-| `cpuSamplesTimed` | The CPU profile included timing deltas. |
+| `kinds.cpu.samplesTimed` | The CPU profile included timing deltas (under `meta.captureIntegrity.kinds.cpu`). |
 
 If one of these flags is `false`, the report is still usable — but some interpretation should be more cautious.
 
@@ -283,14 +283,15 @@ Without `--deep`, deopt tracing is intentionally absent. `profiles.cpu.deopts` i
 Lanterna is a monorepo of three packages. `core` owns capture orchestration, profile kinds, analysis, and report construction; `detectors` supplies the default CPU detector pack; `cli` wires both together. Two extension seams exist:
 
 - **Detectors** — add finding analyzers.
-  - `@lanterna-profiler/core` exposes `createAnalysisPipeline`, `defineFindingAnalyzer`, and `defineSectionAnalyzer` for full control with no default detectors registered.
-  - `@lanterna-profiler/core` exposes `runProfile` / `attachProfile`, which accept `analyzers` and a `setupPipeline` hook so custom rules can be injected at call time.
-  - `@lanterna-profiler/detectors` exposes the built-in detector analyzers and `createFindingAnalyzerFromDetector(...)` for CPU detector plugins.
+  - `@lanterna-profiler/core` exposes `createAnalysisPipeline`, `defineFindingAnalyzer`, `defineSectionAnalyzer`, and the kind-scoped seam (`KindScopedDetector<K>` + `createFindingAnalyzerFromKindScopedDetector`) for typed detectors against any profile kind.
+  - `@lanterna-profiler/core` exposes `runProfile` / `attachProfile`, which accept `extraAnalyzers` and a `setupPipeline` hook so custom rules can be injected at call time.
+  - `@lanterna-profiler/detectors` exposes the built-in CPU detector pack, `createCpuProfileKindWithBuiltInDetectors(...)` (CPU kind pre-wired with the pack), and attribution helpers (`buildAttributedFinding`, `resolveAttribution`, `buildAttributionEvidence`, `CpuHotspotContext`).
   - `@lanterna-profiler/cli` loads plugins via `--detectors <spec>` (repeatable) or a `.lanterna.json` file and composes them into `setupPipeline` before calling core orchestration.
 - **Profile kinds** — add a new axis of measurement (memory, async, …).
-  - Implement a `ProfileKind` (probe + contributor + optional hook installer) in your own package.
-  - Register it via `createDefaultKindRegistry({ extra: [myKind] })` from `@lanterna-profiler/core` or pass it directly in `runProfile({ kinds: [...] })`.
-  - The built-in CPU kind (`createCpuProfileKind`) is a reference implementation.
+  - Implement a `ProfileKind` (probe + contributor + optional hook installer + `reportSchema` + optional `contributeMeta`/`contributeIntegrity`/`builtInAnalyzers`) in your own package.
+  - Register it via `createKindRegistry([myKind, ...])` from `@lanterna-profiler/core` or pass it directly in `runProfile({ kinds: [...] })`.
+  - A plugin module loaded by the CLI can also export `export const kinds: ProfileKind[]` (named export) — `lanterna run --kind <id> --detectors <pkg>` then resolves `<id>` to the plugin-provided kind.
+  - The built-in CPU kind (`createCpuProfileKind`) is a reference implementation; pair it with `withBuiltInCpuDetectors(kind)` (or use the one-shot `createCpuProfileKindWithBuiltInDetectors`) to attach the default detector pack.
 
 See the root README's [Extending Lanterna](../README.md#extending-lanterna) section for the detector-plugin authoring guide.
 

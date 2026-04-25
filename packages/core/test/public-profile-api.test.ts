@@ -7,7 +7,7 @@ describe('core public profile API', () => {
       expect.objectContaining({
         attachProfile: expect.any(Function),
         createDefaultAnalysisPipeline: expect.any(Function),
-        createDefaultKindRegistry: expect.any(Function),
+        createKindRegistry: expect.any(Function),
         runProfile: expect.any(Function),
       }),
     );

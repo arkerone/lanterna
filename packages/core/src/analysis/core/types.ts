@@ -2,9 +2,12 @@ import type { CaptureBundle } from '../../capture/core/types.js';
 import type { KindViews, ProfileSectionMap } from '../../kinds/core/types.js';
 import type { Finding, LanternaReport } from '../../report/types.js';
 
+/**
+ * Options shared by every analyzer at pipeline run time. Kind-agnostic by
+ * design — kind-specific config (sampling intervals, depth flags, etc.) is
+ * closed over by each kind at construction.
+ */
 export interface AnalysisOptions {
-  sampleIntervalMicros: number;
-  deep: boolean;
   command: string[];
   mode?: LanternaReport['meta']['mode'];
 }
@@ -44,6 +47,12 @@ export interface AnalysisContext {
   forKind<K extends keyof KindViews>(id: K): KindViews[K];
   /** `true` when the kind has a view registered. */
   hasKind<K extends keyof KindViews>(id: K): boolean;
+  /**
+   * Returns the report section key registered for a kind id. This can differ
+   * from the kind id when a kind exposes CLI/runtime identity separately from
+   * its report namespace.
+   */
+  reportSectionKeyForKind<K extends keyof ProfileSectionMap>(id: K): string;
 }
 
 export interface BaseAnalyzer {

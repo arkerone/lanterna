@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { z } from 'zod';
 import { createManualStopSignal, runCapture } from '../src/capture/coordinator.js';
 import { createCaptureIntegrity } from '../src/capture/core/session.js';
 import type {
@@ -109,6 +110,7 @@ function failingKind(id: string, phase: 'install' | 'start' | 'stop'): ProfileKi
   return defineProfileKind({
     id,
     reportSectionKey: id,
+    reportSchema: z.unknown(),
     createProbe() {
       return {
         install:
@@ -138,6 +140,7 @@ function successfulKind(id: string): ProfileKind {
   return defineProfileKind({
     id,
     reportSectionKey: id,
+    reportSchema: z.unknown(),
     createProbe() {
       return {
         start: async () => {},
@@ -156,6 +159,7 @@ function hangingStopKind(id: string): ProfileKind {
   return defineProfileKind({
     id,
     reportSectionKey: id,
+    reportSchema: z.unknown(),
     createProbe() {
       return {
         start: async () => {},
@@ -185,7 +189,6 @@ describe('runCapture lifecycle', () => {
         source,
         sourceOptions: undefined,
         kinds: [],
-        probeOptions: { sampleIntervalMicros: 1000, deep: false },
       }),
     ).rejects.toThrow(/target metadata/);
 
@@ -205,7 +208,6 @@ describe('runCapture lifecycle', () => {
         failingKind('start-fails', 'start'),
         failingKind('stop-fails', 'stop'),
       ],
-      probeOptions: { sampleIntervalMicros: 1000, deep: false },
     });
 
     expect(diagnosticStages(bundle)).toEqual(['probe-install', 'probe-start', 'probe-stop']);
@@ -223,7 +225,6 @@ describe('runCapture lifecycle', () => {
       source,
       sourceOptions: undefined,
       kinds: [hangingStopKind('stop-hangs')],
-      probeOptions: { sampleIntervalMicros: 1000, deep: false },
     });
     const resultPromise = capturePromise.then(
       (bundle) => bundle,
@@ -251,7 +252,6 @@ describe('runCapture lifecycle', () => {
       source,
       sourceOptions: undefined,
       kinds: [successfulKind('ok')],
-      probeOptions: { sampleIntervalMicros: 1000, deep: false },
     });
     const resultPromise = capturePromise.then(
       (bundle) => bundle,
@@ -281,7 +281,6 @@ describe('runCapture lifecycle', () => {
         },
       },
       kinds: [successfulKind('ok')],
-      probeOptions: { sampleIntervalMicros: 1000, deep: false },
     });
 
     expect(stages).toEqual(['start-capture', 'capture-running', 'finalize-capture']);
@@ -300,7 +299,6 @@ describe('runCapture lifecycle', () => {
         },
       },
       kinds: [hangingStopKind('stop-hangs')],
-      probeOptions: { sampleIntervalMicros: 1000, deep: false },
     });
 
     await vi.advanceTimersByTimeAsync(1);
@@ -318,7 +316,6 @@ describe('runCapture lifecycle', () => {
       source,
       sourceOptions: undefined,
       kinds: [successfulKind('ok')],
-      probeOptions: { sampleIntervalMicros: 1000, deep: false },
       durationMs: 30_000,
       stopSignal: stop.promise,
     });

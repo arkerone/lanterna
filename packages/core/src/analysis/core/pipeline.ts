@@ -64,6 +64,14 @@ export class AnalysisPipeline {
     if (this.kinds.some((entry) => entry.id === kind.id)) {
       throw new Error(`duplicate profile kind id: ${kind.id}`);
     }
+    const existingKind = this.kinds.find(
+      (entry) => entry.reportSectionKey === kind.reportSectionKey,
+    );
+    if (existingKind) {
+      throw new Error(
+        `duplicate profile kind report section key: ${kind.reportSectionKey} (${existingKind.id}, ${kind.id})`,
+      );
+    }
     this.kinds.push(kind);
     return this;
   }
@@ -74,9 +82,9 @@ export class AnalysisPipeline {
   }
 
   run(bundle: CaptureBundle, options: AnalysisOptions): AnalysisResult {
-    const context = createAnalysisContext(bundle, options);
+    const context = createAnalysisContext(bundle, options, this.kinds);
     const snapshot: AnalysisSnapshot = {
-      meta: buildStubMeta(bundle, options),
+      meta: buildStubMeta(bundle, options, this.kinds),
       profiles: {},
       findings: [],
       extensions: {},
@@ -289,7 +297,21 @@ function computeImpactEstimateMs(
   return Math.round((durationMs * pct) / 100);
 }
 
-function buildStubMeta(bundle: CaptureBundle, options: AnalysisOptions): AnalysisSnapshot['meta'] {
+function buildStubMeta(
+  bundle: CaptureBundle,
+  options: AnalysisOptions,
+  kinds: ReadonlyArray<ProfileKind>,
+): AnalysisSnapshot['meta'] {
+  const kindsMeta: Record<string, unknown> = {};
+  const kindsIntegrity: Record<string, unknown> = { ...bundle.captureIntegrity.kinds };
+  const capturedKinds: string[] = [];
+  for (const kind of kinds) {
+    const data = bundle.kinds?.[kind.id as keyof CaptureKindDataMap];
+    if (data === undefined) continue;
+    capturedKinds.push(kind.id);
+    if (kind.contributeMeta) kindsMeta[kind.id] = kind.contributeMeta(data);
+    if (kind.contributeIntegrity) kindsIntegrity[kind.id] = kind.contributeIntegrity(data);
+  }
   return {
     schemaVersion: LANTERNA_REPORT_SCHEMA_VERSION,
     nodeVersion: '',
@@ -299,15 +321,13 @@ function buildStubMeta(bundle: CaptureBundle, options: AnalysisOptions): Analysi
     pid: 0,
     startedAt: '',
     durationMs: bundle.durationMs,
-    sampleIntervalMicros: options.sampleIntervalMicros,
-    totalSamples: 0,
     cwd: '',
     command: options.command,
     lanternaVersion: '',
     mode: options.mode ?? 'spawn',
-    deep: options.deep,
-    profileKinds: [],
-    captureIntegrity: bundle.captureIntegrity,
+    profileKinds: capturedKinds,
+    kinds: kindsMeta,
+    captureIntegrity: { ...bundle.captureIntegrity, kinds: kindsIntegrity },
   };
 }
 

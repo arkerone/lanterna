@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { z } from 'zod';
 import { defineFindingAnalyzer } from '../src/analysis/core/pipeline.js';
 import { createCaptureIntegrity } from '../src/capture/core/session.js';
 import { defineProfileKind } from '../src/kinds/core/types.js';
@@ -30,6 +31,7 @@ const { attachProfile, runProfile } = await import('../src/profile/profile.js');
 const testKind = defineProfileKind({
   id: 'test',
   reportSectionKey: 'test',
+  reportSchema: z.unknown(),
   createProbe() {
     return {
       start: async () => {},
@@ -113,17 +115,16 @@ describe('profile API', () => {
       deep: true,
       sampleIntervalMicros: 1000,
       kinds: [testKind],
-      analyzers: [testFinding],
+      extraAnalyzers: [testFinding],
     });
 
     expect(report).toEqual({ meta: {}, profiles: {}, findings: [] });
     expect(mocks.runCapture).toHaveBeenCalledWith(
       expect.objectContaining({
         kinds: [testKind],
-        probeOptions: { sampleIntervalMicros: 1000, deep: true },
         sourceOptions: expect.objectContaining({
           command: ['node', 'app.js'],
-          deep: true,
+          traceDeopt: true,
         }),
       }),
     );
@@ -133,9 +134,22 @@ describe('profile API', () => {
         profiles: { test: { ok: true } },
         findings: [expect.objectContaining({ id: 'test.finding' })],
       }),
-      ['test'],
+      [testKind],
       expect.objectContaining({ mode: 'spawn' }),
     );
+  });
+
+  it('runProfile accepts non-CPU kinds without CPU-specific options', async () => {
+    await runProfile({
+      command: ['node', 'app.js'],
+      pretty: false,
+      kinds: [testKind],
+    });
+
+    const call = mocks.runCapture.mock.calls[0]?.[0];
+    expect(call).toEqual(expect.objectContaining({ kinds: [testKind] }));
+    expect(call.sourceOptions).not.toHaveProperty('deep');
+    expect(call.sourceOptions).not.toHaveProperty('sampleIntervalMicros');
   });
 
   it('attachProfile captures an inspector target and builds an attach-mode report', async () => {
@@ -149,7 +163,6 @@ describe('profile API', () => {
     expect(mocks.runCapture).toHaveBeenCalledWith(
       expect.objectContaining({
         kinds: [testKind],
-        probeOptions: { sampleIntervalMicros: 1000, deep: false },
         sourceOptions: expect.objectContaining({
           pid: 1234,
         }),
@@ -160,8 +173,20 @@ describe('profile API', () => {
       expect.objectContaining({
         profiles: { test: { ok: true } },
       }),
-      ['test'],
+      [testKind],
       expect.objectContaining({ mode: 'attach' }),
     );
+  });
+
+  it('attachProfile accepts non-CPU kinds without CPU-specific options', async () => {
+    await attachProfile({
+      pid: 1234,
+      pretty: false,
+      kinds: [testKind],
+    });
+
+    const call = mocks.runCapture.mock.calls[0]?.[0];
+    expect(call).toEqual(expect.objectContaining({ kinds: [testKind] }));
+    expect(call.sourceOptions).not.toHaveProperty('sampleIntervalMicros');
   });
 });

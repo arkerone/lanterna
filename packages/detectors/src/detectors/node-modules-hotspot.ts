@@ -3,6 +3,7 @@ import type {
   EventLoopReport,
   Finding,
   Hotspot,
+  KindScopedDetector,
   NodeModulesHotspotEvidenceExtra,
 } from '@lanterna-profiler/core';
 import { defineBuiltinFinding } from '@lanterna-profiler/core';
@@ -10,16 +11,19 @@ import { DETECTOR_THRESHOLDS } from '../config.js';
 import {
   buildAttributedFinding,
   buildAttributionEvidence,
+  type CpuHotspotContext,
   findStallCorrelation,
   resolveAttribution,
   toAlternativeHotspotEvidence,
 } from './shared.js';
-import type { Detector, FindingContext } from './types.js';
 
-export const nodeModulesHotspotDetector: Detector = {
+export const nodeModulesHotspotDetector: KindScopedDetector<'cpu'> = {
   id: 'node-modules-hotspot',
+  kindIds: ['cpu'],
   order: 40,
-  detect(report, context): Finding[] {
+  detect({ cpu }): Finding[] {
+    const report = cpu.report;
+    const context: CpuHotspotContext = cpu.view.hotspotAnalysis;
     const thresholds = DETECTOR_THRESHOLDS.nodeModulesHotspot;
     const matches = context.fullHotspots
       .filter(
@@ -44,7 +48,7 @@ function buildFinding(
   hotspot: Hotspot,
   alternatives: Hotspot[],
   report: { eventLoop: EventLoopReport },
-  context: FindingContext,
+  context: CpuHotspotContext,
 ): BuiltinFinding<'node-modules-hotspot'> {
   const { attribution, caller } = resolveAttribution(hotspot, context);
   const evidenceExtra: NodeModulesHotspotEvidenceExtra = {

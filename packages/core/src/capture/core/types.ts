@@ -7,8 +7,7 @@ import type {
 
 export interface SpawnStartOptions {
   command: string[];
-  sampleIntervalMicros: number;
-  deep: boolean;
+  traceDeopt?: boolean;
   onStdoutChunk?: (chunk: string) => void;
   onStderrChunk?: (chunk: string) => void;
   onProgress?: (event: {
@@ -27,7 +26,6 @@ export interface SpawnStartOptions {
 export interface AttachStartOptions {
   pid?: number;
   inspectUrl?: string;
-  sampleIntervalMicros: number;
   onProgress?: (event: {
     stage:
       | 'resolve-target'
@@ -104,12 +102,13 @@ export interface CaptureIntegrity {
   controlChannelExpected: boolean;
   eventLoopTimed: boolean;
   gcTimed: boolean;
-  cpuSamplesTimed: boolean;
   gcObserverAvailable: boolean;
   controlChannelWriteErrors: number;
   gcObserverSetupFailed: number;
   heartbeatDropped: number;
   diagnostics?: CaptureDiagnostic[];
+  /** Per-kind integrity bucket. Populated by each kind's `contributeIntegrity`. */
+  kinds: Record<string, unknown>;
 }
 
 /**

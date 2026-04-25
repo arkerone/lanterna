@@ -1,5 +1,8 @@
-import type { FindingAnalyzer } from '@lanterna-profiler/core';
-import { createFindingAnalyzerFromDetector } from '../plugin.js';
+import {
+  createFindingAnalyzerFromKindScopedDetector,
+  type FindingAnalyzer,
+  type KindScopedDetector,
+} from '@lanterna-profiler/core';
 import { blockingIoDetector } from './blocking-io.js';
 import { deoptLoopDetector } from './deopt-loop.js';
 import { eventLoopStallDetector } from './event-loop-stall.js';
@@ -8,9 +11,8 @@ import { jsonOnHotPathDetector } from './json-on-hot-path.js';
 import { nodeModulesHotspotDetector } from './node-modules-hotspot.js';
 import { requireInHotPathDetector } from './require-in-hot-path.js';
 import { syncCryptoDetector } from './sync-crypto.js';
-import type { Detector } from './types.js';
 
-export const DETECTORS: Detector[] = [
+export const DETECTORS: KindScopedDetector<'cpu'>[] = [
   syncCryptoDetector,
   blockingIoDetector,
   jsonOnHotPathDetector,
@@ -22,5 +24,5 @@ export const DETECTORS: Detector[] = [
 ];
 
 export function createBuiltInFindingAnalyzers(): FindingAnalyzer[] {
-  return DETECTORS.map(createFindingAnalyzerFromDetector);
+  return DETECTORS.map(createFindingAnalyzerFromKindScopedDetector);
 }

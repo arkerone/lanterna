@@ -48,17 +48,21 @@ declare module '../core/types.js' {
   }
 }
 
-export function createCpuAnalysisContributor(): KindAnalysisContributor<CpuKindData> {
+export interface CpuAnalysisContributorOptions {
+  /** V8 sampling interval in microseconds; same value the probe used. */
+  sampleIntervalMicros: number;
+}
+
+export function createCpuAnalysisContributor(
+  options: CpuAnalysisContributorOptions,
+): KindAnalysisContributor<CpuKindData> {
+  const { sampleIntervalMicros } = options;
   return {
     analyze(ctx: KindAnalysisContext<CpuKindData>) {
       const { data, bundle } = ctx;
-      const tree = enrichCpuTree(
-        data.cpuProfile,
-        bundle.target.cwd,
-        ctx.options.sampleIntervalMicros,
-      );
+      const tree = enrichCpuTree(data.cpuProfile, bundle.target.cwd, sampleIntervalMicros);
       const hotspotAnalysis = buildHotspotAnalysis(data.cpuProfile, tree);
-      const timedSamples = buildTimedSamples(data.cpuProfile, ctx.options.sampleIntervalMicros);
+      const timedSamples = buildTimedSamples(data.cpuProfile, sampleIntervalMicros);
 
       const gc: GcReport = buildGcReport(bundle.runtimeSignals.gcEvents);
       const gcCorrelation = correlateUserHotspotsWithCoverage(

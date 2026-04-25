@@ -1,3 +1,7 @@
+export type {
+  ProfilePipelinePlugin as LanternaDetectorPlugin,
+  ProfilePluginContext as LanternaPluginContext,
+} from '@lanterna-profiler/core';
 export { analyzeCapture, createDefaultAnalysisPipeline } from './analyze-capture.js';
 export type {
   BlockingThresholds,
@@ -13,12 +17,11 @@ export {
 export {
   buildAttributedFinding,
   buildAttributionEvidence,
+  type CpuHotspotContext,
   resolveAttribution,
 } from './detectors/shared.js';
-export type { CpuDetectorReport, Detector, FindingContext } from './detectors/types.js';
 export * as extensionApi from './extension-api.js';
-export type {
-  LanternaDetectorPlugin,
-  LanternaPluginContext,
-} from './plugin.js';
-export { buildFindingContext, createFindingAnalyzerFromDetector } from './plugin.js';
+export {
+  createCpuProfileKindWithBuiltInDetectors,
+  withBuiltInCpuDetectors,
+} from './with-built-in-cpu-detectors.js';

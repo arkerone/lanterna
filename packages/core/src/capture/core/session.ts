@@ -13,11 +13,11 @@ export function createCaptureIntegrity(
     controlChannelExpected: false,
     eventLoopTimed: false,
     gcTimed: false,
-    cpuSamplesTimed: false,
     gcObserverAvailable: false,
     controlChannelWriteErrors: 0,
     gcObserverSetupFailed: 0,
     heartbeatDropped: 0,
+    kinds: {},
     ...overrides,
   };
 }

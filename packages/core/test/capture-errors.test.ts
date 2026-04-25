@@ -12,7 +12,6 @@ import { describe, expect, it } from 'vitest';
 import type { PreloadContribution, SpawnStartOptions } from '../src/capture/core/types.js';
 import { SpawnSource } from '../src/capture/spawn.js';
 import { openInspectorForPid } from '../src/inspector/discovery.js';
-import { DEFAULT_SAMPLE_INTERVAL_MICROS } from '../src/shared/config.js';
 
 const EMPTY_PRELOAD: PreloadContribution = {
   preloadScript: '/* empty */\n',
@@ -38,8 +37,7 @@ describe('startSpawnCapture', () => {
     await expect(
       startSpawnCapture({
         command: [],
-        sampleIntervalMicros: DEFAULT_SAMPLE_INTERVAL_MICROS,
-        deep: false,
+        traceDeopt: false,
       }),
     ).rejects.toThrow('command is empty');
   });
@@ -49,8 +47,7 @@ describe('startSpawnCapture', () => {
     await expect(
       startSpawnCapture({
         command: ['__lanterna_test_no_such_binary__'],
-        sampleIntervalMicros: DEFAULT_SAMPLE_INTERVAL_MICROS,
-        deep: false,
+        traceDeopt: false,
       }),
     ).rejects.toThrow();
   });
@@ -63,8 +60,7 @@ describe('startSpawnCapture', () => {
       await expect(
         startSpawnCapture({
           command: ['sh', '-c', 'exit 1'],
-          sampleIntervalMicros: DEFAULT_SAMPLE_INTERVAL_MICROS,
-          deep: false,
+          traceDeopt: false,
         }),
       ).rejects.toThrow(/target exited before inspector was ready/);
     },
@@ -78,8 +74,7 @@ describe('startSpawnCapture', () => {
       await expect(
         startSpawnCapture({
           command: ['sh', '-c', 'exit 1'],
-          sampleIntervalMicros: DEFAULT_SAMPLE_INTERVAL_MICROS,
-          deep: false,
+          traceDeopt: false,
         }),
       ).rejects.toThrow(/target exited before inspector was ready/);
 

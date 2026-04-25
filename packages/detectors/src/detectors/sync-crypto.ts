@@ -53,18 +53,22 @@ function remediationForFunction(fn: string): FindingRemediation | undefined {
   return undefined;
 }
 
+import type { KindScopedDetector } from '@lanterna-profiler/core';
 import {
   aggregateByPatterns,
   buildAttributedFinding,
   buildAttributionEvidence,
+  type CpuHotspotContext,
   findStallCorrelation,
   resolveAttribution,
 } from './shared.js';
-import type { Detector, FindingContext } from './types.js';
 
-export const syncCryptoDetector: Detector = {
+export const syncCryptoDetector: KindScopedDetector<'cpu'> = {
   id: 'sync-crypto-on-hot-path',
-  detect(report, context): Finding[] {
+  kindIds: ['cpu'],
+  detect({ cpu }): Finding[] {
+    const report = cpu.report;
+    const context: CpuHotspotContext = cpu.view.hotspotAnalysis;
     const thresholds = DETECTOR_THRESHOLDS.syncCrypto;
     const { categoryTotalPct } = aggregateByPatterns(context.fullHotspots, SYNC_CRYPTO_PATTERNS, {
       normalize: stripOptPrefix,
@@ -94,7 +98,7 @@ function buildFinding(
   hotspot: Hotspot,
   categoryTotalPct: number,
   report: { eventLoop: EventLoopReport },
-  context: FindingContext,
+  context: CpuHotspotContext,
 ): BuiltinFinding<'sync-crypto'> {
   const { attribution, caller } = resolveAttribution(hotspot, context);
   const evidenceExtra: SyncCryptoEvidenceExtra = {

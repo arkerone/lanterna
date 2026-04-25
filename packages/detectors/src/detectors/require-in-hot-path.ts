@@ -2,17 +2,24 @@ import type {
   BuiltinFinding,
   Finding,
   Hotspot,
+  KindScopedDetector,
   RequireInHotPathEvidenceExtra,
 } from '@lanterna-profiler/core';
 import { defineBuiltinFinding, stripOptPrefix } from '@lanterna-profiler/core';
 import { DETECTOR_THRESHOLDS, REQUIRE_PATTERNS } from '../config.js';
-import { buildAttributedFinding, buildAttributionEvidence, resolveAttribution } from './shared.js';
-import type { Detector, FindingContext } from './types.js';
+import {
+  buildAttributedFinding,
+  buildAttributionEvidence,
+  type CpuHotspotContext,
+  resolveAttribution,
+} from './shared.js';
 
-export const requireInHotPathDetector: Detector = {
+export const requireInHotPathDetector: KindScopedDetector<'cpu'> = {
   id: 'require-in-hot-path',
+  kindIds: ['cpu'],
   order: 30,
-  detect(_report, context): Finding[] {
+  detect({ cpu }): Finding[] {
+    const context: CpuHotspotContext = cpu.view.hotspotAnalysis;
     const thresholds = DETECTOR_THRESHOLDS.requireInHotPath;
     const findings: Finding[] = [];
     for (const hotspot of context.fullHotspots) {
@@ -29,7 +36,7 @@ export const requireInHotPathDetector: Detector = {
 
 function buildFinding(
   hotspot: Hotspot,
-  context: FindingContext,
+  context: CpuHotspotContext,
 ): BuiltinFinding<'require-in-hot-path'> {
   const { attribution, caller } = resolveAttribution(hotspot, context);
   const evidenceExtra: RequireInHotPathEvidenceExtra = {

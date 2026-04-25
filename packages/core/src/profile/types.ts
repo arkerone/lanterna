@@ -17,11 +17,11 @@ export interface RunProfileOptions {
   durationMs?: number;
   output?: string;
   pretty: boolean;
-  deep: boolean;
-  sampleIntervalMicros: number;
+  deep?: boolean;
+  sampleIntervalMicros?: number;
   /** Profile kinds to capture. Defaults to `[cpu]`. */
   kinds?: ProfileKind[];
-  analyzers?: (FindingAnalyzer | SectionAnalyzer)[];
+  extraAnalyzers?: (FindingAnalyzer | SectionAnalyzer)[];
   setupPipeline?: ProfilePipelinePlugin;
   onTargetDiagnosticChunk?: (chunk: string) => void;
 }
@@ -33,9 +33,9 @@ export interface AttachProfileOptions {
   durationMs?: number;
   output?: string;
   pretty: boolean;
-  sampleIntervalMicros: number;
+  sampleIntervalMicros?: number;
   kinds?: ProfileKind[];
-  analyzers?: (FindingAnalyzer | SectionAnalyzer)[];
+  extraAnalyzers?: (FindingAnalyzer | SectionAnalyzer)[];
   setupPipeline?: ProfilePipelinePlugin;
 }
 

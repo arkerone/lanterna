@@ -386,6 +386,55 @@ describe('live profiling', () => {
     assert.match(stderr, /lanterna-target-stderr-marker/);
   });
 
+  it('keeps target stdout and stderr on their original streams during deep spawned runs', async () => {
+    if (!(await inspectorSupported())) {
+      await expectInspectorFailure([
+        'run',
+        '--deep',
+        '--pretty',
+        '--',
+        'node',
+        '-e',
+        'console.log("lanterna-target-stdout-marker"); console.error("lanterna-target-stderr-marker")',
+      ]);
+      return;
+    }
+
+    const tmp = await mkdtemp(join(tmpdir(), 'lanterna-deep-streams-'));
+    const reportPath = join(tmp, 'report.json');
+    const stdoutMarker = 'lanterna-target-stdout-marker';
+    const stderrMarker = 'lanterna-target-stderr-marker';
+    const { stdout, stderr } = await execFileAsync(
+      'node',
+      [
+        binPath,
+        'run',
+        '--deep',
+        '--pretty',
+        '--output',
+        reportPath,
+        '--',
+        'node',
+        '-e',
+        'console.log(process.env.LANTERNA_TEST_STDOUT_MARKER); console.error(process.env.LANTERNA_TEST_STDERR_MARKER)',
+      ],
+      {
+        cwd: repoRoot,
+        timeout: 10_000,
+        maxBuffer: 1024 * 1024 * 4,
+        env: {
+          ...process.env,
+          LANTERNA_TEST_STDOUT_MARKER: stdoutMarker,
+          LANTERNA_TEST_STDERR_MARKER: stderrMarker,
+        },
+      },
+    );
+
+    assert.match(stdout, new RegExp(stdoutMarker));
+    assert.doesNotMatch(stderr, new RegExp(stdoutMarker));
+    assert.match(stderr, new RegExp(stderrMarker));
+  });
+
   it('collects deopts from target diagnostic output during deep spawned runs', async () => {
     if (!(await inspectorSupported())) {
       await expectInspectorFailure([
@@ -419,7 +468,7 @@ describe('live profiling', () => {
 
     const report = JSON.parse(stdout);
     const cpuProfile = getCpuProfile(report);
-    assert.equal(report.meta.deep, true);
+    assert.equal(report.meta.kinds.cpu.deep, true);
     assert.ok(cpuProfile.deopts.length > 0, 'expected --deep to parse target deopts');
   });
 

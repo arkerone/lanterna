@@ -147,7 +147,7 @@ Lanterna emits a `LanternaReport` (schema v2) with per-kind sections nested unde
 
 | Section | Purpose |
 | --- | --- |
-| `meta` | Capture metadata, mode, duration, `profileKinds`, integrity flags. |
+| `meta` | Capture metadata, mode, duration, successfully captured `profileKinds`, integrity flags. |
 | `profiles.cpu.summary` | High-level CPU ratios (user / builtin / native / GC). |
 | `profiles.cpu.hotspots` | Aggregated functions with self/total CPU + callers/callees. |
 | `profiles.cpu.hotStacks` | Most frequent sampled stacks. |
@@ -168,19 +168,27 @@ Lanterna emits a `LanternaReport` (schema v2) with per-kind sections nested unde
 {
   "meta": {
     "durationMs": 30000,
-    "sampleIntervalMicros": 1000,
     "mode": "spawn",
-    "deep": false,
+    "profileKinds": ["cpu"],
+    "kinds": {
+      "cpu": {
+        "samplesTotal": 30000,
+        "sampleIntervalMicros": 1000,
+        "deep": false
+      }
+    },
     "captureIntegrity": {
       "controlChannel": true,
       "controlChannelExpected": true,
       "eventLoopTimed": true,
       "gcTimed": true,
-      "cpuSamplesTimed": true,
       "gcObserverAvailable": true,
       "controlChannelWriteErrors": 0,
       "gcObserverSetupFailed": 0,
-      "heartbeatDropped": 0
+      "heartbeatDropped": 0,
+      "kinds": {
+        "cpu": { "samplesTimed": true }
+      }
     }
   },
   "profiles": {
@@ -231,7 +239,7 @@ Lanterna is extensible: you can ship your own detectors as plugins. See [Extendi
 jq '.findings[] | select(.severity != "info") | {id, severity, file: .evidence.file, line: .evidence.line}' report.json
 
 # Top 5 hotspots
-jq '.profiles.cpu.hotspots[:5] | .[] | {fn: .functionName, selfPct, totalPct, file}' report.json
+jq '.profiles.cpu.hotspots[:5] | .[] | {fn: .function, selfPct, totalPct, file}' report.json
 
 # Event-loop summary
 jq '{basis: .profiles.cpu.eventLoop.measurementBasis, confidence: .profiles.cpu.eventLoop.confidence, maxLagMs: .profiles.cpu.eventLoop.maxLagMs, p99LagMs: .profiles.cpu.eventLoop.p99LagMs}' report.json
@@ -255,16 +263,30 @@ Exact integrity and degradation behavior: [docs/how-lanterna-works.md](docs/how-
 
 ## Extending Lanterna
 
-Lanterna accepts third-party detectors as plugins. A plugin is an ES module whose `default` export registers one or more analyzers on the pipeline:
+Lanterna accepts third-party detectors and profile kinds as plugins. A plugin module exposes any combination of:
+
+- a `default` export — `LanternaDetectorPlugin`, called with the analysis pipeline so it can register analyzers,
+- a named `kinds: ProfileKind[]` export — additional profile kinds registered before `--kind <id>` is resolved (so a single package can ship a brand-new kind and its detectors).
 
 ```ts
 // @acme/lanterna-detectors-prisma/src/index.ts
+import {
+  createFindingAnalyzerFromKindScopedDetector,
+  type KindScopedDetector,
+} from '@lanterna-profiler/core';
 import type { LanternaDetectorPlugin } from '@lanterna-profiler/detectors';
-import { createFindingAnalyzerFromDetector } from '@lanterna-profiler/detectors';
-import { prismaHotspotDetector } from './detectors/prisma-hotspot.js';
+
+const prismaHotspotDetector: KindScopedDetector<'cpu'> = {
+  id: 'prisma-hotspot:client',
+  kindIds: ['cpu'],
+  detect({ cpu }) {
+    /* read cpu.report.hotspots and cpu.view.hotspotAnalysis */
+    return [];
+  },
+};
 
 const register: LanternaDetectorPlugin = (pipeline) => {
-  pipeline.register(createFindingAnalyzerFromDetector(prismaHotspotDetector));
+  pipeline.register(createFindingAnalyzerFromKindScopedDetector(prismaHotspotDetector));
 };
 export default register;
 ```
@@ -284,7 +306,7 @@ lanterna run --detectors @acme/lanterna-detectors-prisma --detectors ./my-plugin
 }
 ```
 
-Config entries load first, then any flag-specified plugins. See [`@lanterna-profiler/detectors`](packages/detectors#writing-a-detector-plugin) for the plugin contract, exposed helpers (`createFindingAnalyzerFromDetector`, `buildAttributedFinding`, `resolveAttribution`, `buildAttributionEvidence`, `buildFindingContext`), and the full list of built-in detectors you can use as templates.
+Config entries load first, then any flag-specified plugins. See [`@lanterna-profiler/detectors`](packages/detectors#writing-a-detector-plugin) for the plugin contract, exposed helpers (`buildAttributedFinding`, `resolveAttribution`, `buildAttributionEvidence`, `CpuHotspotContext`, `withBuiltInCpuDetectors`, `createCpuProfileKindWithBuiltInDetectors`), and the full list of built-in detectors you can use as templates.
 
 ## Programmatic API
 
@@ -294,48 +316,66 @@ Config entries load first, then any flag-specified plugins. See [`@lanterna-prof
 ```ts
 import {
   attachProfile,
-  createDefaultKindRegistry,
   runProfile,
   type LanternaReport,
-  serializeReport,
 } from '@lanterna-profiler/core';
-import { createBuiltInFindingAnalyzers } from '@lanterna-profiler/detectors';
+import { createCpuProfileKindWithBuiltInDetectors } from '@lanterna-profiler/detectors';
 
+let diagnostics = '';
 const report: LanternaReport = await runProfile({
   command: ['node', 'app.js'],
   durationMs: 15_000,
-  sampleIntervalMicros: 1000,
-  deep: false,
   pretty: true,
-  analyzers: createBuiltInFindingAnalyzers(),
+  onTargetDiagnosticChunk: (chunk) => {
+    diagnostics += chunk;
+  },
+  kinds: [
+    createCpuProfileKindWithBuiltInDetectors({
+      readStderrSoFar: () => diagnostics,
+      sampleIntervalMicros: 1000,
+      deep: true,
+    }),
+  ],
 });
 ```
 
 - `runProfile(...)` - spawn a Node process, capture, analyze, return a `LanternaReport`.
 - `attachProfile(...)` - attach to an existing inspector target and return a `LanternaReport`.
-- `createDefaultKindRegistry(...)` - registry pre-loaded with the CPU kind (plug extras here).
-- `createBuiltInFindingAnalyzers()` - default CPU detector pack, wrapped as pipeline analyzers.
+- `createKindRegistry([...])` - registry that resolves `--kind <id>` strings.
+- `createCpuProfileKindWithBuiltInDetectors(opts)` - CPU `ProfileKind` pre-wired with the default detector pack (each kind owns its own probe/analysis options).
+- `withBuiltInCpuDetectors(kind)` - composable form that adds the built-in pack to an already-built CPU kind.
 - `DETECTOR_THRESHOLDS` - thresholds used by the built-in rules.
 
 Both `runProfile` and `attachProfile` accept extension options so you can add analyzers or additional profile kinds without going through the CLI:
 
 ```ts
-import { createFindingAnalyzerFromDetector } from '@lanterna-profiler/detectors';
+import {
+  createFindingAnalyzerFromKindScopedDetector,
+  runProfile,
+} from '@lanterna-profiler/core';
+import { createCpuProfileKindWithBuiltInDetectors } from '@lanterna-profiler/detectors';
 
 await runProfile({
   command: ['node', 'app.js'],
   durationMs: 15_000,
-  sampleIntervalMicros: 1000,
-  deep: false,
   pretty: false,
-  // kinds: [cpuKind, myMemoryKind],        // omit to default to [cpu]
-  analyzers: [
-    createFindingAnalyzerFromDetector(myDetector),
+  kinds: [
+    createCpuProfileKindWithBuiltInDetectors({
+      readStderrSoFar: () => '',
+      sampleIntervalMicros: 1000,
+      deep: false,
+    }),
+    // myMemoryKind,                              // add custom kinds here
+  ],
+  extraAnalyzers: [
+    createFindingAnalyzerFromKindScopedDetector(myDetector),
     mySectionAnalyzer,
   ],
   setupPipeline: async (pipeline, ctx) => { /* full-control hook */ },
 });
 ```
+
+When you enable `deep: true`, also pass `onTargetDiagnosticChunk` and append chunks to the buffer read by `readStderrSoFar`; deopt parsing depends on those target diagnostics. Leave `deep: false` and return an empty string when you do not collect that stream.
 
 </details>
 
@@ -361,7 +401,7 @@ import {
 } from '@lanterna-profiler/core';
 ```
 
-Use low-level core APIs when you want full control over capture and analysis. Compose your own `runCapture({ source, kinds, ... })` call, then feed the resulting `CaptureBundle` into a pipeline you built with `createAnalysisPipeline({ kinds })` plus `pipeline.register(defineFindingAnalyzer({...}))` / `defineSectionAnalyzer({...})`.
+Use low-level core APIs when you want full control over capture and analysis. Compose your own `runCapture({ source, kinds, durationMs })` call (each kind closes over its options at construction — no global `probeOptions`), then feed the resulting `CaptureBundle` into a pipeline you built with `createAnalysisPipeline({ kinds })` plus `pipeline.register(defineFindingAnalyzer({...}))` / `defineSectionAnalyzer({...})`. For typed kind-scoped detectors, use `KindScopedDetector<K>` + `createFindingAnalyzerFromKindScopedDetector(detector)`.
 
 </details>
 
@@ -392,7 +432,7 @@ Dependency direction: `cli → core`, `cli → detectors`, and `detectors → co
 
 ```bash
 npm install
-npm run build       # builds all three packages (tsc -b + copy .cjs hook)
+npm run build       # builds all three packages
 npm test            # runs every package's vitest suite
 ```
 

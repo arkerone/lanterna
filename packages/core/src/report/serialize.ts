@@ -1,12 +1,15 @@
-import { lanternaReportSchema } from './schema.js';
+import type { ProfileKind } from '../kinds/core/types.js';
+import { buildReportSchema } from './schema.js';
 import type { LanternaReport } from './types.js';
 
 export interface SerializeReportOptions {
   pretty: boolean;
+  kinds: ReadonlyArray<Pick<ProfileKind, 'reportSectionKey' | 'reportSchema'>>;
 }
 
 export function serializeReport(report: LanternaReport, options: SerializeReportOptions): string {
-  const parsed = lanternaReportSchema.safeParse(report);
+  const schema = buildReportSchema(options.kinds);
+  const parsed = schema.safeParse(report);
   if (!parsed.success) {
     const details = parsed.error.issues
       .map((issue) => `${issue.path.join('.') || '(root)'}: ${issue.message}`)

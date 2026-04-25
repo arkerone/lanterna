@@ -1,3 +1,5 @@
+import type { ZodType } from 'zod';
+import type { FindingAnalyzer, SectionAnalyzer } from '../../analysis/core/types.js';
 import type { CdpClient } from '../../inspector/client.js';
 import type { HookInstaller } from '../../runtime-signals/hooks/framework.js';
 
@@ -32,11 +34,6 @@ export interface ProfileSectionMap {
  */
 export interface KindViews {
   [kindId: string]: unknown;
-}
-
-export interface KindProbeOptions {
-  sampleIntervalMicros: number;
-  deep: boolean;
 }
 
 export interface CaptureProbe<TData> {
@@ -79,16 +76,29 @@ export type KindFinalizeHook<TData> = (args: {
 }) => void;
 
 export interface ProfileKind<TData = unknown> {
-  /** Stable identifier used on the CLI (`--kind cpu`) and in `meta.profileKinds`. */
+  /** Stable identifier used on the CLI (`--kind cpu`) and in `meta.profileKinds` when captured. */
   id: string;
   /** Human-readable label for logs and help. */
   label?: string;
   /** Key under `report.profiles.*`. Usually equal to `id`. */
   reportSectionKey: string;
+  /** Zod schema validating the kind's report section under `profiles[sectionKey]`. */
+  reportSchema: ZodType;
   /** Optional preload-hook fragment contributed by this kind. */
   hookInstaller?: HookInstaller;
-  createProbe(opts: KindProbeOptions): CaptureProbe<TData>;
+  /**
+   * Builds the capture probe. The kind closes over its own options at
+   * construction time — there are no global probe options anymore (each kind
+   * decides its own sampling interval, depth, etc.).
+   */
+  createProbe(): CaptureProbe<TData>;
   createAnalysisContributor(): KindAnalysisContributor<TData>;
+  /** Contribution merged under `meta.kinds[id]`. */
+  contributeMeta?(data: TData): Record<string, unknown>;
+  /** Contribution merged under `meta.captureIntegrity.kinds[id]`. */
+  contributeIntegrity?(data: TData): Record<string, unknown>;
+  /** Analyzers the kind wants to run by default. User `extraAnalyzers` are appended. */
+  builtInAnalyzers?: ReadonlyArray<FindingAnalyzer | SectionAnalyzer>;
   /**
    * Optional post-findings mutator. Declared as a method (not a property of
    * function type) so TData stays assignable across `ProfileKind<A>` vs

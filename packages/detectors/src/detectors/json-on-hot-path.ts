@@ -4,6 +4,7 @@ import type {
   Finding,
   Hotspot,
   JsonHotPathEvidenceExtra,
+  KindScopedDetector,
 } from '@lanterna-profiler/core';
 import { defineBuiltinFinding, stripOptPrefix } from '@lanterna-profiler/core';
 import { DETECTOR_THRESHOLDS, JSON_FUNCTION_PATTERNS } from '../config.js';
@@ -11,15 +12,18 @@ import {
   aggregateByPatterns,
   buildAttributedFinding,
   buildAttributionEvidence,
+  type CpuHotspotContext,
   findStallCorrelation,
   resolveAttribution,
 } from './shared.js';
-import type { Detector, FindingContext } from './types.js';
 
-export const jsonOnHotPathDetector: Detector = {
+export const jsonOnHotPathDetector: KindScopedDetector<'cpu'> = {
   id: 'json-on-hot-path',
+  kindIds: ['cpu'],
   order: 20,
-  detect(report, context): Finding[] {
+  detect({ cpu }): Finding[] {
+    const report = cpu.report;
+    const context: CpuHotspotContext = cpu.view.hotspotAnalysis;
     const thresholds = DETECTOR_THRESHOLDS.jsonHotPath;
     const { categoryTotalPct } = aggregateByPatterns(context.fullHotspots, JSON_FUNCTION_PATTERNS, {
       normalize: stripOptPrefix,
@@ -45,7 +49,7 @@ function buildFinding(
   api: string,
   categoryTotalPct: number,
   report: { eventLoop: EventLoopReport },
-  context: FindingContext,
+  context: CpuHotspotContext,
 ): BuiltinFinding<'json-on-hot-path'> {
   const { attribution, caller } = resolveAttribution(hotspot, context);
   const evidenceExtra: JsonHotPathEvidenceExtra = {

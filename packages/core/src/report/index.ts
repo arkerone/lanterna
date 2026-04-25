@@ -1,6 +1,6 @@
 import type { AnalysisOptions, AnalysisResult } from '../analysis/core/types.js';
 import type { CaptureBundle } from '../capture/core/types.js';
-import type { CpuKindData } from '../kinds/cpu/probe.js';
+import type { ProfileKind } from '../kinds/core/types.js';
 import { buildReportMeta } from './meta.js';
 import { serializeReport } from './serialize.js';
 import type { LanternaReport } from './types.js';
@@ -13,11 +13,11 @@ import type { LanternaReport } from './types.js';
 export function buildLanternaReport(
   bundle: CaptureBundle,
   analysis: AnalysisResult,
-  profileKinds: string[],
+  kinds: ReadonlyArray<ProfileKind>,
   options: AnalysisOptions,
 ): LanternaReport {
   const report: LanternaReport = {
-    meta: buildReportMeta(bundle, profileKinds, countTotalSamples(bundle), options),
+    meta: buildReportMeta(bundle, kinds, options),
     profiles: analysis.profiles,
     findings: analysis.findings,
   };
@@ -29,9 +29,3 @@ export function buildLanternaReport(
 
 export * from './types.js';
 export { serializeReport };
-
-function countTotalSamples(bundle: CaptureBundle): number {
-  const cpu = bundle.kinds.cpu as CpuKindData | undefined;
-  if (!cpu) return 0;
-  return cpu.cpuProfile.nodes.reduce((sum, node) => sum + (node.hitCount ?? 0), 0);
-}

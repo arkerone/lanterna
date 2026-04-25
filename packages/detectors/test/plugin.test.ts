@@ -1,11 +1,14 @@
-import { buildLanternaReport } from '@lanterna-profiler/core';
-import { describe, expect, it } from 'vitest';
 import {
-  createDefaultAnalysisPipeline,
-  createFindingAnalyzerFromDetector,
-  type Detector,
-} from '../src/index.js';
+  buildLanternaReport,
+  createCpuProfileKind,
+  createFindingAnalyzerFromKindScopedDetector,
+  type KindScopedDetector,
+} from '@lanterna-profiler/core';
+import { describe, expect, it } from 'vitest';
+import { createDefaultAnalysisPipeline } from '../src/index.js';
 import { loadProfile, makeRaw } from './helpers.js';
+
+const cpuKinds = [createCpuProfileKind({ readStderrSoFar: () => '' })];
 
 const defaultOptions = {
   sampleIntervalMicros: 1000,
@@ -13,8 +16,9 @@ const defaultOptions = {
   command: ['node', 'app.js'],
 };
 
-const alwaysDetector: Detector = {
+const alwaysDetector: KindScopedDetector<'cpu'> = {
   id: 'custom-test:always',
+  kindIds: ['cpu'],
   detect() {
     return [
       {
@@ -39,23 +43,23 @@ const alwaysDetector: Detector = {
 };
 
 describe('plugin API', () => {
-  it('createFindingAnalyzerFromDetector exposes detector output through the pipeline', () => {
+  it('createFindingAnalyzerFromKindScopedDetector exposes detector output through the pipeline', () => {
     const raw = makeRaw(loadProfile('sync-crypto'));
-    const pipeline = createDefaultAnalysisPipeline();
-    pipeline.register(createFindingAnalyzerFromDetector(alwaysDetector));
+    const pipeline = createDefaultAnalysisPipeline(cpuKinds);
+    pipeline.register(createFindingAnalyzerFromKindScopedDetector(alwaysDetector));
 
     const report = buildLanternaReport(
       raw,
       pipeline.run(raw, defaultOptions),
-      ['cpu'],
+      cpuKinds,
       defaultOptions,
     );
     expect(report.findings.some((f) => f.id === 'custom-test:always')).toBe(true);
   });
 
   it('preserves detector id and order', () => {
-    const orderedDetector: Detector = { ...alwaysDetector, order: 42 };
-    const analyzer = createFindingAnalyzerFromDetector(orderedDetector);
+    const orderedDetector: KindScopedDetector<'cpu'> = { ...alwaysDetector, order: 42 };
+    const analyzer = createFindingAnalyzerFromKindScopedDetector(orderedDetector);
     expect(analyzer.id).toBe('custom-test:always');
     expect(analyzer.order).toBe(42);
   });

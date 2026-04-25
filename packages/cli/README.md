@@ -80,7 +80,7 @@ Future kinds can be added through the core/detectors extension APIs.
 
 ## Loading external detectors
 
-Lanterna ships with a default detector pack, but any ES module with a `default` export matching the `LanternaDetectorPlugin` contract can be loaded alongside it.
+Lanterna ships with a default detector pack, but any ES module with a `default` export matching the `LanternaDetectorPlugin` contract can be loaded alongside it. A plugin module can also publish brand-new profile kinds via a named `kinds: ProfileKind[]` export — those kinds are registered before `--kind <id>` is resolved, so a plugin can ship both a kind and its detectors in one package.
 
 ```bash
 # From an installed package
@@ -95,6 +95,8 @@ lanterna run \
   --detectors ./scripts/lanterna-plugin.mjs \
   -- node app.js
 ```
+
+A plugin module's named `kinds` and default `setupPipeline` are independently optional — at least one must be present. Combined, this means a single plugin package can register a new kind, attach its built-in detectors, and add cross-cutting analyzers without users wiring anything else.
 
 You can also list detectors in a `.lanterna.json` (or `.lanterna.config.json`) file at the working directory root. Config entries load first, followed by any `--detectors` flags:
 
@@ -118,7 +120,7 @@ The CLI is a thin wrapper around [`@lanterna-profiler/core`](../core) for orches
 - progress indicator (`ora`, `chalk`)
 - report output (stdout or file)
 
-If you need programmatic access, prefer `runProfile` / `attachProfile` from `@lanterna-profiler/core` and pass built-in analyzers from `@lanterna-profiler/detectors` when you want the default rules.
+If you need programmatic access, prefer `runProfile` / `attachProfile` from `@lanterna-profiler/core` and pass `createCpuProfileKindWithBuiltInDetectors(...)` from `@lanterna-profiler/detectors` when you want the default CPU rules.
 
 ## Related packages
 
