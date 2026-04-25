@@ -5,8 +5,7 @@ import type { ProfileKind } from './types.js';
  * from the CLI into the actual implementations driving capture + analysis.
  *
  * The registry owns no built-in kinds itself. Callers (core facades, CLI) must
- * register the kinds they want to support — typically via
- * `createDefaultKindRegistry()` in `@lanterna-profiler/core`.
+ * register the kinds they want to support via `createKindRegistry([...])`.
  */
 export class ProfileKindRegistry {
   private readonly kinds = new Map<string, ProfileKind>();

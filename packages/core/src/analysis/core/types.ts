@@ -47,6 +47,12 @@ export interface AnalysisContext {
   forKind<K extends keyof KindViews>(id: K): KindViews[K];
   /** `true` when the kind has a view registered. */
   hasKind<K extends keyof KindViews>(id: K): boolean;
+  /**
+   * Returns the report section key registered for a kind id. This can differ
+   * from the kind id when a kind exposes CLI/runtime identity separately from
+   * its report namespace.
+   */
+  reportSectionKeyForKind<K extends keyof ProfileSectionMap>(id: K): string;
 }
 
 export interface BaseAnalyzer {

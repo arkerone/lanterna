@@ -74,7 +74,7 @@ export class AnalysisPipeline {
   }
 
   run(bundle: CaptureBundle, options: AnalysisOptions): AnalysisResult {
-    const context = createAnalysisContext(bundle, options);
+    const context = createAnalysisContext(bundle, options, this.kinds);
     const snapshot: AnalysisSnapshot = {
       meta: buildStubMeta(bundle, options, this.kinds),
       profiles: {},

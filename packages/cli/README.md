@@ -120,7 +120,7 @@ The CLI is a thin wrapper around [`@lanterna-profiler/core`](../core) for orches
 - progress indicator (`ora`, `chalk`)
 - report output (stdout or file)
 
-If you need programmatic access, prefer `runProfile` / `attachProfile` from `@lanterna-profiler/core` and pass built-in analyzers from `@lanterna-profiler/detectors` when you want the default rules.
+If you need programmatic access, prefer `runProfile` / `attachProfile` from `@lanterna-profiler/core` and pass `createCpuProfileKindWithBuiltInDetectors(...)` from `@lanterna-profiler/detectors` when you want the default CPU rules.
 
 ## Related packages
 

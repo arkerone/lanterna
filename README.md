@@ -326,11 +326,14 @@ const report: LanternaReport = await runProfile({
   command: ['node', 'app.js'],
   durationMs: 15_000,
   pretty: true,
+  onTargetDiagnosticChunk: (chunk) => {
+    stderr += chunk;
+  },
   kinds: [
     createCpuProfileKindWithBuiltInDetectors({
       readStderrSoFar: () => stderr,
       sampleIntervalMicros: 1000,
-      deep: false,
+      deep: true,
     }),
   ],
 });
@@ -361,6 +364,7 @@ await runProfile({
     createCpuProfileKindWithBuiltInDetectors({
       readStderrSoFar: () => stderr,
       sampleIntervalMicros: 1000,
+      deep: false,
     }),
     // myMemoryKind,                              // add custom kinds here
   ],
@@ -371,6 +375,8 @@ await runProfile({
   setupPipeline: async (pipeline, ctx) => { /* full-control hook */ },
 });
 ```
+
+When you enable `deep: true`, also pass `onTargetDiagnosticChunk` and append chunks to the buffer read by `readStderrSoFar`; deopt parsing depends on those target diagnostics. Leave `deep: false` when you do not collect that stream.
 
 </details>
 

@@ -40,11 +40,14 @@ const report = await runProfile({
   command: ['node', 'app.js'],
   durationMs: 15_000,
   pretty: true,
+  onTargetDiagnosticChunk: (chunk) => {
+    stderr += chunk;
+  },
   kinds: [
     createCpuProfileKindWithBuiltInDetectors({
       readStderrSoFar: () => stderr,
       sampleIntervalMicros: 1000,
-      deep: false,
+      deep: true,
     }),
   ],
 });
@@ -53,6 +56,8 @@ console.log(report.findings);
 ```
 
 `createCpuProfileKindWithBuiltInDetectors(opts)` returns a `ProfileKind<CpuKindData>` whose `builtInAnalyzers` are this package's CPU detectors. `runProfile` flat-maps every kind's `builtInAnalyzers`, so you only need to register the kind — no separate `analyzers` injection.
+
+If you enable `deep: true`, capture target diagnostics with `onTargetDiagnosticChunk` and append them to the buffer returned by `readStderrSoFar`; deopt parsing reads from that stream. Use `deep: false` when you do not collect it.
 
 ## Usage - analyze an existing capture
 
@@ -180,6 +185,7 @@ await runProfile({
     createCpuProfileKindWithBuiltInDetectors({
       readStderrSoFar: () => stderr,
       sampleIntervalMicros: 1000,
+      deep: false,
     }),
     // myMemoryKind,                                // add custom kinds here
   ],

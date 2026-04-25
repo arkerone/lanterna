@@ -49,12 +49,13 @@ export function createFindingAnalyzerFromKindScopedDetector<K extends keyof Prof
     run(context: AnalysisContext, snapshot: Readonly<AnalysisSnapshot>) {
       for (const kindId of detector.kindIds) {
         if (!context.hasKind(kindId)) return [];
-        if (snapshot.profiles[kindId] === undefined) return [];
+        if (snapshot.profiles[context.reportSectionKeyForKind(kindId)] === undefined) return [];
       }
       const bundle = {} as KindScopedDetectorBundle<K>;
       for (const kindId of detector.kindIds) {
+        const sectionKey = context.reportSectionKeyForKind(kindId);
         (bundle as Record<string, { report: unknown; view: unknown }>)[kindId as string] = {
-          report: snapshot.profiles[kindId] as ProfileSectionMap[typeof kindId],
+          report: snapshot.profiles[sectionKey] as ProfileSectionMap[typeof kindId],
           view: context.forKind(kindId),
         };
       }
