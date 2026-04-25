@@ -21,7 +21,7 @@ npm install @lanterna-profiler/core
 - **Analysis pipeline** — `createAnalysisPipeline({ kinds, ... })` with `defineFindingAnalyzer` / `defineSectionAnalyzer` to register custom rules.
 - **Report** — `buildLanternaReport(bundle, analysis, kinds, options)` + `serializeReport(report, { pretty, kinds })` + `buildReportSchema(kinds)` (Zod schema is composed dynamically from the active kinds — schema v2 nests CPU data under `profiles.cpu.*` and per-kind meta under `meta.kinds.<id>.*`).
 - **Types** — `CaptureBundle`, `LanternaReport`, `Finding`, `Hotspot`, `AnalysisContext`, `FindingAnalyzer`, etc.
-- **Runtime hook framework** — `composePreloadScript` / `composeAttachScript` build a single preload from a set of `HookInstaller` fragments (always includes the cross-cutting runtime-signals installer for GC + event-loop lag).
+- **Runtime hook framework** — active kinds can contribute hook fragments through `ProfileKind.hookInstaller`; the capture coordinator composes them with the cross-cutting runtime-signals installer for GC + event-loop lag.
 
 Default detectors (sync-crypto, blocking-io, excessive-gc, event-loop-stall, …) live in `@lanterna-profiler/detectors` so core stays minimal.
 
@@ -49,8 +49,6 @@ const bundle = await runCapture({
   source: new SpawnSource(),
   sourceOptions: {
     command: ['node', 'app.js'],
-    sampleIntervalMicros: 1000,
-    deep: false,
   },
   kinds: [cpuKind],
   durationMs: 15_000,

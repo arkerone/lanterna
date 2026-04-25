@@ -17,7 +17,7 @@ flowchart LR
 1. **Capture** — a `ProfileSource` (spawn / attach) hands a live CDP connection to the `runCapture` coordinator. The coordinator runs the installed **profile kinds'** probes against that connection, plus the always-on runtime-signals installer (event-loop + GC). Output: `CaptureBundle` — `{ target, runtimeSignals, kinds, captureIntegrity, … }`.
 2. **Enrichment** — each kind contributes its analysis section (`profiles.<kind>`), detectors emit cross-kind `findings[]`, and `buildLanternaReport` assembles the final `LanternaReport`.
 
-**Profile kinds** are the extensibility seam. The built-in kind is `cpu`. Future kinds (memory, async) plug in through the same interface: they provide a `CaptureProbe` + `KindAnalysisContributor` and optionally a preload-hook fragment. The CLI selects active kinds with `--kind <id>` (repeatable, default `cpu`); the JSON report lists them in `meta.profileKinds` and puts their section under `profiles.<kind>`.
+**Profile kinds** are the extensibility seam. The built-in kind is `cpu`. Future kinds (memory, async) plug in through the same interface: they provide a `CaptureProbe` + `KindAnalysisContributor` and optionally a preload-hook fragment. The CLI selects active kinds with `--kind <id>` (repeatable, default `cpu`); the JSON report lists successfully captured kinds in `meta.profileKinds` and puts their sections under `profiles.<kind>`.
 
 ### Spawn vs attach
 

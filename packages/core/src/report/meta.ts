@@ -22,9 +22,11 @@ export function buildReportMeta(
 ): ReportMeta {
   const kindsMeta: Record<string, unknown> = {};
   const kindsIntegrity: Record<string, unknown> = { ...bundle.captureIntegrity.kinds };
+  const capturedKinds: string[] = [];
   for (const kind of kinds) {
     const data = bundle.kinds[kind.id];
     if (data === undefined) continue;
+    capturedKinds.push(kind.id);
     if (kind.contributeMeta) {
       kindsMeta[kind.id] = kind.contributeMeta(data);
     }
@@ -46,7 +48,7 @@ export function buildReportMeta(
     command: opts.command,
     lanternaVersion: LANTERNA_VERSION,
     mode: opts.mode ?? 'spawn',
-    profileKinds: kinds.map((kind) => kind.id),
+    profileKinds: capturedKinds,
     kinds: kindsMeta,
     captureIntegrity: {
       ...bundle.captureIntegrity,

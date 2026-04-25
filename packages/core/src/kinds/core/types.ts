@@ -76,7 +76,7 @@ export type KindFinalizeHook<TData> = (args: {
 }) => void;
 
 export interface ProfileKind<TData = unknown> {
-  /** Stable identifier used on the CLI (`--kind cpu`) and in `meta.profileKinds`. */
+  /** Stable identifier used on the CLI (`--kind cpu`) and in `meta.profileKinds` when captured. */
   id: string;
   /** Human-readable label for logs and help. */
   label?: string;

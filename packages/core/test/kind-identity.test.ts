@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import { createAnalysisPipeline } from '../src/analysis/core/pipeline.js';
+import type { CaptureBundle } from '../src/capture/core/types.js';
 import { createKindRegistry } from '../src/kinds/core/registry.js';
 import { defineProfileKind, type ProfileKind } from '../src/kinds/core/types.js';
+import { buildLanternaReport } from '../src/report/index.js';
 import { buildReportSchema } from '../src/report/schema.js';
 
 function kind(id: string, reportSectionKey = id): ProfileKind {
@@ -87,5 +89,50 @@ describe('profile kind identity', () => {
     });
 
     expect(result.success).toBe(true);
+  });
+
+  it('lists only kinds with captured data in report meta profileKinds', () => {
+    const alpha = kind('alpha');
+    const beta = kind('beta');
+    const bundle: CaptureBundle = {
+      target: {
+        pid: 1234,
+        nodeVersion: 'v24.0.0',
+        v8Version: '12.0.0',
+        platform: 'linux',
+        arch: 'x64',
+        cwd: '/app',
+      },
+      startedAtEpoch: Date.parse('2024-01-01T00:00:00.000Z'),
+      durationMs: 100,
+      captureIntegrity: {
+        controlChannel: true,
+        controlChannelExpected: true,
+        eventLoopTimed: false,
+        gcTimed: false,
+        gcObserverAvailable: false,
+        controlChannelWriteErrors: 0,
+        gcObserverSetupFailed: 0,
+        heartbeatDropped: 0,
+        kinds: {},
+      },
+      runtimeSignals: {
+        gcEvents: [],
+        eventLoopSamples: [],
+        eventLoopAvailable: false,
+      },
+      kinds: {
+        alpha: {},
+      },
+    };
+
+    const report = buildLanternaReport(
+      bundle,
+      { profiles: { alpha: {} }, findings: [] },
+      [alpha, beta],
+      { command: ['node', 'app.js'], mode: 'spawn' },
+    );
+
+    expect(report.meta.profileKinds).toEqual(['alpha']);
   });
 });

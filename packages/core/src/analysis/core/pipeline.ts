@@ -304,9 +304,11 @@ function buildStubMeta(
 ): AnalysisSnapshot['meta'] {
   const kindsMeta: Record<string, unknown> = {};
   const kindsIntegrity: Record<string, unknown> = { ...bundle.captureIntegrity.kinds };
+  const capturedKinds: string[] = [];
   for (const kind of kinds) {
     const data = bundle.kinds?.[kind.id as keyof CaptureKindDataMap];
     if (data === undefined) continue;
+    capturedKinds.push(kind.id);
     if (kind.contributeMeta) kindsMeta[kind.id] = kind.contributeMeta(data);
     if (kind.contributeIntegrity) kindsIntegrity[kind.id] = kind.contributeIntegrity(data);
   }
@@ -323,7 +325,7 @@ function buildStubMeta(
     command: options.command,
     lanternaVersion: '',
     mode: options.mode ?? 'spawn',
-    profileKinds: kinds.map((kind) => kind.id),
+    profileKinds: capturedKinds,
     kinds: kindsMeta,
     captureIntegrity: { ...bundle.captureIntegrity, kinds: kindsIntegrity },
   };

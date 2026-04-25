@@ -147,7 +147,7 @@ Lanterna emits a `LanternaReport` (schema v2) with per-kind sections nested unde
 
 | Section | Purpose |
 | --- | --- |
-| `meta` | Capture metadata, mode, duration, `profileKinds`, integrity flags. |
+| `meta` | Capture metadata, mode, duration, successfully captured `profileKinds`, integrity flags. |
 | `profiles.cpu.summary` | High-level CPU ratios (user / builtin / native / GC). |
 | `profiles.cpu.hotspots` | Aggregated functions with self/total CPU + callers/callees. |
 | `profiles.cpu.hotStacks` | Most frequent sampled stacks. |
