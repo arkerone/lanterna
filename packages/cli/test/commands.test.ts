@@ -24,6 +24,9 @@ vi.mock('@lanterna-profiler/detectors', () => ({
   createBuiltInFindingAnalyzers: vi.fn(() => []),
   withBuiltInCpuDetectors: vi.fn((kind) => kind),
   createCpuProfileKindWithBuiltInDetectors: vi.fn(() => ({ id: 'cpu' })),
+  createBuiltInMemoryFindingAnalyzers: vi.fn(() => []),
+  withBuiltInMemoryDetectors: vi.fn((kind) => kind),
+  createMemoryProfileKindWithBuiltInDetectors: vi.fn(() => ({ id: 'memory' })),
 }));
 
 vi.mock('../src/activity-indicator.js', () => ({

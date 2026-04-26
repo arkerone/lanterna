@@ -1,4 +1,6 @@
 import {
+  DEFAULT_MEMORY_SAMPLING_INTERVAL_BYTES,
+  DEFAULT_MEMORY_USAGE_INTERVAL_MS,
   DEFAULT_SAMPLE_INTERVAL_MICROS,
   MIN_SAMPLE_INTERVAL_MICROS,
 } from '@lanterna-profiler/core';
@@ -9,6 +11,8 @@ interface ParsedCommonOptions {
   output?: string;
   pretty?: boolean;
   sampleInterval?: number;
+  heapSampleInterval?: number;
+  memoryUsageInterval?: number;
   detectors?: string[];
   kind?: string[];
 }
@@ -18,6 +22,8 @@ interface NormalizedCommonOptions {
   output?: string;
   pretty: boolean;
   sampleIntervalMicros: number;
+  heapSamplingIntervalBytes: number;
+  memoryUsageIntervalMs: number;
   detectors: string[];
   kinds: string[];
 }
@@ -38,6 +44,8 @@ export interface RunProfileOptions {
   pretty: boolean;
   deep: boolean;
   sampleIntervalMicros: number;
+  heapSamplingIntervalBytes: number;
+  memoryUsageIntervalMs: number;
   detectors: string[];
   kinds: string[];
 }
@@ -50,6 +58,8 @@ export interface AttachProfileOptions {
   output?: string;
   pretty: boolean;
   sampleIntervalMicros: number;
+  heapSamplingIntervalBytes: number;
+  memoryUsageIntervalMs: number;
   detectors: string[];
   kinds: string[];
 }
@@ -100,6 +110,8 @@ function normalizeCommonOptions(parsed: ParsedCommonOptions): NormalizedCommonOp
     ...(parsed.output ? { output: parsed.output } : {}),
     pretty: Boolean(parsed.pretty),
     sampleIntervalMicros: parsed.sampleInterval ?? DEFAULT_SAMPLE_INTERVAL_MICROS,
+    heapSamplingIntervalBytes: parsed.heapSampleInterval ?? DEFAULT_MEMORY_SAMPLING_INTERVAL_BYTES,
+    memoryUsageIntervalMs: parsed.memoryUsageInterval ?? DEFAULT_MEMORY_USAGE_INTERVAL_MS,
     detectors: parsed.detectors ?? [],
     kinds: resolveKinds(parsed.kind),
   };
@@ -162,9 +174,19 @@ function addCommonProfilingOptions(command: Command): Command {
     )
     .option(
       '--kind <id>',
-      'Profile kind to capture (default: cpu). Repeatable or comma-separated.',
+      'Profile kind to capture (default: cpu). Repeatable or comma-separated. Built-in: cpu, memory.',
       appendRepeatableValue,
       [] as string[],
+    )
+    .option(
+      '--heap-sample-interval <size>',
+      `V8 heap sampling interval, in bytes or with KiB/MiB suffix (memory kind only, default ${DEFAULT_MEMORY_SAMPLING_INTERVAL_BYTES} = 512KiB)`,
+      parseHeapSampleInterval,
+    )
+    .option(
+      '--memory-usage-interval <ms>',
+      `process.memoryUsage() sampling cadence in ms (memory kind only, default ${DEFAULT_MEMORY_USAGE_INTERVAL_MS})`,
+      parseMemoryUsageInterval,
     );
 }
 
@@ -228,6 +250,49 @@ function parseDuration(value: string): number {
   if (unit === 's') return amount * 1000;
   if (unit === 'm') return amount * 60_000;
   return amount;
+}
+
+/**
+ * Accepts a heap-sampling interval expressed as bytes (`524288`), KiB
+ * (`512KiB`, `512k`), or MiB (`1MiB`, `2m`). KiB/MiB use binary units
+ * (1024-based). Returns the value normalized to bytes.
+ */
+function parseHeapSampleInterval(value: string): number {
+  const match = /^(\d+(?:\.\d+)?)\s*(b|kib|kb|k|mib|mb|m)?$/i.exec(value.trim());
+  if (!match) {
+    throw new CommanderError(
+      1,
+      'lanterna.invalidHeapSampleInterval',
+      `invalid --heap-sample-interval: ${value} (expected e.g. 524288, 512KiB, 1MiB)`,
+    );
+  }
+  const amount = Number(match[1]);
+  const unit = (match[2] ?? 'b').toLowerCase();
+  let bytes: number;
+  if (unit === 'mib' || unit === 'mb' || unit === 'm') bytes = amount * 1024 * 1024;
+  else if (unit === 'kib' || unit === 'kb' || unit === 'k') bytes = amount * 1024;
+  else bytes = amount;
+  bytes = Math.round(bytes);
+  if (!Number.isFinite(bytes) || bytes < 1024) {
+    throw new CommanderError(
+      1,
+      'lanterna.invalidHeapSampleInterval',
+      `invalid --heap-sample-interval (min 1024 bytes / 1KiB): ${value}`,
+    );
+  }
+  return bytes;
+}
+
+function parseMemoryUsageInterval(value: string): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 10) {
+    throw new CommanderError(
+      1,
+      'lanterna.invalidMemoryUsageInterval',
+      `invalid --memory-usage-interval (min 10ms): ${value}`,
+    );
+  }
+  return parsed;
 }
 
 function parseSampleInterval(value: string): number {
