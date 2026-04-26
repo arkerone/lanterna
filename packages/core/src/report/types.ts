@@ -396,9 +396,76 @@ export interface CpuProfileReport {
   deopts: DeoptEntry[];
 }
 
+export interface MemorySeriesStats {
+  startBytes: number;
+  endBytes: number;
+  minBytes: number;
+  maxBytes: number;
+  meanBytes: number;
+  p95Bytes: number;
+  slopeBytesPerSec: number;
+}
+
+export interface MemoryUsageSample {
+  atMs: number;
+  rss: number;
+  heapTotal: number;
+  heapUsed: number;
+  external: number;
+  arrayBuffers: number;
+}
+
+export interface MemoryHotAllocator {
+  id: string;
+  function: string;
+  file: string;
+  line: number;
+  column: number;
+  category: FrameCategory;
+  package?: string;
+  selfBytes: number;
+  selfPct: number;
+  totalBytes: number;
+  totalPct: number;
+}
+
+export interface MemorySummary {
+  totalSampledBytes: number;
+  samplingIntervalBytes: number;
+  rss?: MemorySeriesStats;
+  heapUsed?: MemorySeriesStats;
+  external?: MemorySeriesStats;
+  arrayBuffers?: MemorySeriesStats;
+  topAllocator?: {
+    function: string;
+    file: string;
+    line: number;
+    selfPct: number;
+    totalPct: number;
+  };
+  /** `external + arrayBuffers` over `heapUsed`, averaged across the series. */
+  externalRatio?: number;
+}
+
+/**
+ * Memory profile report section — lives under `report.profiles.memory`. Built
+ * from V8 sampling heap profiler output plus a `process.memoryUsage()` time
+ * series collected by the preload hook.
+ */
+export interface MemoryProfileReport {
+  summary: MemorySummary;
+  hotAllocators: MemoryHotAllocator[];
+  memoryUsage: {
+    samples: MemoryUsageSample[];
+    available: boolean;
+    sampleIntervalMs: number;
+  };
+}
+
 declare module '../kinds/core/types.js' {
   interface ProfileSectionMap {
     cpu: CpuProfileReport;
+    memory: MemoryProfileReport;
   }
 }
 
