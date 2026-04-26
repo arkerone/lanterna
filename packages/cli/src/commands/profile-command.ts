@@ -7,7 +7,10 @@ import {
   type RunProfileOptions,
   runProfile,
 } from '@lanterna-profiler/core';
-import { createCpuProfileKindWithBuiltInDetectors } from '@lanterna-profiler/detectors';
+import {
+  createCpuProfileKindWithBuiltInDetectors,
+  createMemoryProfileKindWithBuiltInDetectors,
+} from '@lanterna-profiler/detectors';
 import { startActivityIndicator } from '../activity-indicator.js';
 import { loadLanternaConfig } from '../config.js';
 import { writeReportOutput } from '../output.js';
@@ -18,6 +21,8 @@ type ParsedProfileOptions = {
   kinds: string[];
   output?: string;
   pretty: boolean;
+  heapSamplingIntervalBytes: number;
+  memoryUsageIntervalMs: number;
 };
 
 type ExecuteProfileCommandOptions =
@@ -48,7 +53,8 @@ export async function executeProfileCommand(command: ExecuteProfileCommandOption
       command.options.detectors,
     );
     const cpuKind = buildCpuKind(command);
-    const registry = createKindRegistry([cpuKind, ...pluginKinds]);
+    const memoryKind = buildMemoryKind(command);
+    const registry = createKindRegistry([cpuKind, memoryKind, ...pluginKinds]);
     const kinds = registry.resolveMany(command.options.kinds);
     const report = await runProfileCommand(command, kinds, setupPipeline, (message) => {
       indicator.update(message);
@@ -65,6 +71,13 @@ export async function executeProfileCommand(command: ExecuteProfileCommandOption
     }
     throw error;
   }
+}
+
+function buildMemoryKind(command: ExecuteProfileCommandOptions): ProfileKind {
+  return createMemoryProfileKindWithBuiltInDetectors({
+    samplingIntervalBytes: command.options.heapSamplingIntervalBytes,
+    memoryUsageIntervalMs: command.options.memoryUsageIntervalMs,
+  });
 }
 
 function buildCpuKind(command: ExecuteProfileCommandOptions): ProfileKind {

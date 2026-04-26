@@ -312,7 +312,7 @@ describe('live profiling', () => {
   it('rejects unknown profile kinds for run before capture starts', async () => {
     await expectLanternaCommandFailure(
       ['run', '--kind', 'nope', '--', 'node', '-e', 'setTimeout(() => {}, 10)'],
-      'Lanterna profiling failed: unknown profile kind(s): nope. Available kinds: cpu',
+      'Lanterna profiling failed: unknown profile kind(s): nope. Available kinds: cpu, memory',
     );
   });
 
@@ -327,7 +327,7 @@ describe('live profiling', () => {
         '--duration',
         '10ms',
       ],
-      'Lanterna attach capture failed: unknown profile kind(s): nope. Available kinds: cpu',
+      'Lanterna attach capture failed: unknown profile kind(s): nope. Available kinds: cpu, memory',
     );
   });
 

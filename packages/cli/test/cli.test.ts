@@ -1,5 +1,14 @@
+import {
+  DEFAULT_MEMORY_SAMPLING_INTERVAL_BYTES,
+  DEFAULT_MEMORY_USAGE_INTERVAL_MS,
+} from '@lanterna-profiler/core';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { parseAttachArgs, parseRunArgs } from '../src/parse.js';
+
+const MEMORY_DEFAULTS = {
+  heapSamplingIntervalBytes: DEFAULT_MEMORY_SAMPLING_INTERVAL_BYTES,
+  memoryUsageIntervalMs: DEFAULT_MEMORY_USAGE_INTERVAL_MS,
+};
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -33,6 +42,7 @@ describe('parseRunArgs', () => {
       sampleIntervalMicros: 2500,
       detectors: [],
       kinds: ['cpu'],
+      ...MEMORY_DEFAULTS,
     });
   });
 
@@ -64,6 +74,34 @@ describe('parseRunArgs', () => {
     );
   });
 
+  it('accepts heap sample interval in bytes, KiB, and MiB', () => {
+    expect(
+      parseRunArgs(['--heap-sample-interval', '524288', '--', 'node', 'app.js'])
+        .heapSamplingIntervalBytes,
+    ).toBe(524_288);
+    expect(
+      parseRunArgs(['--heap-sample-interval', '512KiB', '--', 'node', 'app.js'])
+        .heapSamplingIntervalBytes,
+    ).toBe(512 * 1024);
+    expect(
+      parseRunArgs(['--heap-sample-interval', '1MiB', '--', 'node', 'app.js'])
+        .heapSamplingIntervalBytes,
+    ).toBe(1024 * 1024);
+    expect(
+      parseRunArgs(['--heap-sample-interval', '256k', '--', 'node', 'app.js'])
+        .heapSamplingIntervalBytes,
+    ).toBe(256 * 1024);
+  });
+
+  it('rejects malformed or below-minimum heap sample intervals', () => {
+    expect(() => parseRunArgs(['--heap-sample-interval', 'big', '--', 'node', 'app.js'])).toThrow(
+      /invalid --heap-sample-interval/,
+    );
+    expect(() => parseRunArgs(['--heap-sample-interval', '512', '--', 'node', 'app.js'])).toThrow(
+      /invalid --heap-sample-interval/,
+    );
+  });
+
   it('normalizes repeated and comma-separated kinds without duplication', () => {
     const parsed = parseRunArgs([
       '--kind',
@@ -90,6 +128,7 @@ describe('parseAttachArgs', () => {
       sampleIntervalMicros: 1000,
       detectors: [],
       kinds: ['cpu'],
+      ...MEMORY_DEFAULTS,
     });
   });
 
@@ -111,6 +150,7 @@ describe('parseAttachArgs', () => {
       sampleIntervalMicros: 1000,
       detectors: [],
       kinds: ['cpu'],
+      ...MEMORY_DEFAULTS,
     });
   });
 
@@ -134,6 +174,7 @@ describe('parseAttachArgs', () => {
       sampleIntervalMicros: 1000,
       detectors: [],
       kinds: ['cpu'],
+      ...MEMORY_DEFAULTS,
     });
   });
 
@@ -144,6 +185,7 @@ describe('parseAttachArgs', () => {
       sampleIntervalMicros: 1000,
       detectors: [],
       kinds: ['cpu'],
+      ...MEMORY_DEFAULTS,
     });
   });
 
@@ -174,6 +216,7 @@ describe('parseAttachArgs', () => {
       sampleIntervalMicros: 1000,
       detectors: [],
       kinds: ['cpu'],
+      ...MEMORY_DEFAULTS,
     });
   });
 
