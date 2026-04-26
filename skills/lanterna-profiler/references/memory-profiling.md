@@ -79,14 +79,14 @@ Reading order:
 | `memory-growth:rss` | `memory-growth` | RSS linear slope ≥ 1 MB/s (warning) or ≥ 5 MB/s (critical), capture ≥ 2 s and ≥ 8 samples. |
 | `memory-growth:heapUsed` | `memory-growth` | Same shape as `:rss` but on `heapUsed`. Less prone to off-heap noise. |
 | `large-allocator:<frame>` | `large-allocator` | A single frame ≥ 15 % of sampled bytes (`totalPct` or `selfPct`); critical at ≥ 40 %. Skips synthetic frames `(root)`, `(idle)`, `(program)`, `(garbage collector)`. |
-| `external-buffer-pressure` | `external-buffer-pressure` | Mean `external + arrayBuffers` ≥ 0.5 × `heapUsed` and ≥ 32 MB absolute. Critical at ≥ 1.5×. |
+| `external-buffer-pressure` | `external-buffer-pressure` | Mean `external` ≥ 0.5 × `heapUsed` and ≥ 32 MB absolute. Critical at ≥ 1.5×. |
 | `alloc-in-hot-path:<frame>` | `alloc-in-hot-path` | Same frame appears in top CPU hotspots (`totalPct ≥ 5 %`) **and** top memory allocators (`totalPct ≥ 5 %`). Requires `--kind cpu memory`. Critical when combined % ≥ 60. |
 
 Each memory finding's `evidence.extra` carries the raw counters (slope, MB delta, ratio, combined pct). Use `measurements.thresholds` to explain *why* the finding fired.
 
 ## Common interpretation patterns
 
-- **RSS grows linearly, `heapUsed` flat, `external` rising** → off-heap leak. Suspect Buffer pools not reset, pino transports buffering, native modules (sharp, libpq, zlib streams). `external-buffer-pressure` will usually co-fire.
+- **RSS grows linearly, `heapUsed` flat, `external` rising** → off-heap leak. Suspect Buffer pools not reset, pino transports buffering, native modules (sharp, libpq, zlib streams). `external-buffer-pressure` will usually co-fire. `arrayBuffers` is already included in `external`, so use it as a breakdown signal, not as an additive term.
 - **Both RSS and `heapUsed` grow** → JS heap leak. Look for unbounded `Map`/`Set`, long-lived listeners, Promise chains retaining context. Lanterna shows the *allocators*; finding the *retainers* requires a heap snapshot from Chrome DevTools.
 - **No growth, but `large-allocator` fires hard** → allocation churn. Hot path allocates and frees rapidly, driving GC pauses. Often co-fires with `excessive-gc` from the CPU side. Pool/reuse, prefer for-loops to `map+filter+slice` chains, avoid intermediate strings/objects.
 - **`alloc-in-hot-path` fires** → highest-leverage fix in the report. Reducing allocations on this frame cuts both CPU and GC.

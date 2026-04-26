@@ -243,7 +243,7 @@ Lanterna emits a `LanternaReport` (schema v2) with per-kind sections nested unde
 | `require-in-hot-path` | `require-in-hot-path` | Module loading functions sampled on the hot path. |
 | `memory-growth:rss` / `memory-growth:heapUsed` | `memory-growth` | Sustained linear growth ≥ 1 MB/s (warning) or ≥ 5 MB/s (critical) over the capture window. |
 | `large-allocator:<frame>` | `large-allocator` | A single frame accounts for ≥ 15 % of sampled allocations. |
-| `external-buffer-pressure` | `external-buffer-pressure` | Mean `external + arrayBuffers` exceeds 0.5× `heapUsed` (and ≥ 32 MB absolute). |
+| `external-buffer-pressure` | `external-buffer-pressure` | Mean `external` exceeds 0.5× `heapUsed` (and ≥ 32 MB absolute). |
 | `alloc-in-hot-path:<frame>` | `alloc-in-hot-path` | Same frame is hot on CPU **and** in top allocators (requires `--kind cpu memory`). |
 
 Builtin-backed findings include a `proofLevel` so consumers can distinguish direct callee evidence from caller attribution.

@@ -443,7 +443,7 @@ export interface MemorySummary {
     selfPct: number;
     totalPct: number;
   };
-  /** `external + arrayBuffers` over `heapUsed`, averaged across the series. */
+  /** `external` over `heapUsed`, averaged across the series. */
   externalRatio?: number;
 }
 

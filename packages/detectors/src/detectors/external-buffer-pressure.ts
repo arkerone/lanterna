@@ -4,7 +4,7 @@ import { DETECTOR_THRESHOLDS } from '../config.js';
 const BYTES_PER_MB = 1024 * 1024;
 
 /**
- * Fires when off-heap memory (`external` + `arrayBuffers`) is large relative
+ * Fires when off-heap memory (`external`) is large relative
  * to the V8 heap. Off-heap allocations live outside V8's GC reach (Buffer,
  * TypedArray-backed storage, native modules) and often indicate
  * Buffer-leak-shaped problems that don't show up in heap snapshots.
@@ -20,15 +20,15 @@ export const externalBufferPressureDetector: KindScopedDetector<'memory'> = {
     const arrayBuffers = series.arrayBuffers;
     if (!heapUsed || !external || !arrayBuffers) return [];
 
-    const externalMeanMB = (external.meanBytes + arrayBuffers.meanBytes) / BYTES_PER_MB;
+    const externalMeanMB = external.meanBytes / BYTES_PER_MB;
     if (externalMeanMB < thresholds.minExternalMeanMB) return [];
 
-    const ratio = (external.meanBytes + arrayBuffers.meanBytes) / Math.max(heapUsed.meanBytes, 1);
+    const ratio = external.meanBytes / Math.max(heapUsed.meanBytes, 1);
     if (ratio < thresholds.warnRatio) return [];
 
     const severity: BaseFinding['severity'] =
       ratio >= thresholds.criticalRatio ? 'critical' : 'warning';
-    const peakExternalMB = (external.maxBytes + arrayBuffers.maxBytes) / BYTES_PER_MB;
+    const peakExternalMB = external.maxBytes / BYTES_PER_MB;
     const heapMeanMB = heapUsed.meanBytes / BYTES_PER_MB;
 
     const finding: BaseFinding<string, Record<string, unknown>> = {
@@ -40,7 +40,7 @@ export const externalBufferPressureDetector: KindScopedDetector<'memory'> = {
       evidence: {
         file: 'process.memoryUsage',
         line: 0,
-        function: 'external+arrayBuffers',
+        function: 'external',
         selfPct: 0,
         extra: {
           ratio,

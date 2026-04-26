@@ -25,6 +25,7 @@ function installRuntimeSignals(api: {
   addResetHook(fn: () => void): void;
   getBuiltin<T extends object>(name: string): T | null;
   markGcObserverFailure(): void;
+  startCapture(): void;
   heartbeatSamples: Array<{ atMs: number; lagMs: number }>;
   capabilities: { eventLoop: boolean; gc: boolean; lifecycle: boolean };
 }) {
@@ -98,7 +99,7 @@ function installRuntimeSignals(api: {
 
   api.registerGlobal('__LANTERNA_EVENT_LOOP__', {
     markCaptureStart: () => {
-      // Handled by the framework's startCapture; kept for backward compat.
+      api.startCapture();
     },
     read: () => ({
       samples: api.heartbeatSamples.slice(),

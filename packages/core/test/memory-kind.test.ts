@@ -1,11 +1,16 @@
+import vm from 'node:vm';
 import { describe, expect, it } from 'vitest';
 import { createAnalysisPipeline } from '../src/analysis/core/pipeline.js';
 import type { RawSamplingHeapProfile } from '../src/capture/core/heap.js';
 import type { CaptureBundle } from '../src/capture/core/types.js';
 import { createMemoryProfileKind } from '../src/kinds/memory/index.js';
 import type { MemoryKindData } from '../src/kinds/memory/probe.js';
+import { buildLanternaReport, serializeReport } from '../src/report/index.js';
 import { memoryProfileReportSchema } from '../src/report/schema/memory-profile.js';
 import type { MemoryProfileReport, MemoryUsageSample } from '../src/report/types.js';
+import { composeAttachScript } from '../src/runtime-signals/hooks/framework.js';
+import { createMemoryUsageInstaller } from '../src/runtime-signals/hooks/installers/memory-usage.js';
+import { runtimeSignalsInstaller } from '../src/runtime-signals/hooks/installers/runtime-signals.js';
 
 function bundle(data: MemoryKindData, durationMs = 5000): CaptureBundle {
   return {
@@ -119,13 +124,19 @@ describe('memory kind analysis', () => {
     expect(report).toBeDefined();
     expect(report.summary.totalSampledBytes).toBe(1000);
 
-    // Top allocator should be allocBuffer (800 / 1000 = 80%) with classified file path.
+    // Top allocator is inclusive-heavy: doWork's subtree accounts for the whole sample.
     const top = report.hotAllocators[0];
-    expect(top.function).toBe('allocBuffer');
-    expect(top.file).toBe('src/util.js');
+    expect(top.function).toBe('doWork');
+    expect(top.file).toBe('src/work.js');
     expect(top.category).toBe('user');
-    expect(top.selfBytes).toBe(800);
-    expect(Math.round(top.selfPct)).toBe(80);
+    expect(top.totalBytes).toBe(1000);
+    expect(Math.round(top.totalPct)).toBe(100);
+
+    const allocBuffer = report.hotAllocators.find((h) => h.function === 'allocBuffer');
+    expect(allocBuffer).toBeDefined();
+    expect(allocBuffer?.file).toBe('src/util.js');
+    expect(allocBuffer?.selfBytes).toBe(800);
+    expect(Math.round(allocBuffer?.selfPct ?? 0)).toBe(80);
 
     // doWork should be present with self 200, total 1000 (subtree includes child).
     const doWork = report.hotAllocators.find((h) => h.function === 'doWork');
@@ -177,13 +188,154 @@ describe('memory kind analysis', () => {
     const data: MemoryKindData = {
       samplingProfile: empty,
       samplingIntervalBytes: 512 * 1024,
-      memoryUsage: { samples: [], available: false, sampleIntervalMs: 0 },
+      memoryUsage: { samples: [], available: false, sampleIntervalMs: 250 },
     };
-    const pipeline = createAnalysisPipeline({ kinds: [createMemoryProfileKind()] });
+    const memoryKind = createMemoryProfileKind();
+    const pipeline = createAnalysisPipeline({ kinds: [memoryKind] });
     const result = pipeline.run(bundle(data), { command: ['node', 'app.js'], mode: 'spawn' });
     const report = result.profiles.memory as MemoryProfileReport;
     expect(report.hotAllocators).toEqual([]);
     expect(report.summary.totalSampledBytes).toBe(0);
     expect(report.summary.rss).toBeUndefined();
+
+    const lanternaReport = buildLanternaReport(bundle(data), result, [memoryKind], {
+      command: ['node', 'app.js'],
+      mode: 'spawn',
+    });
+    expect(() =>
+      serializeReport(lanternaReport, { pretty: false, kinds: [memoryKind] }),
+    ).not.toThrow();
+  });
+
+  it('computes externalRatio from external only because arrayBuffers is included there', () => {
+    const data: MemoryKindData = {
+      samplingProfile: profile(),
+      samplingIntervalBytes: 512 * 1024,
+      memoryUsage: {
+        samples: [
+          {
+            atMs: 0,
+            rss: 200 * 1024 * 1024,
+            heapTotal: 100 * 1024 * 1024,
+            heapUsed: 50 * 1024 * 1024,
+            external: 25 * 1024 * 1024,
+            arrayBuffers: 20 * 1024 * 1024,
+          },
+        ],
+        available: true,
+        sampleIntervalMs: 250,
+      },
+    };
+    const pipeline = createAnalysisPipeline({ kinds: [createMemoryProfileKind()] });
+    const result = pipeline.run(bundle(data), { command: ['node', 'app.js'], mode: 'spawn' });
+    const report = result.profiles.memory as MemoryProfileReport;
+    expect(report.summary.externalRatio).toBe(0.5);
+  });
+
+  it('orders inclusive-heavy allocators before self-only allocators', () => {
+    const data: MemoryKindData = {
+      samplingProfile: {
+        head: {
+          callFrame: {
+            functionName: '(root)',
+            scriptId: '0',
+            url: '',
+            lineNumber: 0,
+            columnNumber: 0,
+          },
+          selfSize: 0,
+          id: 1,
+          children: [
+            {
+              callFrame: {
+                functionName: 'parent',
+                scriptId: '1',
+                url: 'file:///app/src/parent.js',
+                lineNumber: 1,
+                columnNumber: 0,
+              },
+              selfSize: 100,
+              id: 2,
+              children: [
+                {
+                  callFrame: {
+                    functionName: 'child',
+                    scriptId: '2',
+                    url: 'file:///app/src/child.js',
+                    lineNumber: 1,
+                    columnNumber: 0,
+                  },
+                  selfSize: 900,
+                  id: 3,
+                  children: [],
+                },
+              ],
+            },
+            {
+              callFrame: {
+                functionName: 'selfOnly',
+                scriptId: '3',
+                url: 'file:///app/src/self.js',
+                lineNumber: 1,
+                columnNumber: 0,
+              },
+              selfSize: 500,
+              id: 4,
+              children: [],
+            },
+          ],
+        },
+        samples: [],
+      },
+      samplingIntervalBytes: 512 * 1024,
+      memoryUsage: { samples: series(0), available: true, sampleIntervalMs: 250 },
+    };
+    const pipeline = createAnalysisPipeline({ kinds: [createMemoryProfileKind()] });
+    const result = pipeline.run(bundle(data), { command: ['node', 'app.js'], mode: 'spawn' });
+    const report = result.profiles.memory as MemoryProfileReport;
+    expect(report.hotAllocators[0]?.function).toBe('parent');
+  });
+
+  it('rejects invalid memory kind options at the public API boundary', () => {
+    expect(() => createMemoryProfileKind({ samplingIntervalBytes: 1023 })).toThrow(
+      /memory sampling interval/,
+    );
+    expect(() => createMemoryProfileKind({ samplingIntervalBytes: 1024.5 })).toThrow(
+      /memory sampling interval/,
+    );
+    expect(() => createMemoryProfileKind({ memoryUsageIntervalMs: 9 })).toThrow(
+      /memory usage interval/,
+    );
+  });
+
+  it('resets memory usage samples when markCaptureStart is called', () => {
+    const context = {
+      process,
+      performance,
+      setTimeout,
+      clearTimeout,
+      setInterval,
+      clearInterval,
+      globalThis: {} as Record<string, unknown>,
+    };
+    context.globalThis = context as unknown as typeof context.globalThis;
+    const script = composeAttachScript(
+      [runtimeSignalsInstaller, createMemoryUsageInstaller({ sampleIntervalMs: 10 })],
+      { resolutionMs: 20 },
+    );
+
+    vm.runInNewContext(script, context);
+    const memory = context.globalThis.__LANTERNA_MEMORY__ as {
+      clear(): void;
+      read(): { samples: MemoryUsageSample[] };
+    };
+    const eventLoop = context.globalThis.__LANTERNA_EVENT_LOOP__ as {
+      markCaptureStart(): void;
+    };
+
+    memory.clear();
+    expect(memory.read().samples).toHaveLength(0);
+    eventLoop.markCaptureStart();
+    expect(memory.read().samples).toHaveLength(1);
   });
 });
