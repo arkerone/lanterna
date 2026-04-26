@@ -115,6 +115,34 @@ describe('memory kind analysis', () => {
       samplingProfile: profile(),
       samplingIntervalBytes: 512 * 1024,
       memoryUsage: { samples: series(0), available: true, sampleIntervalMs: 200 },
+      heapSnapshotAnalysis: {
+        available: true,
+        mode: 'start-end',
+        start: { path: '/tmp/start.heapsnapshot' },
+        end: { path: '/tmp/end.heapsnapshot' },
+        summary: {
+          totalRetainedGrowthBytes: 1024,
+          topGrowingConstructor: 'LeakedThing',
+        },
+        growthByConstructor: [
+          {
+            name: 'LeakedThing',
+            countDelta: 1,
+            selfSizeDeltaBytes: 512,
+            retainedSizeDeltaBytes: 1024,
+          },
+        ],
+        retainerPaths: [
+          {
+            constructorName: 'LeakedThing',
+            retainedBytes: 1024,
+            path: ['(GC roots)', 'Map', 'entries', 'LeakedThing'],
+            suspectedPattern: 'cache',
+            confidence: 'medium',
+          },
+        ],
+        warnings: [],
+      },
     };
     const memoryKind = createMemoryProfileKind();
     const pipeline = createAnalysisPipeline({ kinds: [memoryKind] });
@@ -123,6 +151,8 @@ describe('memory kind analysis', () => {
     const report = result.profiles.memory as MemoryProfileReport;
     expect(report).toBeDefined();
     expect(report.summary.totalSampledBytes).toBe(1000);
+    expect(report.heapSnapshotAnalysis?.available).toBe(true);
+    expect(report.heapSnapshotAnalysis?.summary.topGrowingConstructor).toBe('LeakedThing');
 
     // Top allocator is inclusive-heavy: doWork's subtree accounts for the whole sample.
     const top = report.hotAllocators[0];
@@ -346,6 +376,21 @@ describe('memory kind analysis', () => {
     expect(() => createMemoryProfileKind({ memoryUsageIntervalMs: 9 })).toThrow(
       /memory usage interval/,
     );
+    expect(() =>
+      createMemoryProfileKind({ heapSnapshotAnalysis: { maxRetainerDepth: 0 } }),
+    ).toThrow(/heap snapshot max retainer depth/);
+  });
+
+  it('only enables heap snapshot progress messaging when heap snapshot analysis is enabled', () => {
+    const normalProbe = createMemoryProfileKind().createProbe();
+    expect(normalProbe.progressMessages).toBeUndefined();
+    expect(createMemoryProfileKind().manualStopMessage).toBeUndefined();
+
+    const snapshotKind = createMemoryProfileKind({ heapSnapshotAnalysis: { enabled: true } });
+    const snapshotProbe = snapshotKind.createProbe();
+    expect(snapshotProbe.progressMessages?.start).toContain('Memory heap snapshot');
+    expect(snapshotProbe.progressMessages?.stop).toContain('final Memory heap snapshot');
+    expect(snapshotKind.manualStopMessage).toContain('Aborting Memory heap snapshot');
   });
 
   it('resets memory usage samples when markCaptureStart is called', () => {

@@ -56,10 +56,12 @@ type FakeSourceOptions = {
 
 class FakeSource implements ProfileSource<FakeSourceOptions | undefined> {
   readonly cdp: FakeCdp;
+  private readonly waitForExitImpl: () => Promise<void>;
   finalizeCalls = 0;
 
-  constructor(cdp = new FakeCdp()) {
+  constructor(cdp = new FakeCdp(), waitForExitImpl: () => Promise<void> = async () => {}) {
     this.cdp = cdp;
+    this.waitForExitImpl = waitForExitImpl;
   }
 
   async connect(
@@ -71,7 +73,7 @@ class FakeSource implements ProfileSource<FakeSourceOptions | undefined> {
       target: makeTarget(),
       startedAtEpoch: Date.parse('2024-01-01T00:00:00.000Z'),
       initialIntegrity: createCaptureIntegrity(),
-      waitForExit: async () => {},
+      waitForExit: this.waitForExitImpl,
       drainLiveSignals: () => ({
         gcEventsAbs: [],
         eventLoopSamplesAbs: [],
@@ -174,6 +176,86 @@ function hangingStopKind(id: string): ProfileKind {
   });
 }
 
+function delayedStopKind(
+  id: string,
+  delayMs: number,
+  stopTimeoutMs: number | false,
+  progressMessages?: { start?: string; stop?: string },
+): ProfileKind {
+  return defineProfileKind({
+    id,
+    reportSectionKey: id,
+    reportSchema: z.unknown(),
+    createProbe() {
+      return {
+        stopTimeoutMs,
+        ...(progressMessages ? { progressMessages } : {}),
+        start: async () => {},
+        stop: async () => {
+          await new Promise((resolve) => setTimeout(resolve, delayMs));
+          return { ok: true };
+        },
+      };
+    },
+    createAnalysisContributor() {
+      return {
+        analyze() {},
+      };
+    },
+  });
+}
+
+function stopReasonKind(id: string, seen: Array<string | undefined>): ProfileKind {
+  return defineProfileKind({
+    id,
+    reportSectionKey: id,
+    reportSchema: z.unknown(),
+    createProbe() {
+      return {
+        start: async () => {},
+        stop: async (_cdp, options) => {
+          seen.push(options?.stopReason);
+          return { ok: true };
+        },
+      };
+    },
+    createAnalysisContributor() {
+      return {
+        analyze() {},
+      };
+    },
+  });
+}
+
+function abortableStartKind(id: string, state: { aborted: boolean }): ProfileKind {
+  return defineProfileKind({
+    id,
+    reportSectionKey: id,
+    reportSchema: z.unknown(),
+    createProbe() {
+      return {
+        start: (_cdp, options) =>
+          new Promise<void>((resolve) => {
+            options?.abortSignal?.addEventListener(
+              'abort',
+              () => {
+                state.aborted = true;
+                resolve();
+              },
+              { once: true },
+            );
+          }),
+        stop: async () => ({ ok: true }),
+      };
+    },
+    createAnalysisContributor() {
+      return {
+        analyze() {},
+      };
+    },
+  });
+}
+
 describe('runCapture lifecycle', () => {
   afterEach(() => {
     vi.useRealTimers();
@@ -242,6 +324,32 @@ describe('runCapture lifecycle', () => {
     vi.useRealTimers();
   });
 
+  it('allows heavy probes to opt out of the coordinator stop timeout', async () => {
+    vi.useFakeTimers();
+    const source = new FakeSource();
+
+    const capturePromise = runCapture({
+      source,
+      sourceOptions: undefined,
+      kinds: [delayedStopKind('slow-stop', 6000, false)],
+    });
+    const resultPromise = capturePromise.then(
+      (bundle) => bundle,
+      (error: unknown) => error,
+    );
+
+    await vi.advanceTimersByTimeAsync(5000);
+    await vi.advanceTimersByTimeAsync(1000);
+    const result = await resultPromise;
+
+    expect(result).not.toBeInstanceOf(Error);
+    expect(diagnosticStages(result as Awaited<ReturnType<typeof runCapture>>)).toEqual([]);
+    expect((result as Awaited<ReturnType<typeof runCapture>>).kinds).toEqual({
+      'slow-stop': { ok: true },
+    });
+    vi.useRealTimers();
+  });
+
   it('times out a hanging CDP close and still finalizes the session', async () => {
     vi.useFakeTimers();
     const cdp = new FakeCdp();
@@ -286,6 +394,33 @@ describe('runCapture lifecycle', () => {
     expect(stages).toEqual(['start-capture', 'capture-running', 'finalize-capture']);
   });
 
+  it('reports that heavy snapshot probes may take time and can be aborted', async () => {
+    const source = new FakeSource();
+    const messages: string[] = [];
+
+    await runCapture({
+      source,
+      sourceOptions: {
+        onProgress(event) {
+          messages.push(event.message);
+        },
+      },
+      kinds: [
+        delayedStopKind('heap-heavy', 0, false, {
+          start: 'Starting Memory heap snapshot. This can take a while; press Ctrl+C to abort.',
+          stop: 'Taking final Memory heap snapshot. This can take a while; press Ctrl+C to abort and keep the standard report.',
+        }),
+      ],
+    });
+
+    expect(messages).toContain(
+      'Starting Memory heap snapshot. This can take a while; press Ctrl+C to abort.',
+    );
+    expect(messages).toContain(
+      'Taking final Memory heap snapshot. This can take a while; press Ctrl+C to abort and keep the standard report.',
+    );
+  });
+
   it('reports finalization progress as soon as capture stops', async () => {
     vi.useFakeTimers();
     const source = new FakeSource();
@@ -324,5 +459,58 @@ describe('runCapture lifecycle', () => {
     await capturePromise;
 
     expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('passes the stop reason to probes during finalization', async () => {
+    vi.useFakeTimers();
+    const source = new FakeSource(new FakeCdp(), () => new Promise(() => {}));
+    const stop = createManualStopSignal();
+    const seen: Array<string | undefined> = [];
+
+    const capturePromise = runCapture({
+      source,
+      sourceOptions: undefined,
+      kinds: [stopReasonKind('reason', seen)],
+      durationMs: 30_000,
+      stopSignal: stop.promise,
+    });
+    await vi.advanceTimersByTimeAsync(1);
+    stop.trigger();
+    await capturePromise;
+
+    expect(seen).toEqual(['signal']);
+  });
+
+  it('turns manual stop triggers into an abort signal immediately', async () => {
+    const stop = createManualStopSignal();
+    let resolved = false;
+    stop.promise.then(() => {
+      resolved = true;
+    });
+
+    stop.trigger();
+    await Promise.resolve();
+    expect(resolved).toBe(true);
+    expect(stop.abortSignal.aborted).toBe(true);
+  });
+
+  it('passes the abort signal to probe start so manual stop can interrupt heavy startup work', async () => {
+    vi.useFakeTimers();
+    const source = new FakeSource(new FakeCdp(), () => new Promise(() => {}));
+    const stop = createManualStopSignal();
+    const state = { aborted: false };
+
+    const capturePromise = runCapture({
+      source,
+      sourceOptions: undefined,
+      kinds: [abortableStartKind('start-heavy', state)],
+      stopSignal: stop.promise,
+      abortSignal: stop.abortSignal,
+    });
+    await vi.advanceTimersByTimeAsync(1);
+    stop.trigger();
+    await capturePromise;
+
+    expect(state.aborted).toBe(true);
   });
 });

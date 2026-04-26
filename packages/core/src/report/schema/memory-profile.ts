@@ -54,6 +54,35 @@ const memorySummarySchema = z.object({
   externalRatio: z.number().finite().optional(),
 });
 
+const heapSnapshotAnalysisSchema = z.object({
+  available: z.boolean(),
+  mode: z.literal('start-end'),
+  start: z.object({ path: z.string() }),
+  end: z.object({ path: z.string() }),
+  summary: z.object({
+    totalRetainedGrowthBytes: z.number().finite().nonnegative(),
+    topGrowingConstructor: z.string().optional(),
+  }),
+  growthByConstructor: z.array(
+    z.object({
+      name: z.string(),
+      countDelta: z.number().int(),
+      selfSizeDeltaBytes: z.number().finite(),
+      retainedSizeDeltaBytes: z.number().finite(),
+    }),
+  ),
+  retainerPaths: z.array(
+    z.object({
+      constructorName: z.string(),
+      retainedBytes: z.number().finite().nonnegative(),
+      path: z.array(z.string()),
+      suspectedPattern: z.enum(['closure', 'event-listener', 'timer', 'cache', 'unknown']),
+      confidence: z.enum(['low', 'medium', 'high']),
+    }),
+  ),
+  warnings: z.array(z.string()),
+});
+
 export const memoryProfileReportSchema = z.object({
   summary: memorySummarySchema,
   hotAllocators: z.array(memoryHotAllocatorSchema),
@@ -65,4 +94,5 @@ export const memoryProfileReportSchema = z.object({
     lastSample: memoryUsageSampleSchema.optional(),
     samples: z.array(memoryUsageSampleSchema).optional(),
   }),
+  heapSnapshotAnalysis: heapSnapshotAnalysisSchema.optional(),
 });

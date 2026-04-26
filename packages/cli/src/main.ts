@@ -66,6 +66,8 @@ ${chalk.bold('Options')}
   ${chalk.cyan('--heap-sample-interval <size>')}   V8 heap sampling interval, bytes or KiB/MiB ${chalk.gray('(memory kind, default 512KiB; e.g. 524288, 512KiB, 1MiB)')}
   ${chalk.cyan('--memory-usage-interval <ms>')}     process.memoryUsage() cadence in ms ${chalk.gray('(memory kind, default 250)')}
   ${chalk.cyan('--include-memory-samples')}         Include raw process.memoryUsage() samples in JSON output ${chalk.gray('(memory kind)')}
+  ${chalk.cyan('--heap-snapshot-analysis')}         Capture start/end heap snapshots and summarize retained growth ${chalk.gray('(memory kind, heavy)')}
+  ${chalk.cyan('--heap-snapshot-dir <dir>')}        Directory for .heapsnapshot files ${chalk.gray('(memory kind, default .lanterna-heapsnapshots)')}
   ${chalk.cyan('-h, --help')}              Show this help
 
 ${chalk.bold('Examples')}
@@ -101,6 +103,8 @@ ${chalk.bold('Options')}
   ${chalk.cyan('--heap-sample-interval <size>')}   V8 heap sampling interval, bytes or KiB/MiB ${chalk.gray('(memory kind, default 512KiB; e.g. 524288, 512KiB, 1MiB)')}
   ${chalk.cyan('--memory-usage-interval <ms>')}     process.memoryUsage() cadence in ms ${chalk.gray('(memory kind, default 250)')}
   ${chalk.cyan('--include-memory-samples')}         Include raw process.memoryUsage() samples in JSON output ${chalk.gray('(memory kind)')}
+  ${chalk.cyan('--heap-snapshot-analysis')}         Capture start/end heap snapshots and summarize retained growth ${chalk.gray('(memory kind, heavy)')}
+  ${chalk.cyan('--heap-snapshot-dir <dir>')}        Directory for .heapsnapshot files ${chalk.gray('(memory kind, default .lanterna-heapsnapshots)')}
   ${chalk.cyan('-h, --help')}              Show this help
 
 ${chalk.bold('Examples')}
