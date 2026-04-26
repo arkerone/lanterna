@@ -104,6 +104,50 @@ export interface DetectorThresholds {
   };
   readonly excessiveGc: GcThresholds;
   readonly eventLoopStall: EventLoopThresholds;
+  readonly memoryGrowth: MemoryGrowthThresholds;
+  readonly largeAllocator: LargeAllocatorThresholds;
+  readonly externalBufferPressure: ExternalBufferPressureThresholds;
+  readonly allocInHotPath: AllocInHotPathThresholds;
+}
+
+export interface MemoryGrowthThresholds {
+  /** RSS growth in MB/sec that triggers a `warning`. */
+  readonly rssGrowthWarnMBPerSec: number;
+  /** RSS growth in MB/sec that triggers a `critical`. */
+  readonly rssGrowthCriticalMBPerSec: number;
+  /** heapUsed growth in MB/sec that triggers a `warning`. */
+  readonly heapGrowthWarnMBPerSec: number;
+  /** Don't fire on captures shorter than this duration (ms). */
+  readonly minDurationMs: number;
+  /** Don't fire when fewer samples are available. */
+  readonly minSamples: number;
+}
+
+export interface LargeAllocatorThresholds {
+  /** A frame allocating more than this fraction of total bytes triggers a finding. */
+  readonly minTotalPct: number;
+  /** Cap on the number of allocators reported. */
+  readonly maxFindings: number;
+  /** Above this fraction the finding is `critical`. */
+  readonly criticalTotalPct: number;
+}
+
+export interface ExternalBufferPressureThresholds {
+  /** `(external + arrayBuffers) / heapUsed` ratio crossing this triggers `warning`. */
+  readonly warnRatio: number;
+  /** Same but for `critical`. */
+  readonly criticalRatio: number;
+  /** Floor on absolute external bytes mean (MB) — avoids firing on tiny apps. */
+  readonly minExternalMeanMB: number;
+}
+
+export interface AllocInHotPathThresholds {
+  /** Hotspot must contribute more than this %CPU. */
+  readonly minCpuTotalPct: number;
+  /** Allocator must contribute more than this % of allocated bytes. */
+  readonly minAllocTotalPct: number;
+  /** Combined score over this triggers `critical`. */
+  readonly criticalCombinedPct: number;
 }
 
 /**
@@ -188,5 +232,34 @@ export const DETECTOR_THRESHOLDS: DetectorThresholds = {
     // Only blame a single frame for the stall if it dominates the
     // attributed samples within stall windows.
     strongCorrelationOverlapPct: 60,
+  },
+  // Sustained RSS growth above 1 MB/sec is a strong leak signal in steady-state
+  // workloads; 5 MB/sec is critical. Heap-only is noisier (GC fluctuations).
+  memoryGrowth: {
+    rssGrowthWarnMBPerSec: 1,
+    rssGrowthCriticalMBPerSec: 5,
+    heapGrowthWarnMBPerSec: 1,
+    minDurationMs: 2000,
+    minSamples: 8,
+  },
+  // 15% of total sampled bytes from a single frame is significant; 40% is critical.
+  largeAllocator: {
+    minTotalPct: 15,
+    criticalTotalPct: 40,
+    maxFindings: 5,
+  },
+  // Off-heap (Buffer / TypedArray) over 50% of heapUsed often means the app
+  // hoards binary data outside V8's GC reach.
+  externalBufferPressure: {
+    warnRatio: 0.5,
+    criticalRatio: 1.5,
+    minExternalMeanMB: 32,
+  },
+  // A frame is co-hot when it crosses both bars; combined pct is the sum
+  // normalized to a 0..200 scale, treated like a 0..100 rank.
+  allocInHotPath: {
+    minCpuTotalPct: 5,
+    minAllocTotalPct: 5,
+    criticalCombinedPct: 60,
   },
 };
