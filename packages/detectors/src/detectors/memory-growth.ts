@@ -18,7 +18,7 @@ export const memoryGrowthDetector: KindScopedDetector<'memory'> = {
   kindIds: ['memory'],
   detect({ memory }): Finding[] {
     const thresholds = DETECTOR_THRESHOLDS.memoryGrowth;
-    const sampleCount = memory.report.memoryUsage.samples.length;
+    const sampleCount = memory.view.data.memoryUsage.samples.length;
     if (sampleCount < thresholds.minSamples) return [];
     const durationMs = memory.view.bundle.durationMs;
     if (durationMs < thresholds.minDurationMs) return [];

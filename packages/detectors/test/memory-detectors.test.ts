@@ -209,6 +209,167 @@ describe('large-allocator detector', () => {
     expect(finding?.severity).toBe('critical');
     expect(finding?.evidence.function).toBe('big');
   });
+
+  it('ignores non-actionable native and builtin allocator frames', () => {
+    const profile: RawSamplingHeapProfile = {
+      head: {
+        callFrame: {
+          functionName: '(root)',
+          scriptId: '0',
+          url: '',
+          lineNumber: 0,
+          columnNumber: 0,
+        },
+        selfSize: 0,
+        id: 1,
+        children: [
+          {
+            callFrame: {
+              functionName: 'nativeBig',
+              scriptId: '1',
+              url: '',
+              lineNumber: 0,
+              columnNumber: 0,
+            },
+            selfSize: 9000,
+            id: 2,
+            children: [],
+          },
+          {
+            callFrame: {
+              functionName: 'builtinBig',
+              scriptId: '2',
+              url: 'node:buffer',
+              lineNumber: 0,
+              columnNumber: 0,
+            },
+            selfSize: 9000,
+            id: 3,
+            children: [],
+          },
+        ],
+      },
+      samples: [],
+    };
+    const bundle = makeBundle({ samplingProfile: profile, memoryUsageSamples: growingSeries(0) });
+    const pipeline = createAnalysisPipeline({
+      kinds: [createMemoryProfileKind()],
+      findingAnalyzers: [createFindingAnalyzerFromKindScopedDetector(largeAllocatorDetector)],
+    });
+
+    const result = pipeline.run(bundle, { command: ['node', 'app.js'], mode: 'spawn' });
+
+    expect(result.findings).toEqual([]);
+  });
+
+  it('deduplicates allocators representing the same allocation subtree', () => {
+    const profile: RawSamplingHeapProfile = {
+      head: {
+        callFrame: {
+          functionName: '(root)',
+          scriptId: '0',
+          url: '',
+          lineNumber: 0,
+          columnNumber: 0,
+        },
+        selfSize: 0,
+        id: 1,
+        children: [
+          {
+            callFrame: {
+              functionName: 'routeHandler',
+              scriptId: '1',
+              url: 'file:///app/src/route.js',
+              lineNumber: 10,
+              columnNumber: 0,
+            },
+            selfSize: 0,
+            id: 2,
+            children: [
+              {
+                callFrame: {
+                  functionName: 'allocatePayload',
+                  scriptId: '2',
+                  url: 'file:///app/src/payload.js',
+                  lineNumber: 20,
+                  columnNumber: 0,
+                },
+                selfSize: 9000,
+                id: 3,
+                children: [],
+              },
+            ],
+          },
+        ],
+      },
+      samples: [],
+    };
+    const bundle = makeBundle({ samplingProfile: profile, memoryUsageSamples: growingSeries(0) });
+    const pipeline = createAnalysisPipeline({
+      kinds: [createMemoryProfileKind()],
+      findingAnalyzers: [createFindingAnalyzerFromKindScopedDetector(largeAllocatorDetector)],
+    });
+
+    const result = pipeline.run(bundle, { command: ['node', 'app.js'], mode: 'spawn' });
+
+    expect(result.findings).toHaveLength(1);
+    expect(result.findings[0]?.evidence.function).toBe('allocatePayload');
+  });
+
+  it('does not deduplicate independent allocators just because their sizes match', () => {
+    const profile: RawSamplingHeapProfile = {
+      head: {
+        callFrame: {
+          functionName: '(root)',
+          scriptId: '0',
+          url: '',
+          lineNumber: 0,
+          columnNumber: 0,
+        },
+        selfSize: 0,
+        id: 1,
+        children: [
+          {
+            callFrame: {
+              functionName: 'allocateA',
+              scriptId: '1',
+              url: 'file:///app/src/a.js',
+              lineNumber: 10,
+              columnNumber: 0,
+            },
+            selfSize: 9000,
+            id: 2,
+            children: [],
+          },
+          {
+            callFrame: {
+              functionName: 'allocateB',
+              scriptId: '2',
+              url: 'file:///app/src/b.js',
+              lineNumber: 20,
+              columnNumber: 0,
+            },
+            selfSize: 9000,
+            id: 3,
+            children: [],
+          },
+        ],
+      },
+      samples: [],
+    };
+    const bundle = makeBundle({ samplingProfile: profile, memoryUsageSamples: growingSeries(0) });
+    const pipeline = createAnalysisPipeline({
+      kinds: [createMemoryProfileKind()],
+      findingAnalyzers: [createFindingAnalyzerFromKindScopedDetector(largeAllocatorDetector)],
+    });
+
+    const result = pipeline.run(bundle, { command: ['node', 'app.js'], mode: 'spawn' });
+
+    expect(result.findings.map((finding) => finding.evidence.function)).toEqual([
+      'allocateA',
+      'allocateB',
+    ]);
+  });
 });
 
 describe('external-buffer-pressure detector', () => {

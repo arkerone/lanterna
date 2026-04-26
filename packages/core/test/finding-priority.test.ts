@@ -90,4 +90,29 @@ describe('sortFindings', () => {
     expect(sorted[0]?.id).toBe('sync-crypto-attributed');
     expect(sorted[0]?.priority?.actionConfidence).toBe('high');
   });
+
+  it('uses memory-specific threshold pairs instead of raw MB or ratio fallback', () => {
+    const sorted = sortFindings([
+      finding({
+        id: 'external-buffer-pressure',
+        category: 'external-buffer-pressure',
+        measurements: {
+          observed: { ratio: 1.2, externalMeanMB: 48 },
+          thresholds: { warnRatio: 0.5, minExternalMeanMB: 32 },
+        },
+      }),
+      finding({
+        id: 'memory-growth:rss',
+        category: 'memory-growth',
+        measurements: {
+          observed: { slopeMBPerSec: 2.5 },
+          thresholds: { warnMBPerSec: 1 },
+        },
+      }),
+    ]);
+
+    expect(sorted.map((f) => f.id)).toEqual(['memory-growth:rss', 'external-buffer-pressure']);
+    expect(sorted[0]?.priority?.score).toBe(250);
+    expect(sorted[1]?.priority?.score).toBe(240);
+  });
 });

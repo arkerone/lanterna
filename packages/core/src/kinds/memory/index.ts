@@ -21,6 +21,8 @@ export interface MemoryKindOptions {
   samplingIntervalBytes?: number;
   /** `process.memoryUsage()` cadence in ms. Defaults to 250 ms. */
   memoryUsageIntervalMs?: number;
+  /** Include the raw `process.memoryUsage()` sample series in the public JSON report. */
+  includeMemoryUsageSamples?: boolean;
 }
 
 /**
@@ -45,7 +47,10 @@ export function createMemoryProfileKind(
     hookInstaller: createMemoryUsageInstaller({ sampleIntervalMs: memoryUsageIntervalMs }),
     createProbe: (): CaptureProbe<MemoryKindData> =>
       createMemoryProbe({ samplingIntervalBytes, memoryUsageIntervalMs }),
-    createAnalysisContributor: () => createMemoryAnalysisContributor(),
+    createAnalysisContributor: () =>
+      createMemoryAnalysisContributor({
+        includeMemoryUsageSamples: options.includeMemoryUsageSamples ?? false,
+      }),
     contributeMeta: (data) => ({
       samplingIntervalBytes: data.samplingIntervalBytes,
       memoryUsageIntervalMs,
