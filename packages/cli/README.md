@@ -73,7 +73,7 @@ lanterna attach --inspect-url ws://127.0.0.1:9229/<uuid> --kind cpu
 
 The `--` separator is required before the target command in `run` mode.
 
-When `--heap-snapshot-analysis` is active, stopping with `Ctrl+C` skips the final heap snapshot so Lanterna exits promptly. Use `--duration` or let the target exit naturally when you need the start/end retained-growth comparison.
+When `--heap-snapshot-analysis` is active, stopping with `Ctrl+C` skips the final heap snapshot so Lanterna exits promptly. Use `--duration` or let the target exit naturally when you need the start/end retained-growth comparison. Very large snapshots are skipped with a warning during analysis instead of being parsed unbounded in the Lanterna process.
 
 `--kind` is supported on both `run` and `attach`. You can repeat the flag or use comma-separated shorthand such as `--kind cpu,memory`.
 

@@ -46,7 +46,12 @@ export function composePreloadScript(
     `Number(process.env.${controlFdEnvVar} || '-1')`,
   );
   const installerFragments = installers
-    .map((entry) => `/* installer ${entry.id} */\n${entry.source}`)
+    .map(
+      (entry) =>
+        `/* installer ${entry.id} */\n__lanterna.registerInstaller(${JSON.stringify(
+          entry.id,
+        )}, function install(){\n${entry.source}\n});`,
+    )
     .join('\n');
 
   return `'use strict';\n(${installLanternaFramework.toString()})(${frameworkJson}, function register(__lanterna){\n${installerFragments}\n});\n`;
@@ -66,7 +71,12 @@ export function composeAttachScript(
     emitLifecycle: false,
   };
   const installerFragments = installers
-    .map((entry) => `/* installer ${entry.id} */\n${entry.source}`)
+    .map(
+      (entry) =>
+        `/* installer ${entry.id} */\n__lanterna.registerInstaller(${JSON.stringify(
+          entry.id,
+        )}, function install(){\n${entry.source}\n});`,
+    )
     .join('\n');
   return `(${installLanternaFramework.toString()})(${JSON.stringify(frameworkOptions)}, function register(__lanterna){\n${installerFragments}\n})`;
 }
@@ -99,6 +109,7 @@ interface FrameworkApi {
   integrity: FrameworkIntegrityCounters;
   registerGlobal(name: string, value: unknown): void;
   addResetHook(fn: () => void): void;
+  registerInstaller(id: string, install: () => void): void;
   getBuiltin<T extends object>(name: string): T | null;
   markGcObserverFailure(): void;
 }
@@ -135,6 +146,7 @@ export function installLanternaFramework(
 ): FrameworkResult {
   const existing = globalThis.__LANTERNA_FRAMEWORK__;
   if (existing && typeof existing.ensureInstalled === 'function') {
+    register(existing.api);
     return existing.ensureInstalled();
   }
 
@@ -206,6 +218,7 @@ export function installLanternaFramework(
   };
 
   const resetHooks: Array<() => void> = [];
+  const installedInstallers = new Set<string>();
   const addResetHook = (fn: () => void) => {
     resetHooks.push(fn);
   };
@@ -218,6 +231,12 @@ export function installLanternaFramework(
     integrity.gcObserverSetupFailed += 1;
   };
 
+  const registerInstaller = (id: string, install: () => void) => {
+    if (installedInstallers.has(id)) return;
+    install();
+    installedInstallers.add(id);
+  };
+
   const api: FrameworkApi = {
     performance: performanceApi,
     resolutionMs,
@@ -226,6 +245,7 @@ export function installLanternaFramework(
     integrity,
     registerGlobal,
     addResetHook,
+    registerInstaller,
     getBuiltin,
     markGcObserverFailure,
   };

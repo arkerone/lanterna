@@ -1,7 +1,12 @@
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   analyzeHeapSnapshotGrowth,
+  buildHeapSnapshotAnalysisReport,
   classifyRetainerPath,
+  normalizeHeapSnapshotAnalysisOptions,
   parseHeapSnapshot,
 } from '../src/kinds/memory/heap-snapshot-analysis.js';
 
@@ -167,6 +172,56 @@ describe('heap snapshot parsing and analysis', () => {
       constructorName: 'LeakedThing',
       suspectedPattern: 'cache',
     });
+  });
+
+  it('does not report weak-only unreachable objects as retained growth', () => {
+    const start = parseHeapSnapshot(
+      snapshot([{ type: 'synthetic', name: '(GC roots)', id: 1, selfSize: 0 }], []),
+    );
+    const end = parseHeapSnapshot(
+      snapshot(
+        [
+          { type: 'synthetic', name: '(GC roots)', id: 1, selfSize: 0 },
+          { type: 'object', name: 'WeakOnly', id: 2, selfSize: 4096 },
+        ],
+        [{ from: 1, type: 'weak', name: 'weak', to: 2 }],
+      ),
+    );
+
+    const analysis = analyzeHeapSnapshotGrowth(start, end, {
+      maxGroups: 5,
+      maxPathsPerGroup: 2,
+      maxRetainerDepth: 6,
+    });
+
+    expect(analysis.growthByConstructor.some((entry) => entry.name === 'WeakOnly')).toBe(false);
+    expect(analysis.summary.totalRetainedGrowthBytes).toBe(0);
+  });
+
+  it('degrades snapshot analysis instead of reading files above the configured size limit', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'lanterna-heap-test-'));
+    try {
+      const startPath = join(dir, 'start.heapsnapshot');
+      const endPath = join(dir, 'end.heapsnapshot');
+      await writeFile(startPath, '{}');
+      await writeFile(endPath, '{}');
+
+      const report = buildHeapSnapshotAnalysisReport(
+        {
+          available: true,
+          mode: 'start-end',
+          start: { path: startPath },
+          end: { path: endPath },
+          warnings: [],
+        },
+        normalizeHeapSnapshotAnalysisOptions({ enabled: true, maxSnapshotBytes: 1 }),
+      );
+
+      expect(report.available).toBe(false);
+      expect(report.warnings[0]).toMatch(/above the 1 byte analysis limit/);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 
   it('classifies listener, timer, cache and closure retainer paths', () => {

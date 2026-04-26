@@ -146,6 +146,8 @@ lanterna attach --inspect-url ws://127.0.0.1:9229/<uuid>
 | `--heap-sample-interval <size>` | V8 heap sampling interval (memory kind). Accepts raw bytes or a KiB/MiB suffix: `524288`, `512KiB`, `1MiB`. Default `512KiB`, min `1KiB`. |
 | `--memory-usage-interval <ms>` | `process.memoryUsage()` cadence in ms (memory kind, default `250`, min `10`). |
 | `--include-memory-samples` | Include raw `process.memoryUsage()` samples in JSON output (memory kind). |
+| `--heap-snapshot-analysis` | Capture start/end V8 heap snapshots and include retained-growth synthesis (memory kind, opt-in and heavy). |
+| `--heap-snapshot-dir <dir>` | Directory for `.heapsnapshot` files when snapshot analysis is enabled. |
 | `--pid [pid]` | Attach by PID, or open the interactive picker if no value. |
 | `--inspect-url <url>` | Attach to an existing inspector WebSocket URL. |
 | `--detectors <spec>` | Load an additional detector plugin (package name or path). Repeatable. |
@@ -169,6 +171,7 @@ Lanterna emits a `LanternaReport` (schema v2) with per-kind sections nested unde
 | `profiles.memory.summary` | Total sampled bytes, top allocator, and RSS / heapUsed / external / arrayBuffers series stats (start/end/min/max/mean/p95 + linear slope). |
 | `profiles.memory.hotAllocators` | Frames ranked by `selfBytes` / `totalBytes`, with file/line and frame category. |
 | `profiles.memory.memoryUsage` | Compact `process.memoryUsage()` metadata (`sampleCount`, first/last sample). Raw samples are included only with `--include-memory-samples`. |
+| `profiles.memory.heapSnapshotAnalysis` | Optional start/end retained-growth summary when `--heap-snapshot-analysis` is enabled. Very large snapshots are skipped with a warning instead of being parsed unbounded. |
 | `findings` | Actionable detector output (cross-kind, each tagged `profileKind`), sorted by severity. |
 
 > [!NOTE]

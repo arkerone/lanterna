@@ -17,7 +17,7 @@ flowchart LR
 1. **Capture** — a `ProfileSource` (spawn / attach) hands a live CDP connection to the `runCapture` coordinator. The coordinator runs the installed **profile kinds'** probes against that connection, plus the always-on runtime-signals installer (event-loop + GC). Output: `CaptureBundle` — `{ target, runtimeSignals, kinds, captureIntegrity, … }`.
 2. **Enrichment** — each kind contributes its analysis section (`profiles.<kind>`), detectors emit cross-kind `findings[]`, and `buildLanternaReport` assembles the final `LanternaReport`.
 
-**Profile kinds** are the extensibility seam. The built-in kind is `cpu`. Future kinds (memory, async) plug in through the same interface: they provide a `CaptureProbe` + `KindAnalysisContributor` and optionally a preload-hook fragment. The CLI selects active kinds with `--kind <id>` (repeatable, default `cpu`); the JSON report lists successfully captured kinds in `meta.profileKinds` and puts their sections under `profiles.<kind>`.
+**Profile kinds** are the extensibility seam. The built-in kinds are `cpu` and `memory`; future kinds (async, I/O, custom domain profilers, ...) plug in through the same interface. A kind provides a `CaptureProbe` + `KindAnalysisContributor` and optionally a preload-hook fragment. The CLI selects active kinds with `--kind <id>` (repeatable, default `cpu`); the JSON report lists successfully captured kinds in `meta.profileKinds` and puts their sections under `profiles.<kind>`.
 
 ### Spawn vs attach
 
@@ -291,7 +291,7 @@ Lanterna is a monorepo of three packages. `core` owns capture orchestration, pro
   - Implement a `ProfileKind` (probe + contributor + optional hook installer + `reportSchema` + optional `contributeMeta`/`contributeIntegrity`/`builtInAnalyzers`) in your own package.
   - Register it via `createKindRegistry([myKind, ...])` from `@lanterna-profiler/core` or pass it directly in `runProfile({ kinds: [...] })`.
   - A plugin module loaded by the CLI can also export `export const kinds: ProfileKind[]` (named export) — `lanterna run --kind <id> --detectors <pkg>` then resolves `<id>` to the plugin-provided kind.
-  - The built-in CPU kind (`createCpuProfileKind`) is a reference implementation; pair it with `withBuiltInCpuDetectors(kind)` (or use the one-shot `createCpuProfileKindWithBuiltInDetectors`) to attach the default detector pack.
+  - The built-in CPU kind (`createCpuProfileKind`) and memory kind (`createMemoryProfileKind`) are reference implementations. Pair them with `withBuiltInCpuDetectors(kind)` / `withBuiltInMemoryDetectors(kind)` or use the one-shot detector-wired factories.
 
 See the root README's [Extending Lanterna](../README.md#extending-lanterna) section for the detector-plugin authoring guide.
 
@@ -299,7 +299,7 @@ See the root README's [Extending Lanterna](../README.md#extending-lanterna) sect
 
 - Generate flamegraphs as its primary output.
 - Infer source-level fixes by itself. It emits evidence and suggestions; remediation belongs to the user or to an agent consuming the report.
-- Capture memory or async profiles — the architecture is wired for it, but no such kinds ship yet.
+- Capture async profiles as a built-in kind.
 
 ---
 
