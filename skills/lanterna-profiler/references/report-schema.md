@@ -97,7 +97,13 @@ Important global integrity flags:
         "externalRatio": 0
       },
       "hotAllocators": [],
-      "memoryUsage": { "samples": [], "available": true, "sampleIntervalMs": 250 }
+      "memoryUsage": {
+        "available": true,
+        "sampleIntervalMs": 250,
+        "sampleCount": 12,
+        "firstSample": { "atMs": 0, "rss": 0, "heapTotal": 0, "heapUsed": 0, "external": 0, "arrayBuffers": 0 },
+        "lastSample": { "atMs": 2750, "rss": 0, "heapTotal": 0, "heapUsed": 0, "external": 0, "arrayBuffers": 0 }
+      }
     }
   }
 }

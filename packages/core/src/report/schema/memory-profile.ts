@@ -58,8 +58,11 @@ export const memoryProfileReportSchema = z.object({
   summary: memorySummarySchema,
   hotAllocators: z.array(memoryHotAllocatorSchema),
   memoryUsage: z.object({
-    samples: z.array(memoryUsageSampleSchema),
     available: z.boolean(),
     sampleIntervalMs: z.number().finite().positive(),
+    sampleCount: z.number().int().nonnegative(),
+    firstSample: memoryUsageSampleSchema.optional(),
+    lastSample: memoryUsageSampleSchema.optional(),
+    samples: z.array(memoryUsageSampleSchema).optional(),
   }),
 });

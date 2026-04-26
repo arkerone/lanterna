@@ -8,6 +8,7 @@ import { parseAttachArgs, parseRunArgs } from '../src/parse.js';
 const MEMORY_DEFAULTS = {
   heapSamplingIntervalBytes: DEFAULT_MEMORY_SAMPLING_INTERVAL_BYTES,
   memoryUsageIntervalMs: DEFAULT_MEMORY_USAGE_INTERVAL_MS,
+  includeMemoryUsageSamples: false,
 };
 
 afterEach(() => {
@@ -116,6 +117,23 @@ describe('parseRunArgs', () => {
     ]);
 
     expectKindsToEqual(parsed.kinds, ['cpu', 'memory', 'async']);
+  });
+
+  it('parses raw memory sample opt-in for run and attach', () => {
+    expect(
+      parseRunArgs(['--kind', 'memory', '--include-memory-samples', '--', 'node', 'app.js'])
+        .includeMemoryUsageSamples,
+    ).toBe(true);
+
+    expect(
+      parseAttachArgs([
+        '--inspect-url',
+        'ws://127.0.0.1:9229/test',
+        '--kind',
+        'memory',
+        '--include-memory-samples',
+      ]).includeMemoryUsageSamples,
+    ).toBe(true);
   });
 });
 

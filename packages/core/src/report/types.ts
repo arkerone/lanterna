@@ -456,9 +456,12 @@ export interface MemoryProfileReport {
   summary: MemorySummary;
   hotAllocators: MemoryHotAllocator[];
   memoryUsage: {
-    samples: MemoryUsageSample[];
     available: boolean;
     sampleIntervalMs: number;
+    sampleCount: number;
+    firstSample?: MemoryUsageSample;
+    lastSample?: MemoryUsageSample;
+    samples?: MemoryUsageSample[];
   };
 }
 

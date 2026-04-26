@@ -247,6 +247,11 @@ function computeMeasurementRatio(finding: Finding): number {
     ['gcRatio', 'ratioTrigger'],
     ['count', 'minCount'],
     ['correlationOverlapPct', 'strongCorrelationOverlapPct'],
+    ['slopeMBPerSec', 'warnMBPerSec'],
+    ['ratio', 'warnRatio'],
+    ['externalMeanMB', 'minExternalMeanMB'],
+    ['allocTotalPct', 'minAllocTotalPct'],
+    ['combinedPct', 'criticalCombinedPct'],
   ];
 
   let bestRatio = 0;

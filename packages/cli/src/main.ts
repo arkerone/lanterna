@@ -65,6 +65,7 @@ ${chalk.bold('Options')}
   ${chalk.cyan('--kind <id>')}             Profile kind to capture ${chalk.gray('(default: cpu, built-in: cpu, memory)')}. Repeatable or comma-separated.
   ${chalk.cyan('--heap-sample-interval <size>')}   V8 heap sampling interval, bytes or KiB/MiB ${chalk.gray('(memory kind, default 512KiB; e.g. 524288, 512KiB, 1MiB)')}
   ${chalk.cyan('--memory-usage-interval <ms>')}     process.memoryUsage() cadence in ms ${chalk.gray('(memory kind, default 250)')}
+  ${chalk.cyan('--include-memory-samples')}         Include raw process.memoryUsage() samples in JSON output ${chalk.gray('(memory kind)')}
   ${chalk.cyan('-h, --help')}              Show this help
 
 ${chalk.bold('Examples')}
@@ -99,6 +100,7 @@ ${chalk.bold('Options')}
   ${chalk.cyan('--kind <id>')}             Profile kind to capture ${chalk.gray('(default: cpu, built-in: cpu, memory)')}. Repeatable or comma-separated.
   ${chalk.cyan('--heap-sample-interval <size>')}   V8 heap sampling interval, bytes or KiB/MiB ${chalk.gray('(memory kind, default 512KiB; e.g. 524288, 512KiB, 1MiB)')}
   ${chalk.cyan('--memory-usage-interval <ms>')}     process.memoryUsage() cadence in ms ${chalk.gray('(memory kind, default 250)')}
+  ${chalk.cyan('--include-memory-samples')}         Include raw process.memoryUsage() samples in JSON output ${chalk.gray('(memory kind)')}
   ${chalk.cyan('-h, --help')}              Show this help
 
 ${chalk.bold('Examples')}

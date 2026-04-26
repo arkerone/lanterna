@@ -22,7 +22,7 @@ Do **not** trigger memory capture for "code is slow" alone — that's a CPU ques
 Stop conditions specific to memory:
 
 - A capture under ~2 s with < 8 series samples is unreliable for `memory-growth` (slope is noisy). Ask the user to extend the duration before asserting a leak.
-- An empty `hotAllocators[]` with non-empty `memoryUsage.samples` means no allocations crossed the sampling threshold during capture — typically a steady-state workload reusing pools, or too short a window.
+- An empty `hotAllocators[]` with `memoryUsage.sampleCount > 0` means no allocations crossed the sampling threshold during capture — typically a steady-state workload reusing pools, or too short a window.
 
 ## Reading `profiles.memory`
 
@@ -54,11 +54,11 @@ Stop conditions specific to memory:
     }
   ],
   "memoryUsage": {
-    "samples": [
-      { "atMs": 0, "rss": 0, "heapTotal": 0, "heapUsed": 0, "external": 0, "arrayBuffers": 0 }
-    ],
     "available": true,
-    "sampleIntervalMs": 250
+    "sampleIntervalMs": 250,
+    "sampleCount": 12,
+    "firstSample": { "atMs": 0, "rss": 0, "heapTotal": 0, "heapUsed": 0, "external": 0, "arrayBuffers": 0 },
+    "lastSample": { "atMs": 2750, "rss": 0, "heapTotal": 0, "heapUsed": 0, "external": 0, "arrayBuffers": 0 }
   }
 }
 ```
@@ -68,7 +68,7 @@ Reading order:
 1. `summary.rss.slopeBytesPerSec` — positive and large means growth. Compare with `heapUsed` slope: if RSS grows but heapUsed is flat, the leak is off-heap (Buffer / native). If both grow, it's likely a JS-heap leak.
 2. `summary.topAllocator` and `hotAllocators[0..N]` — actionable allocation sources.
 3. `summary.externalRatio` — > 0.5 hints at off-heap dominance.
-4. `memoryUsage.samples[]` — eyeball the curve only when the slope alone is ambiguous (e.g. step changes vs. steady growth).
+4. `memoryUsage.firstSample` / `lastSample` — quick endpoints. Re-run with `--include-memory-samples` only when the slope alone is ambiguous and you need the full curve (e.g. step changes vs. steady growth).
 
 `selfBytes` is bytes attributed exclusively to the frame; `totalBytes` includes its callees. Treat node\_modules / builtin frames as **symptoms**, not root causes — open the user-code caller first.
 
@@ -103,7 +103,7 @@ jq '.profiles.memory.hotAllocators[:5] | .[] | {fn:.function, file, line, selfMB
 # Memory findings only
 jq '.findings[] | select(.profileKind == "memory") | {id, severity, file:.evidence.file, line:.evidence.line}' report.json
 
-# RSS curve as CSV (for plotting)
+# RSS curve as CSV (requires --include-memory-samples)
 jq -r '.profiles.memory.memoryUsage.samples[] | [.atMs, (.rss/1048576), (.heapUsed/1048576), (.external/1048576)] | @csv' report.json
 ```
 

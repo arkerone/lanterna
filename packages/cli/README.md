@@ -63,6 +63,7 @@ lanterna attach --inspect-url ws://127.0.0.1:9229/<uuid> --kind cpu
 | `--kind <id>` | Profile kind to capture. Repeatable or comma-separated (default `cpu`). Built-in: `cpu`, `memory`. |
 | `--heap-sample-interval <size>` | V8 heap sampling interval (memory kind). Accepts raw bytes or a KiB/MiB suffix: `524288`, `512KiB`, `1MiB`. Default `512KiB`, min `1KiB`. |
 | `--memory-usage-interval <ms>` | `process.memoryUsage()` cadence in ms (memory kind only, default `250`, min `10`). |
+| `--include-memory-samples` | Include raw `process.memoryUsage()` samples in JSON output (memory kind only). |
 | `--pid [pid]` | Attach by PID, or open the interactive picker if no value. |
 | `--inspect-url <url>` | Attach to an existing inspector WebSocket URL. |
 | `--detectors <spec>` | Load an additional detector plugin (package name or path). Repeatable. |

@@ -13,6 +13,7 @@ interface ParsedCommonOptions {
   sampleInterval?: number;
   heapSampleInterval?: number;
   memoryUsageInterval?: number;
+  includeMemorySamples?: boolean;
   detectors?: string[];
   kind?: string[];
 }
@@ -24,6 +25,7 @@ interface NormalizedCommonOptions {
   sampleIntervalMicros: number;
   heapSamplingIntervalBytes: number;
   memoryUsageIntervalMs: number;
+  includeMemoryUsageSamples: boolean;
   detectors: string[];
   kinds: string[];
 }
@@ -46,6 +48,7 @@ export interface RunProfileOptions {
   sampleIntervalMicros: number;
   heapSamplingIntervalBytes: number;
   memoryUsageIntervalMs: number;
+  includeMemoryUsageSamples: boolean;
   detectors: string[];
   kinds: string[];
 }
@@ -60,6 +63,7 @@ export interface AttachProfileOptions {
   sampleIntervalMicros: number;
   heapSamplingIntervalBytes: number;
   memoryUsageIntervalMs: number;
+  includeMemoryUsageSamples: boolean;
   detectors: string[];
   kinds: string[];
 }
@@ -112,6 +116,7 @@ function normalizeCommonOptions(parsed: ParsedCommonOptions): NormalizedCommonOp
     sampleIntervalMicros: parsed.sampleInterval ?? DEFAULT_SAMPLE_INTERVAL_MICROS,
     heapSamplingIntervalBytes: parsed.heapSampleInterval ?? DEFAULT_MEMORY_SAMPLING_INTERVAL_BYTES,
     memoryUsageIntervalMs: parsed.memoryUsageInterval ?? DEFAULT_MEMORY_USAGE_INTERVAL_MS,
+    includeMemoryUsageSamples: Boolean(parsed.includeMemorySamples),
     detectors: parsed.detectors ?? [],
     kinds: resolveKinds(parsed.kind),
   };
@@ -187,6 +192,10 @@ function addCommonProfilingOptions(command: Command): Command {
       '--memory-usage-interval <ms>',
       `process.memoryUsage() sampling cadence in ms (memory kind only, default ${DEFAULT_MEMORY_USAGE_INTERVAL_MS})`,
       parseMemoryUsageInterval,
+    )
+    .option(
+      '--include-memory-samples',
+      'Include raw process.memoryUsage() samples in JSON output (memory kind only)',
     );
 }
 

@@ -148,6 +148,46 @@ describe('memory kind analysis', () => {
     expect(memoryProfileReportSchema.safeParse(report).success).toBe(true);
   });
 
+  it('summarizes memory usage samples by default without exposing the raw series', () => {
+    const samples = series(0, 12);
+    const data: MemoryKindData = {
+      samplingProfile: profile(),
+      samplingIntervalBytes: 512 * 1024,
+      memoryUsage: { samples, available: true, sampleIntervalMs: 200 },
+    };
+    const pipeline = createAnalysisPipeline({ kinds: [createMemoryProfileKind()] });
+    const result = pipeline.run(bundle(data), { command: ['node', 'app.js'], mode: 'spawn' });
+
+    const report = result.profiles.memory as MemoryProfileReport;
+    expect(report.memoryUsage).toEqual({
+      available: true,
+      sampleIntervalMs: 200,
+      sampleCount: 12,
+      firstSample: samples[0],
+      lastSample: samples.at(-1),
+    });
+    expect('samples' in report.memoryUsage).toBe(false);
+    expect(report.summary.rss).toBeDefined();
+    expect(report.summary.heapUsed).toBeDefined();
+  });
+
+  it('can include raw memory usage samples when explicitly requested', () => {
+    const samples = series(0, 12);
+    const data: MemoryKindData = {
+      samplingProfile: profile(),
+      samplingIntervalBytes: 512 * 1024,
+      memoryUsage: { samples, available: true, sampleIntervalMs: 200 },
+    };
+    const pipeline = createAnalysisPipeline({
+      kinds: [createMemoryProfileKind({ includeMemoryUsageSamples: true })],
+    });
+    const result = pipeline.run(bundle(data), { command: ['node', 'app.js'], mode: 'spawn' });
+
+    const report = result.profiles.memory as MemoryProfileReport;
+    expect(report.memoryUsage.samples).toEqual(samples);
+    expect(report.memoryUsage.sampleCount).toBe(12);
+  });
+
   it('computes a positive linear slope for a growing memory series', () => {
     const slopeBytesPerMs = 1024; // 1 MB / sec
     const data: MemoryKindData = {
