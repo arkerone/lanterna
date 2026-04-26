@@ -37,9 +37,21 @@ export interface KindViews {
 }
 
 export interface CaptureProbe<TData> {
+  /**
+   * Optional timeout for probe stop/finalization work. Defaults to the coordinator
+   * timeout; use false only when the probe has a protocol-level completion signal.
+   */
+  stopTimeoutMs?: number | false;
+  progressMessages?: {
+    start?: string;
+    stop?: string;
+  };
   install?(cdp: CdpClient): Promise<void>;
-  start(cdp: CdpClient): Promise<void>;
-  stop(cdp: CdpClient): Promise<TData>;
+  start(cdp: CdpClient, options?: { abortSignal?: AbortSignal }): Promise<void>;
+  stop(
+    cdp: CdpClient,
+    options?: { abortSignal?: AbortSignal; stopReason?: 'exit' | 'timeout' | 'signal' },
+  ): Promise<TData>;
 }
 
 /**
@@ -86,6 +98,8 @@ export interface ProfileKind<TData = unknown> {
   reportSchema: ZodType;
   /** Optional preload-hook fragment contributed by this kind. */
   hookInstaller?: HookInstaller;
+  /** Optional message emitted immediately when the user manually stops this kind. */
+  manualStopMessage?: string;
   /**
    * Builds the capture probe. The kind closes over its own options at
    * construction time — there are no global probe options anymore (each kind

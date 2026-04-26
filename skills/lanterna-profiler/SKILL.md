@@ -33,6 +33,10 @@ $LANTERNA attach --pid
 # Memory profile (heap allocations + RSS series)
 $LANTERNA run --kind memory --duration <duration> --output /tmp/lanterna-report.json -- node server.js
 
+# Heavy retention analysis: writes start/end .heapsnapshot files and summarizes retained growth.
+# If --heap-snapshot-dir is omitted, files go to .lanterna-heapsnapshots in the launch cwd.
+$LANTERNA run --kind memory --heap-snapshot-analysis --heap-snapshot-dir /tmp/lanterna-heaps --duration <duration> --output /tmp/lanterna-report.json -- node server.js
+
 # Both kinds in one capture (enables the cross-kind alloc-in-hot-path detector)
 $LANTERNA run --kind cpu --kind memory --duration <duration> --output /tmp/lanterna-report.json -- node server.js
 ```
@@ -43,6 +47,7 @@ Profile kind selection:
 
 - `--kind cpu` (default) — V8 sampling profiler, CPU detectors.
 - `--kind memory` — V8 sampling heap profiler + `process.memoryUsage()` series, memory detectors.
+- `--heap-snapshot-analysis` with `--kind memory` — opt-in heavy mode that captures start/end V8 heap snapshots, keeps the `.heapsnapshot` files, and adds `profiles.memory.heapSnapshotAnalysis` with constructor growth, short retainer paths, and heuristic patterns (`closure`, `event-listener`, `timer`, `cache`, `unknown`).
 - Repeat or comma-separate to combine: `--kind cpu --kind memory` or `--kind cpu,memory`. Choose `memory` when the user mentions leaks, growing RSS, OOM kills, Buffer pressure, or unbounded caches; choose both when they want to correlate "this endpoint is slow AND allocates a lot".
 
 ## Workflow

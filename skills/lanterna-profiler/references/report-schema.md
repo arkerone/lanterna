@@ -103,13 +103,26 @@ Important global integrity flags:
         "sampleCount": 12,
         "firstSample": { "atMs": 0, "rss": 0, "heapTotal": 0, "heapUsed": 0, "external": 0, "arrayBuffers": 0 },
         "lastSample": { "atMs": 2750, "rss": 0, "heapTotal": 0, "heapUsed": 0, "external": 0, "arrayBuffers": 0 }
+      },
+      "heapSnapshotAnalysis": {
+        "available": true,
+        "mode": "start-end",
+        "start": { "path": "/tmp/lanterna-heaps/start.heapsnapshot" },
+        "end": { "path": "/tmp/lanterna-heaps/end.heapsnapshot" },
+        "summary": {
+          "totalRetainedGrowthBytes": 0,
+          "topGrowingConstructor": "Map"
+        },
+        "growthByConstructor": [],
+        "retainerPaths": [],
+        "warnings": []
       }
     }
   }
 }
 ```
 
-Each section is only present when its kind appears in `meta.profileKinds`. CPU is the default; memory is opt-in via `--kind memory`. See [cpu-profiling.md](cpu-profiling.md) and [memory-profiling.md](memory-profiling.md) for per-kind interpretation.
+Each section is only present when its kind appears in `meta.profileKinds`. CPU is the default; memory is opt-in via `--kind memory`. `profiles.memory.heapSnapshotAnalysis` is further opt-in via `--heap-snapshot-analysis`; when present, it may be `available: false` with explanatory `warnings[]` while the rest of the memory report remains valid. See [cpu-profiling.md](cpu-profiling.md) and [memory-profiling.md](memory-profiling.md) for per-kind interpretation.
 
 Do not treat unknown profile sections as invalid; third-party kinds may add new report sections.
 

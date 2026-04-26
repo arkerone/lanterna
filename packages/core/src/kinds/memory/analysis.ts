@@ -13,12 +13,18 @@ import type {
   MemoryUsageSample,
 } from '../../report/types.js';
 import type { KindAnalysisContext, KindAnalysisContributor } from '../core/types.js';
+import {
+  buildHeapSnapshotAnalysisReport,
+  type HeapSnapshotAnalysisReport,
+  type NormalizedHeapSnapshotAnalysisOptions,
+} from './heap-snapshot-analysis.js';
 import type { MemoryKindData } from './probe.js';
 
 const MAX_PUBLIC_HOT_ALLOCATORS = 50;
 
 export interface MemoryAnalysisOptions {
   includeMemoryUsageSamples?: boolean;
+  heapSnapshotAnalysis?: NormalizedHeapSnapshotAnalysisOptions;
 }
 
 /**
@@ -84,6 +90,11 @@ export function createMemoryAnalysisContributor(
           : {}),
       };
 
+      const heapSnapshotAnalysis = resolveHeapSnapshotAnalysisReport(
+        data.heapSnapshotAnalysis,
+        options.heapSnapshotAnalysis,
+      );
+
       const report: MemoryProfileReport = {
         summary,
         hotAllocators: hotAllocators.slice(0, MAX_PUBLIC_HOT_ALLOCATORS),
@@ -97,6 +108,7 @@ export function createMemoryAnalysisContributor(
             : {}),
           ...(options.includeMemoryUsageSamples ? { samples: data.memoryUsage.samples } : {}),
         },
+        ...(heapSnapshotAnalysis ? { heapSnapshotAnalysis } : {}),
       };
 
       ctx.writeSection<MemoryProfileReport>(report);
@@ -111,6 +123,16 @@ export function createMemoryAnalysisContributor(
       ctx.setContextView<MemoryAnalysisView>(view);
     },
   };
+}
+
+function resolveHeapSnapshotAnalysisReport(
+  capturedOrReport: MemoryKindData['heapSnapshotAnalysis'] | HeapSnapshotAnalysisReport | undefined,
+  options: NormalizedHeapSnapshotAnalysisOptions | undefined,
+): HeapSnapshotAnalysisReport | undefined {
+  if (!capturedOrReport) return undefined;
+  if ('summary' in capturedOrReport) return capturedOrReport;
+  if (!options?.enabled) return undefined;
+  return buildHeapSnapshotAnalysisReport(capturedOrReport, options);
 }
 
 interface AllocatorAggregate {

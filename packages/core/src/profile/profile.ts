@@ -32,7 +32,14 @@ export async function runProfile(
   ];
 
   const manualStop = createManualStopSignal();
-  const signalHandlers = bindStopSignals(manualStop.trigger);
+  const signalHandlers = bindStopSignals(manualStop.trigger, () => {
+    const message = manualStopMessage(kinds);
+    if (!message) return;
+    onProgress?.({
+      stage: 'finalize-capture',
+      message,
+    });
+  });
 
   try {
     const bundle = await runCapture({
@@ -47,6 +54,7 @@ export async function runProfile(
       kinds,
       durationMs: options.durationMs,
       stopSignal: manualStop.promise,
+      abortSignal: manualStop.abortSignal,
     });
 
     return await analyzeAndBuild(bundle, options, kinds, 'spawn');
@@ -67,7 +75,14 @@ export async function attachProfile(
   ];
 
   const manualStop = createManualStopSignal();
-  const signalHandlers = bindStopSignals(manualStop.trigger);
+  const signalHandlers = bindStopSignals(manualStop.trigger, () => {
+    const message = manualStopMessage(kinds);
+    if (!message) return;
+    onProgress?.({
+      stage: 'finalize-capture',
+      message,
+    });
+  });
 
   try {
     const bundle = await runCapture({
@@ -80,6 +95,7 @@ export async function attachProfile(
       kinds,
       durationMs: options.durationMs,
       stopSignal: manualStop.promise,
+      abortSignal: manualStop.abortSignal,
     });
 
     return await analyzeAndBuild(bundle, options, kinds, 'attach');
@@ -116,8 +132,11 @@ async function analyzeAndBuild(
   return buildLanternaReport(bundle, analysis, kinds, analysisOptions);
 }
 
-function bindStopSignals(trigger: () => void): { dispose: () => void } {
-  const listener = () => trigger();
+function bindStopSignals(trigger: () => void, onSignal?: () => void): { dispose: () => void } {
+  const listener = () => {
+    onSignal?.();
+    trigger();
+  };
   const signals: NodeJS.Signals[] = ['SIGINT', 'SIGTERM'];
   for (const signal of signals) process.on(signal, listener);
   return {
@@ -125,4 +144,8 @@ function bindStopSignals(trigger: () => void): { dispose: () => void } {
       for (const signal of signals) process.off(signal, listener);
     },
   };
+}
+
+function manualStopMessage(kinds: ProfileKind[]): string | undefined {
+  return kinds.find((kind) => kind.manualStopMessage)?.manualStopMessage;
 }
