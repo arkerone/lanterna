@@ -72,7 +72,7 @@ Important global integrity flags:
 
 ## `profiles`
 
-`profiles` is a map of report section key to kind-specific data. The schema is composed from the active kinds. Current built-in CPU reports use:
+`profiles` is a map of report section key to kind-specific data. The schema is composed from the active kinds. Built-in kinds:
 
 ```json
 {
@@ -84,10 +84,26 @@ Important global integrity flags:
       "gc": {},
       "eventLoop": {},
       "deopts": []
+    },
+    "memory": {
+      "summary": {
+        "totalSampledBytes": 0,
+        "samplingIntervalBytes": 524288,
+        "rss": { "startBytes": 0, "endBytes": 0, "minBytes": 0, "maxBytes": 0, "meanBytes": 0, "p95Bytes": 0, "slopeBytesPerSec": 0 },
+        "heapUsed": {},
+        "external": {},
+        "arrayBuffers": {},
+        "topAllocator": {},
+        "externalRatio": 0
+      },
+      "hotAllocators": [],
+      "memoryUsage": { "samples": [], "available": true, "sampleIntervalMs": 250 }
     }
   }
 }
 ```
+
+Each section is only present when its kind appears in `meta.profileKinds`. CPU is the default; memory is opt-in via `--kind memory`. See [cpu-profiling.md](cpu-profiling.md) and [memory-profiling.md](memory-profiling.md) for per-kind interpretation.
 
 Do not treat unknown profile sections as invalid; third-party kinds may add new report sections.
 

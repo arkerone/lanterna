@@ -59,24 +59,31 @@ lanterna attach --inspect-url ws://127.0.0.1:9229/<uuid> --kind cpu
 | `--output <path>` | Write JSON to a file instead of stdout. |
 | `--pretty` | Pretty-print JSON with 2-space indentation. |
 | `--deep` | Enable `--trace-deopt` (run mode only). |
-| `--sample-interval <us>` | V8 sampling interval in µs (default `1000`, min `50`). |
+| `--sample-interval <us>` | V8 CPU sampling interval in µs (default `1000`, min `50`). |
+| `--kind <id>` | Profile kind to capture. Repeatable or comma-separated (default `cpu`). Built-in: `cpu`, `memory`. |
+| `--heap-sample-interval <size>` | V8 heap sampling interval (memory kind). Accepts raw bytes or a KiB/MiB suffix: `524288`, `512KiB`, `1MiB`. Default `512KiB`, min `1KiB`. |
+| `--memory-usage-interval <ms>` | `process.memoryUsage()` cadence in ms (memory kind only, default `250`, min `10`). |
 | `--pid [pid]` | Attach by PID, or open the interactive picker if no value. |
 | `--inspect-url <url>` | Attach to an existing inspector WebSocket URL. |
 | `--detectors <spec>` | Load an additional detector plugin (package name or path). Repeatable. |
-| `--kind <id>` | Profile kind to capture. Repeatable or comma-separated (default `cpu`). |
 | `-h, --help` | Show help. |
 
 The `--` separator is required before the target command in `run` mode.
 
 `--kind` is supported on both `run` and `attach`. You can repeat the flag or use comma-separated shorthand such as `--kind cpu,memory`.
 
-Today the only built-in kind is `cpu`, so both commands default to `--kind cpu`. Unknown kind ids fail before capture starts with:
+Built-in kinds:
+
+- `cpu` (default): V8 sampling profiler. Produces `profiles.cpu.{summary,hotspots,hotStacks,gc,eventLoop,deopts}` and CPU detectors.
+- `memory` (opt-in): V8 sampling heap profiler plus `process.memoryUsage()` time series. Produces `profiles.memory.{summary,hotAllocators,memoryUsage}` and memory detectors (`memory-growth`, `large-allocator`, `external-buffer-pressure`, `alloc-in-hot-path`).
+
+Unknown kind ids fail before capture starts with:
 
 ```text
-unknown profile kind(s): <ids>. Available kinds: cpu
+unknown profile kind(s): <ids>. Available kinds: cpu, memory
 ```
 
-Future kinds can be added through the core/detectors extension APIs.
+Plugin packages can register additional kinds via a named `kinds: ProfileKind[]` export.
 
 ## Loading external detectors
 
