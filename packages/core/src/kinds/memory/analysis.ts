@@ -17,6 +17,10 @@ import type { MemoryKindData } from './probe.js';
 
 const MAX_PUBLIC_HOT_ALLOCATORS = 50;
 
+export interface MemoryAnalysisOptions {
+  includeMemoryUsageSamples?: boolean;
+}
+
 /**
  * View exposed to analyzers via `context.forKind('memory')`. Lets memory
  * detectors reach the heap aggregates and the memoryUsage time series without
@@ -43,7 +47,9 @@ declare module '../core/types.js' {
   }
 }
 
-export function createMemoryAnalysisContributor(): KindAnalysisContributor<MemoryKindData> {
+export function createMemoryAnalysisContributor(
+  options: MemoryAnalysisOptions = {},
+): KindAnalysisContributor<MemoryKindData> {
   return {
     analyze(ctx: KindAnalysisContext<MemoryKindData>) {
       const { data, bundle } = ctx;
@@ -82,9 +88,14 @@ export function createMemoryAnalysisContributor(): KindAnalysisContributor<Memor
         summary,
         hotAllocators: hotAllocators.slice(0, MAX_PUBLIC_HOT_ALLOCATORS),
         memoryUsage: {
-          samples: data.memoryUsage.samples,
           available: data.memoryUsage.available,
           sampleIntervalMs: data.memoryUsage.sampleIntervalMs || 0,
+          sampleCount: data.memoryUsage.samples.length,
+          ...(data.memoryUsage.samples[0] ? { firstSample: data.memoryUsage.samples[0] } : {}),
+          ...(data.memoryUsage.samples.at(-1)
+            ? { lastSample: data.memoryUsage.samples.at(-1) }
+            : {}),
+          ...(options.includeMemoryUsageSamples ? { samples: data.memoryUsage.samples } : {}),
         },
       };
 

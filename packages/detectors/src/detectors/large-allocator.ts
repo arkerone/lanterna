@@ -10,27 +10,44 @@ export const largeAllocatorDetector: KindScopedDetector<'memory'> = {
   kindIds: ['memory'],
   detect({ memory }): Finding[] {
     const thresholds = DETECTOR_THRESHOLDS.largeAllocator;
-    const allocators = memory.report.hotAllocators;
+    const allocators = memory.report.hotAllocators.filter(isActionableAllocator);
     if (allocators.length === 0) return [];
 
     const findings: Finding[] = [];
+    const emittedSubtrees = new Set<string>();
     for (const allocator of allocators) {
       if (findings.length >= thresholds.maxFindings) break;
-      // Skip frames with no real attributable file (gc, idle, program, root).
-      if (
-        allocator.category === 'gc' ||
-        allocator.category === 'idle' ||
-        allocator.category === 'program'
-      ) {
-        continue;
-      }
       const score = Math.max(allocator.totalPct, allocator.selfPct);
       if (score < thresholds.minTotalPct) continue;
+      const subtreeKey = allocationSubtreeKey(allocator);
+      if (emittedSubtrees.has(subtreeKey) && isInclusiveWrapper(allocator)) continue;
+      emittedSubtrees.add(subtreeKey);
       findings.push(buildFinding(allocator, score));
     }
     return findings;
   },
 };
+
+function isActionableAllocator(allocator: import('@lanterna-profiler/core').MemoryHotAllocator) {
+  if (allocator.category !== 'user' && allocator.category !== 'node_modules') return false;
+  if (allocator.file.startsWith('node:')) return false;
+  if (/^(?:native |extensions::|evalmachine\.|node:internal\/)/.test(allocator.file)) return false;
+  if (/^\((?:root|idle|program|garbage collector|anonymous)\)$/.test(allocator.function)) {
+    return false;
+  }
+  return true;
+}
+
+function allocationSubtreeKey(
+  allocator: import('@lanterna-profiler/core').MemoryHotAllocator,
+): string {
+  return `${Math.round(allocator.totalBytes / 1024)}:${Math.round(allocator.totalPct * 10)}`;
+}
+
+function isInclusiveWrapper(allocator: import('@lanterna-profiler/core').MemoryHotAllocator) {
+  if (allocator.totalBytes <= 0) return false;
+  return allocator.selfBytes / allocator.totalBytes < 0.05;
+}
 
 function buildFinding(
   allocator: import('@lanterna-profiler/core').MemoryHotAllocator,

@@ -203,6 +203,23 @@ interface ReportWithCpuProfile {
   };
 }
 
+interface MemoryProfileLike {
+  summary?: unknown;
+  hotAllocators?: unknown[];
+  memoryUsage?: {
+    samples?: unknown[];
+    sampleCount?: number;
+    firstSample?: unknown;
+    lastSample?: unknown;
+  };
+}
+
+interface ReportWithMemoryProfile {
+  profiles?: {
+    memory?: MemoryProfileLike;
+  };
+}
+
 function stripAnsi(value: string): string {
   return stripVTControlCharacters(value);
 }
@@ -215,6 +232,12 @@ function getCpuProfile(report: ReportWithCpuProfile): CpuProfileLike {
   const cpuProfile = report.profiles?.cpu;
   assert.ok(cpuProfile, 'expected cpu profile in report');
   return cpuProfile;
+}
+
+function getMemoryProfile(report: ReportWithMemoryProfile): MemoryProfileLike {
+  const memoryProfile = report.profiles?.memory;
+  assert.ok(memoryProfile, 'expected memory profile in report');
+  return memoryProfile;
 }
 
 async function expectLanternaCommandFailure(
@@ -509,6 +532,54 @@ describe('live profiling', () => {
     assert.ok(cpuProfile.eventLoop.stallIntervals.length > 0);
     assert.match(correlatedHotspots[0].function, /busyWait|tick/);
     assert.ok(report.findings.some((finding: { id: string }) => finding.id === 'event-loop-stall'));
+  });
+
+  it('captures compact memory reports by default', async () => {
+    if (!(await inspectorSupported())) {
+      await expectInspectorFailure([
+        'run',
+        '--kind',
+        'memory',
+        '--duration',
+        '800ms',
+        '--',
+        'node',
+        '-e',
+        'setTimeout(() => {}, 1000)',
+      ]);
+      return;
+    }
+
+    const { stdout } = await execFileAsync(
+      'node',
+      [
+        binPath,
+        'run',
+        '--kind',
+        'memory',
+        '--duration',
+        '1000ms',
+        '--heap-sample-interval',
+        '1024',
+        '--pretty',
+        '--',
+        'node',
+        '-e',
+        'const keep=[]; setInterval(()=>{ for (let i=0;i<1000;i++) keep.push({ i, value: "x".repeat(1000) }); }, 10); setTimeout(() => {}, 1500);',
+      ],
+      { cwd: repoRoot, timeout: 10_000, maxBuffer: 1024 * 1024 * 4 },
+    );
+
+    const report = JSON.parse(stdout);
+    const memoryProfile = getMemoryProfile(report);
+    assert.ok(memoryProfile.summary, 'expected memory summary');
+    assert.ok(Array.isArray(memoryProfile.hotAllocators), 'expected hotAllocators array');
+    assert.ok(memoryProfile.memoryUsage, 'expected memoryUsage summary');
+    assert.equal(memoryProfile.memoryUsage.samples, undefined);
+    assert.ok((memoryProfile.memoryUsage.sampleCount ?? 0) > 0, 'expected sample count');
+    assert.ok(memoryProfile.memoryUsage.firstSample, 'expected first sample');
+    assert.ok(memoryProfile.memoryUsage.lastSample, 'expected last sample');
+    assert.ok(stdout.length < 512 * 1024, `expected compact report, got ${stdout.length} bytes`);
   });
 
   it('attributes sync crypto findings to the user caller on live runs', async () => {
