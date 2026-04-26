@@ -133,7 +133,7 @@ export interface LargeAllocatorThresholds {
 }
 
 export interface ExternalBufferPressureThresholds {
-  /** `(external + arrayBuffers) / heapUsed` ratio crossing this triggers `warning`. */
+  /** `external / heapUsed` ratio crossing this triggers `warning`. */
   readonly warnRatio: number;
   /** Same but for `critical`. */
   readonly criticalRatio: number;

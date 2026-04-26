@@ -212,7 +212,7 @@ describe('large-allocator detector', () => {
 });
 
 describe('external-buffer-pressure detector', () => {
-  it('fires when external + arrayBuffers exceeds heapUsed (with mean ≥ minExternalMeanMB)', () => {
+  it('fires when external exceeds heapUsed ratio threshold (with mean ≥ minExternalMeanMB)', () => {
     const samples: MemoryUsageSample[] = [];
     for (let i = 0; i < 20; i++) {
       samples.push({
@@ -220,7 +220,7 @@ describe('external-buffer-pressure detector', () => {
         rss: 200 * MB,
         heapTotal: 50 * MB,
         heapUsed: 40 * MB,
-        external: 30 * MB,
+        external: 45 * MB,
         arrayBuffers: 15 * MB,
       });
     }
@@ -238,6 +238,32 @@ describe('external-buffer-pressure detector', () => {
     const finding = result.findings.find((f) => f.id === 'external-buffer-pressure');
     expect(finding).toBeDefined();
     expect(finding?.severity).toBe('warning');
+  });
+
+  it('does not double-count arrayBuffers because process.memoryUsage external already includes it', () => {
+    const samples: MemoryUsageSample[] = [];
+    for (let i = 0; i < 20; i++) {
+      samples.push({
+        atMs: i * 200,
+        rss: 200 * MB,
+        heapTotal: 50 * MB,
+        heapUsed: 80 * MB,
+        external: 39 * MB,
+        arrayBuffers: 41 * MB,
+      });
+    }
+    const bundle = makeBundle({
+      samplingProfile: singleAllocatorProfile('alloc', 'file:///app/src/a.js', 1, 1024),
+      memoryUsageSamples: samples,
+    });
+    const pipeline = createAnalysisPipeline({
+      kinds: [createMemoryProfileKind()],
+      findingAnalyzers: [
+        createFindingAnalyzerFromKindScopedDetector(externalBufferPressureDetector),
+      ],
+    });
+    const result = pipeline.run(bundle, { command: ['node', 'app.js'], mode: 'spawn' });
+    expect(result.findings).toEqual([]);
   });
 
   it('does not fire on tiny absolute external footprint', () => {
