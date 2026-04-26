@@ -394,13 +394,14 @@ describe('memory kind analysis', () => {
   });
 
   it('resets memory usage samples when markCaptureStart is called', () => {
+    let now = 10_000;
     const context = {
       process,
-      performance,
-      setTimeout,
-      clearTimeout,
-      setInterval,
-      clearInterval,
+      performance: { now: () => now },
+      setTimeout: () => ({ unref() {} }),
+      clearTimeout: () => {},
+      setInterval: () => ({ unref() {} }),
+      clearInterval: () => {},
       globalThis: {} as Record<string, unknown>,
     };
     context.globalThis = context as unknown as typeof context.globalThis;
@@ -420,7 +421,33 @@ describe('memory kind analysis', () => {
 
     memory.clear();
     expect(memory.read().samples).toHaveLength(0);
+    now = 25_000;
     eventLoop.markCaptureStart();
     expect(memory.read().samples).toHaveLength(1);
+    expect(memory.read().samples[0]?.atMs).toBe(0);
+  });
+
+  it('installs memory hooks on a later attach when the framework already exists', () => {
+    const context = {
+      process,
+      performance: { now: () => 0 },
+      setTimeout: () => ({ unref() {} }),
+      clearTimeout: () => {},
+      setInterval: () => ({ unref() {} }),
+      clearInterval: () => {},
+      globalThis: {} as Record<string, unknown>,
+    };
+    context.globalThis = context as unknown as typeof context.globalThis;
+    const cpuOnlyScript = composeAttachScript([runtimeSignalsInstaller], { resolutionMs: 20 });
+    const memoryScript = composeAttachScript(
+      [runtimeSignalsInstaller, createMemoryUsageInstaller({ sampleIntervalMs: 10 })],
+      { resolutionMs: 20 },
+    );
+
+    vm.runInNewContext(cpuOnlyScript, context);
+    expect(context.globalThis.__LANTERNA_MEMORY__).toBeUndefined();
+
+    vm.runInNewContext(memoryScript, context);
+    expect(context.globalThis.__LANTERNA_MEMORY__).toBeDefined();
   });
 });

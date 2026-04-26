@@ -36,12 +36,14 @@ function installMemoryUsage(api: MemoryUsageInstallerApi, sampleIntervalMs: numb
     arrayBuffers: number;
   }> = [];
   let intervalMs = sampleIntervalMs;
+  let captureStartMs = api.performance.now();
 
   const sample = () => {
     try {
+      const now = api.performance.now();
       const usage = process.memoryUsage();
       samples.push({
-        atMs: api.performance.now(),
+        atMs: Math.max(0, now - captureStartMs),
         rss: usage.rss,
         heapTotal: usage.heapTotal,
         heapUsed: usage.heapUsed,
@@ -60,6 +62,7 @@ function installMemoryUsage(api: MemoryUsageInstallerApi, sampleIntervalMs: numb
   if (typeof timer.unref === 'function') timer.unref();
 
   api.addResetHook(() => {
+    captureStartMs = api.performance.now();
     samples.length = 0;
     sample();
   });
