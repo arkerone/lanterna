@@ -28,6 +28,11 @@ export type { RunCaptureOptions } from './capture/coordinator.js';
 // Capture
 export { createManualStopSignal, runCapture } from './capture/coordinator.js';
 export type {
+  RawSamplingHeapProfile,
+  RawSamplingHeapProfileNode,
+  RawSamplingHeapProfileSample,
+} from './capture/core/heap.js';
+export type {
   AttachStartOptions,
   CaptureBundle,
   CaptureIntegrity,
@@ -79,6 +84,20 @@ export {
   createCpuProfileKind,
 } from './kinds/cpu/index.js';
 export type { CpuProbeOptions } from './kinds/cpu/probe.js';
+export type {
+  MemoryAnalysisView,
+  MemoryKindData,
+  MemoryKindOptions,
+  MemoryProbeOptions,
+} from './kinds/memory/index.js';
+// Memory kind (built-in)
+export {
+  createMemoryAnalysisContributor,
+  createMemoryProbe,
+  createMemoryProfileKind,
+  DEFAULT_MEMORY_SAMPLING_INTERVAL_BYTES,
+  DEFAULT_MEMORY_USAGE_INTERVAL_MS,
+} from './kinds/memory/index.js';
 // Profile orchestration
 export {
   configureProfilePipeline,
@@ -128,6 +147,11 @@ export type {
   Hotspot,
   JsonHotPathEvidenceExtra,
   LanternaReport,
+  MemoryHotAllocator,
+  MemoryProfileReport,
+  MemorySeriesStats,
+  MemorySummary,
+  MemoryUsageSample,
   NodeModulesHotspotEvidenceExtra,
   ReportMeta,
   RequireInHotPathEvidenceExtra,
