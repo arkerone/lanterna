@@ -429,6 +429,42 @@ export interface MemoryHotAllocator {
   totalPct: number;
 }
 
+export type HeapSnapshotSuspectedPattern =
+  | 'closure'
+  | 'event-listener'
+  | 'timer'
+  | 'cache'
+  | 'unknown';
+
+export interface HeapSnapshotGrowthEntry {
+  name: string;
+  countDelta: number;
+  selfSizeDeltaBytes: number;
+  retainedSizeDeltaBytes: number;
+}
+
+export interface HeapSnapshotRetainerPath {
+  constructorName: string;
+  retainedBytes: number;
+  path: string[];
+  suspectedPattern: HeapSnapshotSuspectedPattern;
+  confidence: 'low' | 'medium' | 'high';
+}
+
+export interface HeapSnapshotAnalysisReport {
+  available: boolean;
+  mode: 'start-end';
+  start: { path: string };
+  end: { path: string };
+  summary: {
+    totalRetainedGrowthBytes: number;
+    topGrowingConstructor?: string;
+  };
+  growthByConstructor: HeapSnapshotGrowthEntry[];
+  retainerPaths: HeapSnapshotRetainerPath[];
+  warnings: string[];
+}
+
 export interface MemorySummary {
   totalSampledBytes: number;
   samplingIntervalBytes: number;
@@ -463,6 +499,7 @@ export interface MemoryProfileReport {
     lastSample?: MemoryUsageSample;
     samples?: MemoryUsageSample[];
   };
+  heapSnapshotAnalysis?: HeapSnapshotAnalysisReport;
 }
 
 declare module '../kinds/core/types.js' {

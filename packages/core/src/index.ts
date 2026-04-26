@@ -85,6 +85,11 @@ export {
 } from './kinds/cpu/index.js';
 export type { CpuProbeOptions } from './kinds/cpu/probe.js';
 export type {
+  HeapSnapshotAnalysisOptions,
+  HeapSnapshotAnalysisReport,
+  HeapSnapshotGrowthEntry,
+  HeapSnapshotRetainerPath,
+  HeapSnapshotSuspectedPattern,
   MemoryAnalysisView,
   MemoryKindData,
   MemoryKindOptions,
@@ -142,6 +147,10 @@ export type {
   FindingSeverity,
   FrameCategory,
   GcReport,
+  HeapSnapshotAnalysisReport as ReportHeapSnapshotAnalysisReport,
+  HeapSnapshotGrowthEntry as ReportHeapSnapshotGrowthEntry,
+  HeapSnapshotRetainerPath as ReportHeapSnapshotRetainerPath,
+  HeapSnapshotSuspectedPattern as ReportHeapSnapshotSuspectedPattern,
   HotStack,
   HotStackCluster,
   Hotspot,

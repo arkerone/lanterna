@@ -24,6 +24,10 @@ type ParsedProfileOptions = {
   heapSamplingIntervalBytes: number;
   memoryUsageIntervalMs: number;
   includeMemoryUsageSamples: boolean;
+  heapSnapshotAnalysis: {
+    enabled: boolean;
+    outputDir?: string;
+  };
 };
 
 type ExecuteProfileCommandOptions =
@@ -79,6 +83,7 @@ function buildMemoryKind(command: ExecuteProfileCommandOptions): ProfileKind {
     samplingIntervalBytes: command.options.heapSamplingIntervalBytes,
     memoryUsageIntervalMs: command.options.memoryUsageIntervalMs,
     includeMemoryUsageSamples: command.options.includeMemoryUsageSamples,
+    heapSnapshotAnalysis: command.options.heapSnapshotAnalysis,
   });
 }
 

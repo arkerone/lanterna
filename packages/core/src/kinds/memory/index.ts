@@ -3,6 +3,10 @@ import { createMemoryUsageInstaller } from '../../runtime-signals/hooks/installe
 import type { CaptureProbe, ProfileKind } from '../core/types.js';
 import { defineProfileKind } from '../core/types.js';
 import { createMemoryAnalysisContributor } from './analysis.js';
+import {
+  type HeapSnapshotAnalysisOptions,
+  normalizeHeapSnapshotAnalysisOptions,
+} from './heap-snapshot-analysis.js';
 import { createMemoryProbe, type MemoryKindData } from './probe.js';
 
 declare module '../core/types.js' {
@@ -23,6 +27,8 @@ export interface MemoryKindOptions {
   memoryUsageIntervalMs?: number;
   /** Include the raw `process.memoryUsage()` sample series in the public JSON report. */
   includeMemoryUsageSamples?: boolean;
+  /** Heavy opt-in V8 heap snapshot start/end analysis. Disabled by default. */
+  heapSnapshotAnalysis?: HeapSnapshotAnalysisOptions;
 }
 
 /**
@@ -39,26 +45,41 @@ export function createMemoryProfileKind(
   const memoryUsageIntervalMs = validateMemoryUsageIntervalMs(
     options.memoryUsageIntervalMs ?? DEFAULT_MEMORY_USAGE_INTERVAL_MS,
   );
+  const heapSnapshotAnalysis = normalizeHeapSnapshotAnalysisOptions(options.heapSnapshotAnalysis);
   return defineProfileKind<MemoryKindData>({
     id: 'memory',
     label: 'Memory',
     reportSectionKey: 'memory',
     reportSchema: memoryProfileReportSchema,
+    ...(heapSnapshotAnalysis.enabled
+      ? {
+          manualStopMessage:
+            'Stop requested. Aborting Memory heap snapshot work and writing the standard report...',
+        }
+      : {}),
     hookInstaller: createMemoryUsageInstaller({ sampleIntervalMs: memoryUsageIntervalMs }),
     createProbe: (): CaptureProbe<MemoryKindData> =>
-      createMemoryProbe({ samplingIntervalBytes, memoryUsageIntervalMs }),
+      createMemoryProbe({ samplingIntervalBytes, memoryUsageIntervalMs, heapSnapshotAnalysis }),
     createAnalysisContributor: () =>
       createMemoryAnalysisContributor({
         includeMemoryUsageSamples: options.includeMemoryUsageSamples ?? false,
+        heapSnapshotAnalysis,
       }),
     contributeMeta: (data) => ({
       samplingIntervalBytes: data.samplingIntervalBytes,
       memoryUsageIntervalMs,
       memoryUsageSampleCount: data.memoryUsage.samples.length,
+      heapSnapshotAnalysisEnabled: heapSnapshotAnalysis.enabled,
+      ...(data.heapSnapshotAnalysis
+        ? { heapSnapshotAnalysisAvailable: data.heapSnapshotAnalysis.available }
+        : {}),
     }),
     contributeIntegrity: (data) => ({
       memoryUsageAvailable: data.memoryUsage.available,
       memoryUsageSampleCount: data.memoryUsage.samples.length,
+      ...(data.heapSnapshotAnalysis
+        ? { heapSnapshotAnalysisAvailable: data.heapSnapshotAnalysis.available }
+        : {}),
     }),
   });
 }
@@ -81,5 +102,12 @@ function validateMemoryUsageIntervalMs(value: number): number {
 
 export type { MemoryAnalysisView } from './analysis.js';
 export { createMemoryAnalysisContributor } from './analysis.js';
+export type {
+  HeapSnapshotAnalysisOptions,
+  HeapSnapshotAnalysisReport,
+  HeapSnapshotGrowthEntry,
+  HeapSnapshotRetainerPath,
+  HeapSnapshotSuspectedPattern,
+} from './heap-snapshot-analysis.js';
 export type { MemoryKindData, MemoryProbeOptions } from './probe.js';
 export { createMemoryProbe } from './probe.js';

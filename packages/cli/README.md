@@ -64,12 +64,16 @@ lanterna attach --inspect-url ws://127.0.0.1:9229/<uuid> --kind cpu
 | `--heap-sample-interval <size>` | V8 heap sampling interval (memory kind). Accepts raw bytes or a KiB/MiB suffix: `524288`, `512KiB`, `1MiB`. Default `512KiB`, min `1KiB`. |
 | `--memory-usage-interval <ms>` | `process.memoryUsage()` cadence in ms (memory kind only, default `250`, min `10`). |
 | `--include-memory-samples` | Include raw `process.memoryUsage()` samples in JSON output (memory kind only). |
+| `--heap-snapshot-analysis` | Capture start/end V8 heap snapshots and include retained-growth synthesis in `profiles.memory.heapSnapshotAnalysis` (memory kind only, opt-in and heavy). |
+| `--heap-snapshot-dir <dir>` | Directory for the `.heapsnapshot` files written by `--heap-snapshot-analysis` (memory kind only, default `.lanterna-heapsnapshots`). |
 | `--pid [pid]` | Attach by PID, or open the interactive picker if no value. |
 | `--inspect-url <url>` | Attach to an existing inspector WebSocket URL. |
 | `--detectors <spec>` | Load an additional detector plugin (package name or path). Repeatable. |
 | `-h, --help` | Show help. |
 
 The `--` separator is required before the target command in `run` mode.
+
+When `--heap-snapshot-analysis` is active, stopping with `Ctrl+C` skips the final heap snapshot so Lanterna exits promptly. Use `--duration` or let the target exit naturally when you need the start/end retained-growth comparison.
 
 `--kind` is supported on both `run` and `attach`. You can repeat the flag or use comma-separated shorthand such as `--kind cpu,memory`.
 

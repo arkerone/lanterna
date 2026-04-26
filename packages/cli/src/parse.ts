@@ -14,6 +14,8 @@ interface ParsedCommonOptions {
   heapSampleInterval?: number;
   memoryUsageInterval?: number;
   includeMemorySamples?: boolean;
+  heapSnapshotAnalysis?: boolean;
+  heapSnapshotDir?: string;
   detectors?: string[];
   kind?: string[];
 }
@@ -26,6 +28,10 @@ interface NormalizedCommonOptions {
   heapSamplingIntervalBytes: number;
   memoryUsageIntervalMs: number;
   includeMemoryUsageSamples: boolean;
+  heapSnapshotAnalysis: {
+    enabled: boolean;
+    outputDir?: string;
+  };
   detectors: string[];
   kinds: string[];
 }
@@ -49,6 +55,10 @@ export interface RunProfileOptions {
   heapSamplingIntervalBytes: number;
   memoryUsageIntervalMs: number;
   includeMemoryUsageSamples: boolean;
+  heapSnapshotAnalysis: {
+    enabled: boolean;
+    outputDir?: string;
+  };
   detectors: string[];
   kinds: string[];
 }
@@ -64,6 +74,10 @@ export interface AttachProfileOptions {
   heapSamplingIntervalBytes: number;
   memoryUsageIntervalMs: number;
   includeMemoryUsageSamples: boolean;
+  heapSnapshotAnalysis: {
+    enabled: boolean;
+    outputDir?: string;
+  };
   detectors: string[];
   kinds: string[];
 }
@@ -109,6 +123,12 @@ export function parseAttachArgs(args: string[]): AttachProfileOptions {
 }
 
 function normalizeCommonOptions(parsed: ParsedCommonOptions): NormalizedCommonOptions {
+  const kinds = resolveKinds(parsed.kind);
+  const heapSnapshotRequested = Boolean(parsed.heapSnapshotAnalysis || parsed.heapSnapshotDir);
+  if (heapSnapshotRequested && !kinds.includes('memory')) {
+    const option = parsed.heapSnapshotAnalysis ? '--heap-snapshot-analysis' : '--heap-snapshot-dir';
+    throw new Error(`${option} requires --kind memory`);
+  }
   return {
     ...(parsed.duration !== undefined ? { durationMs: parsed.duration } : {}),
     ...(parsed.output ? { output: parsed.output } : {}),
@@ -117,8 +137,12 @@ function normalizeCommonOptions(parsed: ParsedCommonOptions): NormalizedCommonOp
     heapSamplingIntervalBytes: parsed.heapSampleInterval ?? DEFAULT_MEMORY_SAMPLING_INTERVAL_BYTES,
     memoryUsageIntervalMs: parsed.memoryUsageInterval ?? DEFAULT_MEMORY_USAGE_INTERVAL_MS,
     includeMemoryUsageSamples: Boolean(parsed.includeMemorySamples),
+    heapSnapshotAnalysis: {
+      enabled: Boolean(parsed.heapSnapshotAnalysis),
+      ...(parsed.heapSnapshotDir ? { outputDir: parsed.heapSnapshotDir } : {}),
+    },
     detectors: parsed.detectors ?? [],
-    kinds: resolveKinds(parsed.kind),
+    kinds,
   };
 }
 
@@ -196,6 +220,14 @@ function addCommonProfilingOptions(command: Command): Command {
     .option(
       '--include-memory-samples',
       'Include raw process.memoryUsage() samples in JSON output (memory kind only)',
+    )
+    .option(
+      '--heap-snapshot-analysis',
+      'Capture start/end V8 heap snapshots and include a growth summary (memory kind only, opt-in and heavy)',
+    )
+    .option(
+      '--heap-snapshot-dir <dir>',
+      'Directory for start/end .heapsnapshot files (memory kind only)',
     );
 }
 

@@ -9,6 +9,7 @@ const MEMORY_DEFAULTS = {
   heapSamplingIntervalBytes: DEFAULT_MEMORY_SAMPLING_INTERVAL_BYTES,
   memoryUsageIntervalMs: DEFAULT_MEMORY_USAGE_INTERVAL_MS,
   includeMemoryUsageSamples: false,
+  heapSnapshotAnalysis: { enabled: false },
 };
 
 afterEach(() => {
@@ -134,6 +135,43 @@ describe('parseRunArgs', () => {
         '--include-memory-samples',
       ]).includeMemoryUsageSamples,
     ).toBe(true);
+  });
+
+  it('parses heap snapshot analysis options for memory captures', () => {
+    expect(
+      parseRunArgs(['--kind', 'memory', '--heap-snapshot-analysis', '--', 'node', 'app.js']),
+    ).toMatchObject({
+      heapSnapshotAnalysis: {
+        enabled: true,
+      },
+    });
+
+    expect(
+      parseRunArgs([
+        '--kind',
+        'memory',
+        '--heap-snapshot-analysis',
+        '--heap-snapshot-dir',
+        '/tmp/lanterna-heaps',
+        '--',
+        'node',
+        'app.js',
+      ]),
+    ).toMatchObject({
+      heapSnapshotAnalysis: {
+        enabled: true,
+        outputDir: '/tmp/lanterna-heaps',
+      },
+    });
+  });
+
+  it('rejects heap snapshot analysis without the memory kind', () => {
+    expect(() => parseRunArgs(['--heap-snapshot-analysis', '--', 'node', 'app.js'])).toThrow(
+      /--heap-snapshot-analysis requires --kind memory/,
+    );
+    expect(() =>
+      parseAttachArgs(['--pid', '42', '--heap-snapshot-dir', '/tmp/lanterna-heaps']),
+    ).toThrow(/--heap-snapshot-dir requires --kind memory/);
   });
 });
 

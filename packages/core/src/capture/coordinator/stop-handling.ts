@@ -26,10 +26,18 @@ export async function waitForStop<TOptions>(
   }
 }
 
-export function createManualStopSignal(): { trigger: () => void; promise: Promise<void> } {
+export function createManualStopSignal(): {
+  trigger: () => void;
+  promise: Promise<void>;
+  abortSignal: AbortSignal;
+} {
+  const abortController = new AbortController();
   let trigger = () => {};
   const promise = new Promise<void>((resolve) => {
-    trigger = resolve;
+    trigger = () => {
+      abortController.abort();
+      resolve();
+    };
   });
-  return { trigger, promise };
+  return { trigger, promise, abortSignal: abortController.signal };
 }

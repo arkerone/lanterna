@@ -44,6 +44,8 @@ export interface RunCaptureOptions<TSourceOptions> {
   durationMs?: number;
   /** External stop signal. When it resolves, the coordinator stops. */
   stopSignal?: Promise<void>;
+  /** Optional abort signal for interrupting finalization after stop has begun. */
+  abortSignal?: AbortSignal;
 }
 
 /**
@@ -108,7 +110,13 @@ export async function runCapture<TSourceOptions>(
 
     for (const { kind, probe } of probeInstances) {
       try {
-        await probe.start(cdp);
+        if (probe.progressMessages?.start) {
+          emitCaptureProgress(options.sourceOptions, {
+            stage: 'start-capture',
+            message: probe.progressMessages.start,
+          });
+        }
+        await probe.start(cdp, { abortSignal: options.abortSignal });
       } catch (error) {
         logger.warn({ kindId: kind.id, err: error }, 'kind probe failed to start');
         recordCaptureDiagnostic(captureIntegrity, {
@@ -127,7 +135,7 @@ export async function runCapture<TSourceOptions>(
           : `Capture is running for ${Math.round(options.durationMs)}ms...`,
     });
 
-    await waitForStop(connected, options);
+    const stopReason = await waitForStop(connected, options);
     emitCaptureProgress(options.sourceOptions, {
       stage: 'finalize-capture',
       message: 'Stopping the profiler and collecting the final samples...',
@@ -136,12 +144,28 @@ export async function runCapture<TSourceOptions>(
     const kindsData: Record<string, unknown> = {};
     for (const { kind, probe } of probeInstances) {
       try {
-        const result = await withTimeoutResult(probe.stop(cdp), PROBE_STOP_TIMEOUT_MS);
+        const stopTimeoutMs = probe.stopTimeoutMs ?? PROBE_STOP_TIMEOUT_MS;
+        if (probe.progressMessages?.stop && stopReason !== 'signal') {
+          emitCaptureProgress(options.sourceOptions, {
+            stage: 'finalize-capture',
+            message: probe.progressMessages.stop,
+          });
+        }
+        const result =
+          stopTimeoutMs === false
+            ? {
+                ok: true as const,
+                value: await probe.stop(cdp, { abortSignal: options.abortSignal, stopReason }),
+              }
+            : await withTimeoutResult(
+                probe.stop(cdp, { abortSignal: options.abortSignal, stopReason }),
+                stopTimeoutMs,
+              );
         if (!result.ok) {
           recordCaptureDiagnostic(captureIntegrity, {
             stage: 'probe-stop',
             kindId: kind.id,
-            message: `timed out stopping ${kind.id} probe after ${PROBE_STOP_TIMEOUT_MS}ms`,
+            message: `timed out stopping ${kind.id} probe after ${stopTimeoutMs}ms`,
           });
           continue;
         }
