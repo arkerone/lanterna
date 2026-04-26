@@ -383,11 +383,13 @@ describe('live profiling', () => {
     if (!(await inspectorSupported())) {
       await expectInspectorFailure([
         'run',
+        '--duration',
+        '100ms',
         '--pretty',
         '--',
         'node',
         '-e',
-        'console.error("lanterna-target-stderr-marker")',
+        'console.error("lanterna-target-stderr-marker"); setInterval(() => {}, 1000)',
       ]);
       return;
     }
@@ -397,11 +399,13 @@ describe('live profiling', () => {
       [
         binPath,
         'run',
+        '--duration',
+        '100ms',
         '--pretty',
         '--',
         'node',
         '-e',
-        'console.error("lanterna-target-stderr-marker")',
+        'console.error("lanterna-target-stderr-marker"); setInterval(() => {}, 1000)',
       ],
       { cwd: repoRoot, timeout: 10_000, maxBuffer: 1024 * 1024 * 4 },
     );
