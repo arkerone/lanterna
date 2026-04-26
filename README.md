@@ -5,7 +5,7 @@
 <h1 align="center">Lanterna</h1>
 
 <p align="center">
-  <strong>Agent-first Node.js CPU profiler.</strong><br />
+  <strong>Agent-first Node.js CPU & memory profiler.</strong><br />
   Runs your program, captures a V8 profile plus timed runtime signals,<br />
   and emits a structured JSON report that humans <em>and</em> AI agents can act on directly.
 </p>
@@ -24,9 +24,11 @@
 ## Features
 
 - **Two capture modes** - `lanterna run` to spawn & profile a command, `lanterna attach` to connect to a live process via the inspector.
+- **Two profile kinds** - opt-in via `--kind`: `cpu` (V8 sampling profiler, default) and `memory` (V8 sampling heap profiler + `process.memoryUsage()` time series).
 - **V8 CPU profile + timed signals** - CPU samples correlated with GC pauses, event-loop lag and stalls, optional deopt traces (`--deep`).
+- **Heap allocation profile** - hot allocators by self/total bytes plus a continuous RSS / heapUsed / external / arrayBuffers series with linear growth slope.
 - **Enriched `LanternaReport`** - categorized hotspots, hot call stacks, ratios, capture-integrity flags.
-- **Built-in findings** - sync crypto, blocking I/O, CPU-bound user code, JSON on the hot path, dependency hotspots, excessive GC, event-loop stalls, deopt loops, module loading on the hot path.
+- **Built-in findings** - sync crypto, blocking I/O, CPU-bound user code, JSON on the hot path, dependency hotspots, excessive GC, event-loop stalls, deopt loops, module loading on the hot path, sustained memory growth, large allocators, off-heap buffer pressure, and cross-kind alloc-in-hot-path.
 - **Actionable evidence** - each finding ships with file/line, severity, rationale, and remediation hints.
 - **Agent-ready** - stable JSON schema, `skills/lanterna-profiler/` workflow for Claude Code.
 
@@ -70,10 +72,16 @@ npm install @lanterna-profiler/detectors
 ## Quick Start
 
 ```bash
-# Profile for 30s and write the JSON report to disk
+# Profile CPU for 30s and write the JSON report to disk
 lanterna run --duration 30s --output report.json -- node app.js
 # or, without installing:
 npx -y @lanterna-profiler/cli run --duration 30s --output report.json -- node app.js
+
+# Profile memory only (heap allocations + RSS series)
+lanterna run --kind memory --duration 30s --output report.json -- node app.js
+
+# Profile CPU and memory together
+lanterna run --kind cpu --kind memory --duration 30s --output report.json -- node app.js
 
 # Attach to a running Node process
 lanterna attach --pid 4242 --duration 15s --output report.json
@@ -133,7 +141,10 @@ lanterna attach --inspect-url ws://127.0.0.1:9229/<uuid>
 | `--output <path>` | Write JSON to a file instead of stdout. |
 | `--pretty` | Pretty-print JSON with 2-space indentation. |
 | `--deep` | Enable `--trace-deopt` (spawn mode only). |
-| `--sample-interval <us>` | V8 sampling interval in µs (default `1000`, min `50`). |
+| `--sample-interval <us>` | V8 CPU sampling interval in µs (default `1000`, min `50`). |
+| `--kind <id>` | Profile kind to capture (default `cpu`). Repeatable or comma-separated. Built-in: `cpu`, `memory`. |
+| `--heap-sample-interval <size>` | V8 heap sampling interval (memory kind). Accepts raw bytes or a KiB/MiB suffix: `524288`, `512KiB`, `1MiB`. Default `512KiB`, min `1KiB`. |
+| `--memory-usage-interval <ms>` | `process.memoryUsage()` cadence in ms (memory kind, default `250`, min `10`). |
 | `--pid [pid]` | Attach by PID, or open the interactive picker if no value. |
 | `--inspect-url <url>` | Attach to an existing inspector WebSocket URL. |
 | `--detectors <spec>` | Load an additional detector plugin (package name or path). Repeatable. |
@@ -154,10 +165,13 @@ Lanterna emits a `LanternaReport` (schema v2) with per-kind sections nested unde
 | `profiles.cpu.gc` | Pause totals, counts, longest pause, correlated hotspots. |
 | `profiles.cpu.eventLoop` | Lag stats, stalls, correlation candidates, signal quality. |
 | `profiles.cpu.deopts` | V8 deoptimisation events (only with `--deep`). |
+| `profiles.memory.summary` | Total sampled bytes, top allocator, and RSS / heapUsed / external / arrayBuffers series stats (start/end/min/max/mean/p95 + linear slope). |
+| `profiles.memory.hotAllocators` | Frames ranked by `selfBytes` / `totalBytes`, with file/line and frame category. |
+| `profiles.memory.memoryUsage` | Raw `process.memoryUsage()` time series (RSS, heapTotal, heapUsed, external, arrayBuffers). |
 | `findings` | Actionable detector output (cross-kind, each tagged `profileKind`), sorted by severity. |
 
 > [!NOTE]
-> Schema **v2** (current) nests CPU data under `profiles.cpu.*`. Future profile kinds (memory, async) will land under `profiles.memory.*`, `profiles.async.*`. Select kinds via `--kind <id>` (repeatable, default `cpu`).
+> Schema **v2** (current) nests per-kind data under `profiles.<id>.*`. Built-in kinds are `cpu` (default) and `memory` (opt-in via `--kind memory`). Future kinds (async, ...) will land under their own keys. Select kinds via `--kind <id>` (repeatable).
 
 **Read it in this order:** `profiles.cpu.summary.topCategory` → `findings[]` → top `profiles.cpu.hotspots` → `eventLoop` & `gc`. Full schema in [docs/reading-a-report.md](docs/reading-a-report.md).
 
@@ -227,6 +241,10 @@ Lanterna emits a `LanternaReport` (schema v2) with per-kind sections nested unde
 | `event-loop-stall` | `event-loop-stall` | `p99LagMs >= 100` or `maxLagMs >= 200`. |
 | `deopt-loop:<function>` | `deopt-loop` | Same deoptimised function seen ≥ 5 times (`--deep`) and hot in the CPU profile. |
 | `require-in-hot-path` | `require-in-hot-path` | Module loading functions sampled on the hot path. |
+| `memory-growth:rss` / `memory-growth:heapUsed` | `memory-growth` | Sustained linear growth ≥ 1 MB/s (warning) or ≥ 5 MB/s (critical) over the capture window. |
+| `large-allocator:<frame>` | `large-allocator` | A single frame accounts for ≥ 15 % of sampled allocations. |
+| `external-buffer-pressure` | `external-buffer-pressure` | Mean `external + arrayBuffers` exceeds 0.5× `heapUsed` (and ≥ 32 MB absolute). |
+| `alloc-in-hot-path:<frame>` | `alloc-in-hot-path` | Same frame is hot on CPU **and** in top allocators (requires `--kind cpu memory`). |
 
 Builtin-backed findings include a `proofLevel` so consumers can distinguish direct callee evidence from caller attribution.
 
@@ -241,8 +259,17 @@ jq '.findings[] | select(.severity != "info") | {id, severity, file: .evidence.f
 # Top 5 hotspots
 jq '.profiles.cpu.hotspots[:5] | .[] | {fn: .function, selfPct, totalPct, file}' report.json
 
+# Top 5 hot allocators
+jq '.profiles.memory.hotAllocators[:5] | .[] | {fn: .function, file, line, selfBytes, selfPct, totalPct}' report.json
+
+# RSS growth slope (bytes per second)
+jq '.profiles.memory.summary | {startMB: (.rss.startBytes/1048576), endMB: (.rss.endBytes/1048576), slopeBytesPerSec: .rss.slopeBytesPerSec}' report.json
+
 # Event-loop summary
 jq '{basis: .profiles.cpu.eventLoop.measurementBasis, confidence: .profiles.cpu.eventLoop.confidence, maxLagMs: .profiles.cpu.eventLoop.maxLagMs, p99LagMs: .profiles.cpu.eventLoop.p99LagMs}' report.json
+
+# Memory findings only
+jq '.findings[] | select(.profileKind == "memory") | {id, severity, file: .evidence.file}' report.json
 
 # Capture integrity
 jq '.meta.captureIntegrity' report.json
