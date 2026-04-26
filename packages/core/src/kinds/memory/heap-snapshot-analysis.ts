@@ -1,4 +1,4 @@
-import { createWriteStream, mkdirSync, readFileSync } from 'node:fs';
+import { createWriteStream, mkdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import type { CdpClient } from '../../inspector/client.js';
 
@@ -15,6 +15,7 @@ export interface HeapSnapshotAnalysisOptions {
   maxRetainerDepth?: number;
   maxGroups?: number;
   maxPathsPerGroup?: number;
+  maxSnapshotBytes?: number;
 }
 
 export interface NormalizedHeapSnapshotAnalysisOptions {
@@ -23,6 +24,7 @@ export interface NormalizedHeapSnapshotAnalysisOptions {
   maxRetainerDepth: number;
   maxGroups: number;
   maxPathsPerGroup: number;
+  maxSnapshotBytes: number;
 }
 
 export interface HeapSnapshotGrowthEntry {
@@ -103,6 +105,7 @@ interface RawHeapSnapshot {
 const DEFAULT_MAX_RETAINER_DEPTH = 8;
 const DEFAULT_MAX_GROUPS = 20;
 const DEFAULT_MAX_PATHS_PER_GROUP = 3;
+const DEFAULT_MAX_SNAPSHOT_BYTES = 512 * 1024 * 1024;
 const WEAK_EDGE_TYPE = 'weak';
 
 export function normalizeHeapSnapshotAnalysisOptions(
@@ -112,6 +115,7 @@ export function normalizeHeapSnapshotAnalysisOptions(
   const maxRetainerDepth = options?.maxRetainerDepth ?? DEFAULT_MAX_RETAINER_DEPTH;
   const maxGroups = options?.maxGroups ?? DEFAULT_MAX_GROUPS;
   const maxPathsPerGroup = options?.maxPathsPerGroup ?? DEFAULT_MAX_PATHS_PER_GROUP;
+  const maxSnapshotBytes = options?.maxSnapshotBytes ?? DEFAULT_MAX_SNAPSHOT_BYTES;
   if (!Number.isInteger(maxRetainerDepth) || maxRetainerDepth < 1) {
     throw new Error(
       `invalid heap snapshot max retainer depth: ${maxRetainerDepth} (expected integer >= 1)`,
@@ -125,12 +129,16 @@ export function normalizeHeapSnapshotAnalysisOptions(
       `invalid heap snapshot max paths per group: ${maxPathsPerGroup} (expected integer >= 1)`,
     );
   }
+  if (!Number.isInteger(maxSnapshotBytes) || maxSnapshotBytes < 1) {
+    throw new Error(`invalid heap snapshot max bytes: ${maxSnapshotBytes} (expected integer >= 1)`);
+  }
   return {
     enabled,
     ...(options?.outputDir ? { outputDir: options.outputDir } : {}),
     maxRetainerDepth,
     maxGroups,
     maxPathsPerGroup,
+    maxSnapshotBytes,
   };
 }
 
@@ -296,6 +304,8 @@ export function buildHeapSnapshotAnalysisReport(
     );
   }
   try {
+    assertSnapshotWithinLimit(captured.start.path, options.maxSnapshotBytes);
+    assertSnapshotWithinLimit(captured.end.path, options.maxSnapshotBytes);
     const start = parseHeapSnapshot(JSON.parse(readFileSync(captured.start.path, 'utf8')));
     const end = parseHeapSnapshot(JSON.parse(readFileSync(captured.end.path, 'utf8')));
     const analysis = analyzeHeapSnapshotGrowth(start, end, options);
@@ -314,6 +324,15 @@ export function buildHeapSnapshotAnalysisReport(
       ...captured.warnings,
       `heap snapshot analysis failed: ${error instanceof Error ? error.message : String(error)}`,
     ]);
+  }
+}
+
+function assertSnapshotWithinLimit(path: string, maxSnapshotBytes: number): void {
+  const size = statSync(path).size;
+  if (size > maxSnapshotBytes) {
+    throw new Error(
+      `heap snapshot ${path} is ${size} bytes, above the ${maxSnapshotBytes} byte analysis limit`,
+    );
   }
 }
 
@@ -436,11 +455,12 @@ function groupByConstructor(nodes: HeapSnapshotNode[]): Map<string, ConstructorG
   const groups = new Map<string, ConstructorGroup>();
   for (const node of nodes) {
     if (node.type === 'synthetic' || node.name === '') continue;
+    if (node.retainedSize <= 0) continue;
     const name = constructorName(node);
     const group = groups.get(name) ?? emptyGroup(name);
     group.count++;
     group.selfSize += node.selfSize;
-    group.retainedSize += node.retainedSize || node.selfSize;
+    group.retainedSize += node.retainedSize;
     groups.set(name, group);
   }
   return groups;
