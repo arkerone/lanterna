@@ -73,10 +73,7 @@ export function createMemoryAnalysisContributor(): KindAnalysisContributor<Memor
           : {}),
         ...(series.heapUsed && series.external && series.arrayBuffers
           ? {
-              externalRatio: safeRatio(
-                series.external.meanBytes + series.arrayBuffers.meanBytes,
-                series.heapUsed.meanBytes,
-              ),
+              externalRatio: safeRatio(series.external.meanBytes, series.heapUsed.meanBytes),
             }
           : {}),
       };
@@ -190,8 +187,14 @@ function buildHotAllocators(
       totalPct: (agg.totalBytes * 100) / denom,
     });
   }
-  // Sort by selfBytes desc, tiebreak by totalBytes.
-  allocators.sort((a, b) => b.selfBytes - a.selfBytes || b.totalBytes - a.totalBytes);
+  // Match detector relevance: inclusive-heavy allocator parents should stay
+  // visible even when their exclusive allocation is small.
+  allocators.sort(
+    (a, b) =>
+      Math.max(b.selfBytes, b.totalBytes) - Math.max(a.selfBytes, a.totalBytes) ||
+      b.selfBytes - a.selfBytes ||
+      b.totalBytes - a.totalBytes,
+  );
   return allocators;
 }
 

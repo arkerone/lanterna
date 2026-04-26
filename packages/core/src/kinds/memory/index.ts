@@ -31,16 +31,20 @@ export interface MemoryKindOptions {
 export function createMemoryProfileKind(
   options: MemoryKindOptions = {},
 ): ProfileKind<MemoryKindData> {
-  const samplingIntervalBytes =
-    options.samplingIntervalBytes ?? DEFAULT_MEMORY_SAMPLING_INTERVAL_BYTES;
-  const memoryUsageIntervalMs = options.memoryUsageIntervalMs ?? DEFAULT_MEMORY_USAGE_INTERVAL_MS;
+  const samplingIntervalBytes = validateSamplingIntervalBytes(
+    options.samplingIntervalBytes ?? DEFAULT_MEMORY_SAMPLING_INTERVAL_BYTES,
+  );
+  const memoryUsageIntervalMs = validateMemoryUsageIntervalMs(
+    options.memoryUsageIntervalMs ?? DEFAULT_MEMORY_USAGE_INTERVAL_MS,
+  );
   return defineProfileKind<MemoryKindData>({
     id: 'memory',
     label: 'Memory',
     reportSectionKey: 'memory',
     reportSchema: memoryProfileReportSchema,
     hookInstaller: createMemoryUsageInstaller({ sampleIntervalMs: memoryUsageIntervalMs }),
-    createProbe: (): CaptureProbe<MemoryKindData> => createMemoryProbe({ samplingIntervalBytes }),
+    createProbe: (): CaptureProbe<MemoryKindData> =>
+      createMemoryProbe({ samplingIntervalBytes, memoryUsageIntervalMs }),
     createAnalysisContributor: () => createMemoryAnalysisContributor(),
     contributeMeta: (data) => ({
       samplingIntervalBytes: data.samplingIntervalBytes,
@@ -52,6 +56,22 @@ export function createMemoryProfileKind(
       memoryUsageSampleCount: data.memoryUsage.samples.length,
     }),
   });
+}
+
+function validateSamplingIntervalBytes(value: number): number {
+  if (!Number.isFinite(value) || !Number.isInteger(value) || value < 1024) {
+    throw new Error(
+      `invalid memory sampling interval: ${value} (expected an integer >= 1024 bytes)`,
+    );
+  }
+  return value;
+}
+
+function validateMemoryUsageIntervalMs(value: number): number {
+  if (!Number.isFinite(value) || value < 10) {
+    throw new Error(`invalid memory usage interval: ${value} (expected >= 10ms)`);
+  }
+  return value;
 }
 
 export type { MemoryAnalysisView } from './analysis.js';

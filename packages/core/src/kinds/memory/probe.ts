@@ -21,6 +21,8 @@ export interface MemoryKindData {
 export interface MemoryProbeOptions {
   /** V8 heap sampling interval in bytes. Defaults to 512 KiB. */
   samplingIntervalBytes: number;
+  /** `process.memoryUsage()` cadence in ms. */
+  memoryUsageIntervalMs: number;
 }
 
 /**
@@ -35,12 +37,15 @@ export function createMemoryProbe(options: MemoryProbeOptions): CaptureProbe<Mem
     async stop(cdp: CdpClient): Promise<MemoryKindData> {
       const samplingProfile = await stopHeapSampling(cdp);
       const memoryUsage = cdp.closed
-        ? { samples: [], available: false, sampleIntervalMs: 0 }
+        ? { samples: [], available: false, sampleIntervalMs: options.memoryUsageIntervalMs }
         : await readMemoryUsageSeries(cdp);
       return {
         samplingProfile,
         samplingIntervalBytes: options.samplingIntervalBytes,
-        memoryUsage,
+        memoryUsage: {
+          ...memoryUsage,
+          sampleIntervalMs: memoryUsage.sampleIntervalMs || options.memoryUsageIntervalMs,
+        },
       };
     },
   };
