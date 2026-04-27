@@ -1,5 +1,6 @@
 import type { RawCpuProfile } from '../../capture/core/types.js';
 import type { FrameCategory, Hotspot, HotspotRef, OptimizationState } from '../../report/types.js';
+import { isNoiseCategory, shouldKeepNoiseFrames } from '../noise-filters.js';
 import { classifyFrame } from './classify.js';
 
 export interface NodeEnriched {
@@ -230,9 +231,11 @@ export function buildHotspotAnalysis(
   const fullHotspots: Hotspot[] = [];
   const hotspotById = new Map<string, Hotspot>();
   const userAttributionById = new Map<string, HotspotAttribution>();
+  const keepNoise = shouldKeepNoiseFrames();
   for (const aggregate of hotspotAggregatesByKey.values()) {
     if (aggregate.selfSamples === 0 && aggregate.totalSamples === 0) continue;
     if (isPseudoFrame(aggregate.function)) continue;
+    if (isNoiseCategory(aggregate.category) && !keepNoise) continue;
     const hotspot: Hotspot = {
       id: aggregate.id,
       function: aggregate.function,
@@ -275,8 +278,11 @@ export function buildHotspotAnalysis(
   }
 
   fullHotspots.sort((left, right) => right.selfPct - left.selfPct);
+  const publicHotspots = fullHotspots
+    .filter((hotspot) => !isNoiseCategory(hotspot.category))
+    .slice(0, topN);
   return {
-    publicHotspots: fullHotspots.slice(0, topN),
+    publicHotspots,
     fullHotspots,
     hotspotById,
     userAttributionById,

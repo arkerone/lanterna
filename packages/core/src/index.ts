@@ -23,6 +23,16 @@ export {
   type KindScopedDetectorShared,
 } from './analysis/kind-scoped-detector.js';
 export type { HotspotAttribution } from './analysis/model/hotspots.js';
+export type { NoiseFilter, NoiseUrlMatch } from './analysis/noise-filters.js';
+export {
+  classifyNoisePackage,
+  classifyNoiseUrl,
+  getRegisteredNoiseFilters,
+  isNoiseCategory,
+  isNoiseRetainerPath,
+  registerNoiseFilter,
+  shouldKeepNoiseFrames,
+} from './analysis/noise-filters.js';
 export { AttachSource, createAttachSource } from './capture/attach.js';
 export type { RunCaptureOptions } from './capture/coordinator.js';
 // Capture

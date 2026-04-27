@@ -1,6 +1,7 @@
 import { isAbsolute, posix, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { FrameCategory } from '../../report/types.js';
+import { classifyNoisePackage, classifyNoiseUrl } from '../noise-filters.js';
 
 export interface ClassifiedFrame {
   category: FrameCategory;
@@ -39,8 +40,9 @@ export function classifyFrame(functionName: string, url: string, cwd: string): C
   }
 
   const fileSystemPath = url.startsWith('file://') ? fromFileUrl(url) : url;
-  if (isLanternaProfilerArtifact(fileSystemPath)) {
-    return { category: 'native', file: 'lanterna:event-loop-hook' };
+  const noiseUrl = classifyNoiseUrl(toPosix(fileSystemPath));
+  if (noiseUrl) {
+    return { category: noiseUrl.category, file: noiseUrl.label };
   }
 
   if (!isAbsolute(fileSystemPath)) {
@@ -51,6 +53,10 @@ export function classifyFrame(functionName: string, url: string, cwd: string): C
   const relativePath = toPosix(relative(cwd, fileSystemPath));
   const nodeModulesPackage = extractNodeModulesPackage(relativePath);
   if (nodeModulesPackage) {
+    const noisePackage = classifyNoisePackage(nodeModulesPackage);
+    if (noisePackage) {
+      return { category: noisePackage.category, file: noisePackage.label };
+    }
     return { category: 'node_modules', file: relativePath, package: nodeModulesPackage };
   }
   if (relativePath.startsWith('..')) {
@@ -70,13 +76,6 @@ function fromFileUrl(fileUrl: string): string {
 
 function toPosix(pathValue: string): string {
   return sep === posix.sep ? pathValue : pathValue.split(sep).join(posix.sep);
-}
-
-function isLanternaProfilerArtifact(pathOrUrl: string): boolean {
-  const normalized = toPosix(pathOrUrl);
-  return /(^|\/)(src|dist|dist-test)\/runtime-signals\/(?:hooks\/)?event-loop-hook\.(cjs|js)$/.test(
-    normalized,
-  );
 }
 
 function extractNodeModulesPackage(relativePath: string): string | undefined {

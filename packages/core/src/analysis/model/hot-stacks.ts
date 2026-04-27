@@ -1,5 +1,6 @@
 import type { RawCpuProfile } from '../../capture/core/types.js';
 import type { HotStack, HotStackCluster } from '../../report/types.js';
+import { isNoiseCategory, shouldKeepNoiseFrames } from '../noise-filters.js';
 import type { EnrichedTree } from './hotspots.js';
 
 export function computeHotStacks(
@@ -22,6 +23,7 @@ export function computeHotStacks(
   const total = samples.length;
   const entries = Array.from(sampleCountByLeafId.entries()).sort((a, b) => b[1] - a[1]);
 
+  const keepNoise = shouldKeepNoiseFrames();
   const stacks: HotStack[] = [];
   for (const [leafId, count] of entries) {
     if (stacks.length >= topN) break;
@@ -33,12 +35,14 @@ export function computeHotStacks(
       const node = tree.nodes.get(currentNodeId);
       if (!node) break;
       if (node.function !== '(root)') {
-        frames.push({
-          function: node.function,
-          file: node.file,
-          line: node.line,
-          category: node.category,
-        });
+        if (!isNoiseCategory(node.category) || keepNoise) {
+          frames.push({
+            function: node.function,
+            file: node.file,
+            line: node.line,
+            category: node.category,
+          });
+        }
       }
       currentNodeId = tree.parentOf.get(currentNodeId);
     }

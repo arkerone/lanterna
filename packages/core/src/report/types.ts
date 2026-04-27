@@ -9,6 +9,7 @@ export type FrameCategory =
   | 'gc'
   | 'program'
   | 'idle'
+  | 'lanterna'
   | 'unknown';
 
 export type OptimizationState = 'optimized' | 'interpreted' | 'unknown';

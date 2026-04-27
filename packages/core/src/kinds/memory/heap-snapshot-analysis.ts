@@ -1,5 +1,6 @@
 import { createWriteStream, mkdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join } from 'node:path';
+import { isNoiseRetainerPath, shouldKeepNoiseFrames } from '../../analysis/noise-filters.js';
 import type { CdpClient } from '../../inspector/client.js';
 
 export type HeapSnapshotSuspectedPattern =
@@ -271,23 +272,47 @@ export function analyzeHeapSnapshotGrowth(
     }
   }
 
+  const keepNoise = shouldKeepNoiseFrames();
+  const filteredRetainerPaths = keepNoise
+    ? retainerPaths
+    : retainerPaths.filter((retainerPath) => !isNoiseRetainerPath(retainerPath.path));
+
+  // Cascade-prune top growth entries whose retainerPaths were all attributed
+  // to a noise source: with no surviving evidence, the constructor row would
+  // be unactionable noise. Groups that had no retainerPaths at all (e.g.
+  // when candidates were exhausted) survive to keep growth signal visible.
+  const survivingPathConstructorNames = new Set(
+    filteredRetainerPaths.map((path) => path.constructorName),
+  );
+  const constructorsWithAnyOriginalPath = new Set(
+    retainerPaths.map((path) => path.constructorName),
+  );
+  const filteredGrowthByConstructor = keepNoise
+    ? topGroups
+    : topGroups.filter((group) => {
+        if (!constructorsWithAnyOriginalPath.has(group.name)) return true;
+        return survivingPathConstructorNames.has(group.name);
+      });
+
   const warnings = [...start.warnings, ...end.warnings];
   if (growthByConstructor.length > options.maxGroups) {
     warnings.push(
       `heap snapshot analysis truncated to top ${options.maxGroups} constructor groups`,
     );
   }
-  const totalRetainedGrowthBytes = growthByConstructor.reduce(
+  const totalRetainedGrowthBytes = filteredGrowthByConstructor.reduce(
     (sum, entry) => sum + Math.max(0, entry.retainedSizeDeltaBytes),
     0,
   );
   return {
     summary: {
       totalRetainedGrowthBytes,
-      ...(topGroups[0] ? { topGrowingConstructor: topGroups[0].name } : {}),
+      ...(filteredGrowthByConstructor[0]
+        ? { topGrowingConstructor: filteredGrowthByConstructor[0].name }
+        : {}),
     },
-    growthByConstructor: topGroups,
-    retainerPaths,
+    growthByConstructor: filteredGrowthByConstructor,
+    retainerPaths: filteredRetainerPaths,
     warnings,
   };
 }

@@ -64,7 +64,35 @@ describe('classifyFrame', () => {
     {
       label: 'Lanterna preload hook artifacts',
       input: ['hook', `file://${CWD}/dist/runtime-signals/hooks/event-loop-hook.cjs`, CWD] as const,
-      expected: { category: 'native', file: 'lanterna:event-loop-hook' },
+      expected: { category: 'lanterna', file: 'lanterna:event-loop-hook' },
+    },
+    {
+      label: 'Lanterna spawn-injected preload tmpfile',
+      input: ['preload', 'file:///tmp/lanterna-preload-12345-1700000000000-abc.cjs', CWD] as const,
+      expected: { category: 'lanterna', file: 'lanterna:preload' },
+    },
+    {
+      label: 'Lanterna runtime-signals installer sources',
+      input: [
+        'installMemoryUsage',
+        `file://${CWD}/src/runtime-signals/hooks/installers/memory-usage.ts`,
+        CWD,
+      ] as const,
+      expected: { category: 'lanterna', file: 'lanterna:memory-usage' },
+    },
+    {
+      label: 'Lanterna runtime-signals framework source',
+      input: [
+        'composePreloadScript',
+        `file://${CWD}/src/runtime-signals/hooks/framework.ts`,
+        CWD,
+      ] as const,
+      expected: { category: 'lanterna', file: 'lanterna:framework' },
+    },
+    {
+      label: 'Lanterna installed as a node_modules dep in user project',
+      input: ['capture', `file://${CWD}/node_modules/@lanterna/core/dist/index.js`, CWD] as const,
+      expected: { category: 'lanterna', file: 'lanterna:@lanterna/core' },
     },
     {
       label: 'absolute paths outside cwd',
