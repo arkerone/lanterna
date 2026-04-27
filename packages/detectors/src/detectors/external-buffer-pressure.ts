@@ -37,6 +37,8 @@ export const externalBufferPressureDetector: KindScopedDetector<'memory'> = {
       severity,
       category: 'external-buffer-pressure',
       title: `Off-heap memory is ${ratio.toFixed(1)}× the V8 heap`,
+      confidence: 'medium',
+      proofLevel: 'heuristic',
       evidence: {
         file: 'process.memoryUsage',
         line: 0,

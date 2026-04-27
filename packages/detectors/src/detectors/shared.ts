@@ -219,6 +219,8 @@ export function buildAttributedFinding<
     severity,
     category,
     title,
+    confidence: extra.attributionConfidence === 'high' ? 'high' : 'medium',
+    proofLevel: 'direct-sample',
     evidence: {
       file: resolveEvidenceField(caller, hotspot, 'file'),
       line: resolveEvidenceField(caller, hotspot, 'line'),

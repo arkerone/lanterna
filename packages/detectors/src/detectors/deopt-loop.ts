@@ -35,6 +35,8 @@ export const deoptLoopDetector: KindScopedDetector<'cpu'> = {
         severity: deopt.count > thresholds.criticalCount ? 'critical' : 'warning',
         category: 'deopt-loop',
         title: `Repeated deoptimisation of ${deopt.function} (${deopt.count}×)`,
+        confidence: 'medium',
+        proofLevel: 'trace-only',
         evidence: {
           file: deopt.file,
           line: deopt.line,
