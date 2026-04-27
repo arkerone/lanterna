@@ -1,5 +1,11 @@
 # @lanterna-profiler/core
 
+## 1.5.0
+
+### Minor Changes
+
+- c3e6c51: Add `ProfileQuality` to CPU reports (confidence, sample count, duration basis, idle ratio, reasons, recommendations) and `confidence` + `proofLevel` fields on findings. Built-in detectors populate the new signals and the CLI surfaces them in the `profile` command output.
+
 ## 1.4.1
 
 ### Patch Changes
