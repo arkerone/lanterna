@@ -115,6 +115,9 @@ export function aggregateByPatterns<TPattern extends { re: RegExp; api: string }
   let categoryTotalPct = 0;
   let categorySelfPct = 0;
   for (const hotspot of hotspots) {
+    // Defense in depth: lanterna's own instrumentation must never produce a
+    // detector finding, even if a caller passes a permissive `categories` list.
+    if (hotspot.category === 'lanterna') continue;
     if (!categories.includes(hotspot.category)) continue;
     const normalized = normalize(hotspot.function);
     const match = patterns.find((p) => p.re.test(normalized));
