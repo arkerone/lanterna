@@ -137,6 +137,7 @@ function createFrameCategoryTotals(): Record<FrameCategory, number> {
     gc: 0,
     program: 0,
     idle: 0,
+    lanterna: 0,
     unknown: 0,
   };
 }

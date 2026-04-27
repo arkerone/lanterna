@@ -39,8 +39,9 @@ export function classifyFrame(functionName: string, url: string, cwd: string): C
   }
 
   const fileSystemPath = url.startsWith('file://') ? fromFileUrl(url) : url;
-  if (isLanternaProfilerArtifact(fileSystemPath)) {
-    return { category: 'native', file: 'lanterna:event-loop-hook' };
+  const lanternaArtifact = lanternaArtifactLabel(fileSystemPath);
+  if (lanternaArtifact) {
+    return { category: 'lanterna', file: lanternaArtifact };
   }
 
   if (!isAbsolute(fileSystemPath)) {
@@ -51,6 +52,9 @@ export function classifyFrame(functionName: string, url: string, cwd: string): C
   const relativePath = toPosix(relative(cwd, fileSystemPath));
   const nodeModulesPackage = extractNodeModulesPackage(relativePath);
   if (nodeModulesPackage) {
+    if (isLanternaPackage(nodeModulesPackage)) {
+      return { category: 'lanterna', file: `lanterna:${nodeModulesPackage}` };
+    }
     return { category: 'node_modules', file: relativePath, package: nodeModulesPackage };
   }
   if (relativePath.startsWith('..')) {
@@ -72,10 +76,38 @@ function toPosix(pathValue: string): string {
   return sep === posix.sep ? pathValue : pathValue.split(sep).join(posix.sep);
 }
 
-function isLanternaProfilerArtifact(pathOrUrl: string): boolean {
+/**
+ * Returns a stable short label when the path belongs to Lanterna's own
+ * profiler instrumentation (preload script, runtime-signals hooks, etc.),
+ * or `undefined` otherwise. Used by `classifyFrame` to assign a `'lanterna'`
+ * category so these frames can be excluded from public reports.
+ */
+export function lanternaArtifactLabel(pathOrUrl: string): string | undefined {
   const normalized = toPosix(pathOrUrl);
-  return /(^|\/)(src|dist|dist-test)\/runtime-signals\/(?:hooks\/)?event-loop-hook\.(cjs|js)$/.test(
-    normalized,
+
+  // Spawn-injected preload tmpfile (see capture/spawn/index.ts).
+  if (/(^|\/)lanterna-preload-[^/]+\.cjs$/.test(normalized)) {
+    return 'lanterna:preload';
+  }
+
+  // Any runtime-signals hook source (event-loop-hook, framework, installers/*).
+  const hookMatch = normalized.match(
+    /(^|\/)(?:src|dist|dist-test)\/runtime-signals\/(?:hooks\/)?(?:installers\/)?([^/]+?)\.(?:cjs|js|mjs|ts|cts|mts)$/,
+  );
+  if (hookMatch) {
+    return `lanterna:${hookMatch[2]}`;
+  }
+
+  return undefined;
+}
+
+export function isLanternaPackage(packageName: string): boolean {
+  return (
+    packageName === 'lanterna' ||
+    packageName.startsWith('@lanterna/') ||
+    packageName === '@lanterna/core' ||
+    packageName === '@lanterna/cli' ||
+    packageName === '@lanterna/detectors'
   );
 }
 
