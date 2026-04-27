@@ -11,6 +11,7 @@ export const frameCategorySchema = z.enum([
   'gc',
   'program',
   'idle',
+  'lanterna',
   'unknown',
 ]);
 export const optimizationStateSchema = z.enum(['optimized', 'interpreted', 'unknown']);

@@ -22,6 +22,7 @@ export function computeHotStacks(
   const total = samples.length;
   const entries = Array.from(sampleCountByLeafId.entries()).sort((a, b) => b[1] - a[1]);
 
+  const includeLanternaSelfFrames = process.env.LANTERNA_DEBUG_SELF === '1';
   const stacks: HotStack[] = [];
   for (const [leafId, count] of entries) {
     if (stacks.length >= topN) break;
@@ -33,12 +34,14 @@ export function computeHotStacks(
       const node = tree.nodes.get(currentNodeId);
       if (!node) break;
       if (node.function !== '(root)') {
-        frames.push({
-          function: node.function,
-          file: node.file,
-          line: node.line,
-          category: node.category,
-        });
+        if (node.category !== 'lanterna' || includeLanternaSelfFrames) {
+          frames.push({
+            function: node.function,
+            file: node.file,
+            line: node.line,
+            category: node.category,
+          });
+        }
       }
       currentNodeId = tree.parentOf.get(currentNodeId);
     }
