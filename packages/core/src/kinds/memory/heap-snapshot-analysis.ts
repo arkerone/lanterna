@@ -271,25 +271,73 @@ export function analyzeHeapSnapshotGrowth(
     }
   }
 
+  const debugLanternaSelf = process.env.LANTERNA_DEBUG_SELF === '1';
+  const filteredRetainerPaths = debugLanternaSelf
+    ? retainerPaths
+    : retainerPaths.filter((retainerPath) => !isLanternaRetainerPath(retainerPath.path));
+
+  // Cascade-prune top growth entries whose retainerPaths were all attributed
+  // to Lanterna: with no surviving evidence, the constructor row would be
+  // unactionable noise. Groups that had no retainerPaths at all (e.g. when
+  // candidates were exhausted) survive to keep growth signal visible.
+  const survivingPathConstructorNames = new Set(
+    filteredRetainerPaths.map((path) => path.constructorName),
+  );
+  const constructorsWithAnyOriginalPath = new Set(
+    retainerPaths.map((path) => path.constructorName),
+  );
+  const filteredGrowthByConstructor = debugLanternaSelf
+    ? topGroups
+    : topGroups.filter((group) => {
+        if (!constructorsWithAnyOriginalPath.has(group.name)) return true;
+        return survivingPathConstructorNames.has(group.name);
+      });
+
   const warnings = [...start.warnings, ...end.warnings];
   if (growthByConstructor.length > options.maxGroups) {
     warnings.push(
       `heap snapshot analysis truncated to top ${options.maxGroups} constructor groups`,
     );
   }
-  const totalRetainedGrowthBytes = growthByConstructor.reduce(
+  const totalRetainedGrowthBytes = filteredGrowthByConstructor.reduce(
     (sum, entry) => sum + Math.max(0, entry.retainedSizeDeltaBytes),
     0,
   );
   return {
     summary: {
       totalRetainedGrowthBytes,
-      ...(topGroups[0] ? { topGrowingConstructor: topGroups[0].name } : {}),
+      ...(filteredGrowthByConstructor[0]
+        ? { topGrowingConstructor: filteredGrowthByConstructor[0].name }
+        : {}),
     },
-    growthByConstructor: topGroups,
-    retainerPaths,
+    growthByConstructor: filteredGrowthByConstructor,
+    retainerPaths: filteredRetainerPaths,
     warnings,
   };
+}
+
+const LANTERNA_RETAINER_SIGNATURES = [
+  'lanterna-preload',
+  'event-loop-hook',
+  '__LANTERNA_',
+  'lanterna:preload',
+];
+
+function isLanternaRetainerPath(path: string[]): boolean {
+  const text = path.join(' ');
+  if (LANTERNA_RETAINER_SIGNATURES.some((signature) => text.includes(signature))) return true;
+  // The PerformanceObserver registered by event-loop-hook.cjs is retained by
+  // node:perf_hooks via its internal `kObservers` Set. Those retainer chains
+  // never mention Lanterna by name but represent our own instrumentation, not
+  // the user's application. The pattern is the chain that runs through
+  // `kObservers` → a PerformanceObserver / observerCallback / enqueue node.
+  // (User-created PerformanceObservers go through the same chain; the
+  // trade-off is documented but acceptable given how rare user observers are
+  // in profiled workloads. Set LANTERNA_DEBUG_SELF=1 to see them.)
+  if (text.includes('kObservers') && /PerformanceObserver|observerCallback|enqueue/.test(text)) {
+    return true;
+  }
+  return false;
 }
 
 export function buildHeapSnapshotAnalysisReport(
