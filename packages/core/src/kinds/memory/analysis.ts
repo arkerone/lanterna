@@ -1,4 +1,5 @@
 import { classifyFrame } from '../../analysis/model/classify.js';
+import { isNoiseCategory, shouldKeepNoiseFrames } from '../../analysis/noise-filters.js';
 import type {
   RawSamplingHeapProfile,
   RawSamplingHeapProfileNode,
@@ -200,16 +201,17 @@ function buildHotAllocators(
   totalSampledBytes: number,
 ): MemoryHotAllocator[] {
   const denom = totalSampledBytes > 0 ? totalSampledBytes : 1;
-  const includeLanternaSelfFrames = process.env.LANTERNA_DEBUG_SELF === '1';
+  const keepNoise = shouldKeepNoiseFrames();
   const allocators: MemoryHotAllocator[] = [];
   for (const agg of aggregates.byId.values()) {
     if (agg.selfBytes === 0 && agg.totalBytes === 0) continue;
     // Skip the synthetic V8 root frame — it carries no actionable signal,
     // only the rolled-up subtree total.
     if (agg.function === '(root)') continue;
-    // Lanterna's own preload + runtime-signals hooks allocate inside the
-    // target process; without this filter they pollute hot allocators.
-    if (agg.category === 'lanterna' && !includeLanternaSelfFrames) continue;
+    // Profiler instrumentation (preload, runtime-signals hooks) allocates
+    // inside the target process; the noise registry lets us drop those
+    // frames so hot allocators describe the user's app, not the profiler.
+    if (isNoiseCategory(agg.category) && !keepNoise) continue;
     allocators.push({
       id: agg.id,
       function: agg.function,

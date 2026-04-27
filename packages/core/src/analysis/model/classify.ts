@@ -1,6 +1,7 @@
 import { isAbsolute, posix, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { FrameCategory } from '../../report/types.js';
+import { classifyNoisePackage, classifyNoiseUrl } from '../noise-filters.js';
 
 export interface ClassifiedFrame {
   category: FrameCategory;
@@ -39,9 +40,9 @@ export function classifyFrame(functionName: string, url: string, cwd: string): C
   }
 
   const fileSystemPath = url.startsWith('file://') ? fromFileUrl(url) : url;
-  const lanternaArtifact = lanternaArtifactLabel(fileSystemPath);
-  if (lanternaArtifact) {
-    return { category: 'lanterna', file: lanternaArtifact };
+  const noiseUrl = classifyNoiseUrl(toPosix(fileSystemPath));
+  if (noiseUrl) {
+    return { category: noiseUrl.category, file: noiseUrl.label };
   }
 
   if (!isAbsolute(fileSystemPath)) {
@@ -52,8 +53,9 @@ export function classifyFrame(functionName: string, url: string, cwd: string): C
   const relativePath = toPosix(relative(cwd, fileSystemPath));
   const nodeModulesPackage = extractNodeModulesPackage(relativePath);
   if (nodeModulesPackage) {
-    if (isLanternaPackage(nodeModulesPackage)) {
-      return { category: 'lanterna', file: `lanterna:${nodeModulesPackage}` };
+    const noisePackage = classifyNoisePackage(nodeModulesPackage);
+    if (noisePackage) {
+      return { category: noisePackage.category, file: noisePackage.label };
     }
     return { category: 'node_modules', file: relativePath, package: nodeModulesPackage };
   }
@@ -74,41 +76,6 @@ function fromFileUrl(fileUrl: string): string {
 
 function toPosix(pathValue: string): string {
   return sep === posix.sep ? pathValue : pathValue.split(sep).join(posix.sep);
-}
-
-/**
- * Returns a stable short label when the path belongs to Lanterna's own
- * profiler instrumentation (preload script, runtime-signals hooks, etc.),
- * or `undefined` otherwise. Used by `classifyFrame` to assign a `'lanterna'`
- * category so these frames can be excluded from public reports.
- */
-export function lanternaArtifactLabel(pathOrUrl: string): string | undefined {
-  const normalized = toPosix(pathOrUrl);
-
-  // Spawn-injected preload tmpfile (see capture/spawn/index.ts).
-  if (/(^|\/)lanterna-preload-[^/]+\.cjs$/.test(normalized)) {
-    return 'lanterna:preload';
-  }
-
-  // Any runtime-signals hook source (event-loop-hook, framework, installers/*).
-  const hookMatch = normalized.match(
-    /(^|\/)(?:src|dist|dist-test)\/runtime-signals\/(?:hooks\/)?(?:installers\/)?([^/]+?)\.(?:cjs|js|mjs|ts|cts|mts)$/,
-  );
-  if (hookMatch) {
-    return `lanterna:${hookMatch[2]}`;
-  }
-
-  return undefined;
-}
-
-export function isLanternaPackage(packageName: string): boolean {
-  return (
-    packageName === 'lanterna' ||
-    packageName.startsWith('@lanterna/') ||
-    packageName === '@lanterna/core' ||
-    packageName === '@lanterna/cli' ||
-    packageName === '@lanterna/detectors'
-  );
 }
 
 function extractNodeModulesPackage(relativePath: string): string | undefined {

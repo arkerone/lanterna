@@ -6,6 +6,7 @@ import type {
   LanternaReport,
   SummaryUserHotspot,
 } from '../../report/types.js';
+import { isNoiseCategory, shouldKeepNoiseFrames } from '../noise-filters.js';
 import type { EnrichedTree } from './hotspots.js';
 
 const TOP_USER_HOTSPOT_MIN_SELF_PCT = 10;
@@ -17,11 +18,11 @@ export function buildCpuSummary(tree: EnrichedTree): CpuSummary {
     totals[node.category] += node.hitCount;
   }
 
-  // Lanterna's own instrumentation samples shouldn't count toward the
+  // Profiler instrumentation samples shouldn't count toward the
   // application's CPU budget — exclude them so ratios describe the profiled
   // app, not the profiler. LANTERNA_DEBUG_SELF=1 keeps the raw counts.
-  const lanternaSamples = process.env.LANTERNA_DEBUG_SELF === '1' ? 0 : totals.lanterna;
-  const totalSamples = Math.max(1, tree.totalSamples - lanternaSamples);
+  const noiseSamples = shouldKeepNoiseFrames() ? 0 : sumNoiseSamples(totals);
+  const totalSamples = Math.max(1, tree.totalSamples - noiseSamples);
   const idleSamples = totals.idle + totals.program;
   const onCpuSamples = totalSamples - idleSamples;
   const onCpuDenominator = Math.max(1, onCpuSamples);
@@ -130,6 +131,14 @@ function matchesHotspot(candidate: unknown, hotspot: Hotspot): boolean {
     value.line === hotspot.line &&
     value.function === hotspot.function
   );
+}
+
+function sumNoiseSamples(totals: Record<FrameCategory, number>): number {
+  let sum = 0;
+  for (const [category, count] of Object.entries(totals) as [FrameCategory, number][]) {
+    if (isNoiseCategory(category)) sum += count;
+  }
+  return sum;
 }
 
 function createFrameCategoryTotals(): Record<FrameCategory, number> {

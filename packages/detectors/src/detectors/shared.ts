@@ -16,6 +16,7 @@ import type {
   StallCorrelation,
   SyncCryptoEvidenceExtra,
 } from '@lanterna-profiler/core';
+import { isNoiseCategory } from '@lanterna-profiler/core';
 
 /**
  * Subset of {@link CpuAnalysisView}'s hotspot analysis used by detector helpers.
@@ -115,9 +116,10 @@ export function aggregateByPatterns<TPattern extends { re: RegExp; api: string }
   let categoryTotalPct = 0;
   let categorySelfPct = 0;
   for (const hotspot of hotspots) {
-    // Defense in depth: lanterna's own instrumentation must never produce a
-    // detector finding, even if a caller passes a permissive `categories` list.
-    if (hotspot.category === 'lanterna') continue;
+    // Defense in depth: noise categories (profiler instrumentation) must never
+    // produce a detector finding, even if a caller passes a permissive
+    // `categories` list.
+    if (isNoiseCategory(hotspot.category)) continue;
     if (!categories.includes(hotspot.category)) continue;
     const normalized = normalize(hotspot.function);
     const match = patterns.find((p) => p.re.test(normalized));
