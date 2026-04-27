@@ -17,6 +17,13 @@ export type OptimizationState = 'optimized' | 'interpreted' | 'unknown';
 export type FindingSeverity = 'info' | 'warning' | 'critical';
 export type MeasurementBasis = 'none' | 'heartbeats' | 'histogram' | 'both';
 export type MeasurementConfidence = 'none' | 'low' | 'high';
+export type ProfileConfidence = 'low' | 'medium' | 'high';
+export type FindingConfidence = 'low' | 'medium' | 'high';
+export type FindingReportProofLevel =
+  | 'direct-sample'
+  | 'correlated-window'
+  | 'trace-only'
+  | 'heuristic';
 export type FindingProofLevel =
   | 'direct-builtin'
   | 'attributed-caller'
@@ -179,6 +186,17 @@ export interface EventLoopReport {
   };
   correlatedHotspots?: CorrelatedHotspot[];
   correlationCoverage?: CorrelationCoverage;
+}
+
+export interface ProfileQuality {
+  confidence: ProfileConfidence;
+  sampleCount: number;
+  durationMs: number;
+  idleRatio: number;
+  samplesTimed: boolean;
+  durationBasis: 'timeDeltas' | 'sampleInterval';
+  reasons: string[];
+  recommendations: string[];
 }
 
 export interface CorrelatedHotspot {
@@ -362,6 +380,8 @@ export interface BaseFinding<
   evidence: FindingEvidence<TExtra>;
   measurements?: FindingMeasurements;
   priority?: FindingPriority;
+  confidence?: FindingConfidence;
+  proofLevel?: FindingReportProofLevel;
   remediation?: FindingRemediation;
   why: string;
   suggestion: string;
@@ -394,6 +414,7 @@ export interface CpuProfileReport {
   hotStackClusters?: HotStackCluster[];
   gc: GcReport;
   eventLoop: EventLoopReport;
+  quality: ProfileQuality;
   deopts: DeoptEntry[];
 }
 

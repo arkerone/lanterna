@@ -42,6 +42,16 @@ function makeCpuSection(overrides: Partial<CpuProfileReport> = {}): CpuProfileRe
       measurementBasis: 'none',
       confidence: 'none',
     },
+    quality: {
+      confidence: 'high',
+      sampleCount: 1200,
+      durationMs: 5000,
+      idleRatio: 0.4,
+      samplesTimed: true,
+      durationBasis: 'timeDeltas',
+      reasons: [],
+      recommendations: [],
+    },
     deopts: [],
     ...overrides,
   };
@@ -148,6 +158,8 @@ describe('lanternaReportSchema', () => {
             category: 'custom',
             title: 'Prioritized finding',
             evidence: { file: '/app/x.ts', line: 1, function: 'x', selfPct: 5 },
+            confidence: 'high',
+            proofLevel: 'direct-sample',
             priority: { score: 250, actionConfidence: 'high', impactEstimateMs: 125 },
             why: 'why',
             suggestion: 'fix',
@@ -204,6 +216,8 @@ describe('lanternaReportSchema', () => {
                 attributionConfidence: 'low',
               },
             },
+            confidence: 'high',
+            proofLevel: 'direct-sample',
             why: 'Blocks the event loop.',
             suggestion: 'Use fs/promises.',
             references: [],
@@ -212,6 +226,24 @@ describe('lanternaReportSchema', () => {
       });
       const result = lanternaReportSchema.safeParse(report);
       expect(result.success).toBe(true);
+      if (!result.success) return;
+      expect(result.data.findings[0]?.confidence).toBe('high');
+      expect(result.data.findings[0]?.proofLevel).toBe('direct-sample');
+    });
+
+    it('rejects a cpu profile without quality metadata', () => {
+      const { quality: _quality, ...withoutQuality } = makeCpuSection() as CpuProfileReport & {
+        quality: unknown;
+      };
+      const report = makeReport({
+        profiles: {
+          cpu: withoutQuality as CpuProfileReport,
+        },
+      });
+
+      const result = lanternaReportSchema.safeParse(report);
+
+      expect(result.success).toBe(false);
     });
   });
 

@@ -14,6 +14,7 @@ import {
   enrichCpuTree,
   type HotspotAnalysis,
 } from '../../analysis/model/hotspots.js';
+import { buildCpuProfileQuality } from '../../analysis/model/profile-quality.js';
 import {
   buildCpuSummary,
   deriveDominantBlockingKind,
@@ -90,6 +91,12 @@ export function createCpuAnalysisContributor(
       }
 
       const summary = buildCpuSummary(tree);
+      const quality = buildCpuProfileQuality({
+        sampleCount: tree.totalSamples,
+        durationMs: bundle.durationMs,
+        idleRatio: summary.idleRatio,
+        samplesTimed: data.samplesTimed,
+      });
 
       const section: CpuProfileReport = {
         summary,
@@ -98,6 +105,7 @@ export function createCpuAnalysisContributor(
         ...(hotStackClusters.length > 0 ? { hotStackClusters } : {}),
         gc,
         eventLoop,
+        quality,
         deopts: enrichDeopts(data.deopts),
       };
 
