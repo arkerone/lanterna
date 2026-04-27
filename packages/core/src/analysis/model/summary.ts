@@ -17,7 +17,11 @@ export function buildCpuSummary(tree: EnrichedTree): CpuSummary {
     totals[node.category] += node.hitCount;
   }
 
-  const totalSamples = Math.max(1, tree.totalSamples);
+  // Lanterna's own instrumentation samples shouldn't count toward the
+  // application's CPU budget — exclude them so ratios describe the profiled
+  // app, not the profiler. LANTERNA_DEBUG_SELF=1 keeps the raw counts.
+  const lanternaSamples = process.env.LANTERNA_DEBUG_SELF === '1' ? 0 : totals.lanterna;
+  const totalSamples = Math.max(1, tree.totalSamples - lanternaSamples);
   const idleSamples = totals.idle + totals.program;
   const onCpuSamples = totalSamples - idleSamples;
   const onCpuDenominator = Math.max(1, onCpuSamples);
