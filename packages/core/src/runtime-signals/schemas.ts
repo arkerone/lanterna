@@ -1,21 +1,21 @@
 import { z } from 'zod';
 
 export const rawGcEventSchema = z.object({
-  atMs: z.number().finite(),
+  atMs: z.number(),
   kind: z.string(),
-  durationMs: z.number().finite(),
+  durationMs: z.number(),
 });
 
 export const eventLoopSampleSchema = z.object({
-  atMs: z.number().finite(),
-  lagMs: z.number().finite(),
+  atMs: z.number(),
+  lagMs: z.number(),
 });
 
 const eventLoopSummarySchema = z.object({
-  max: z.number().finite(),
-  mean: z.number().finite(),
-  p50: z.number().finite(),
-  p99: z.number().finite(),
+  max: z.number(),
+  mean: z.number(),
+  p50: z.number(),
+  p99: z.number(),
   count: z.number().int().nonnegative(),
 });
 
@@ -28,7 +28,7 @@ export const runtimeIntegrityCountersSchema = z.object({
 export const eventLoopReadSchema = z.object({
   samples: z.array(eventLoopSampleSchema).optional(),
   summary: eventLoopSummarySchema.nullish(),
-  resolutionMs: z.number().finite().optional(),
+  resolutionMs: z.number().optional(),
 });
 
 export const targetInfoSchema = z.object({
@@ -42,7 +42,7 @@ export const targetInfoSchema = z.object({
 
 export const controlHookReadySchema = z.object({
   type: z.literal('hook-ready'),
-  eventLoopResolutionMs: z.number().finite().optional(),
+  eventLoopResolutionMs: z.number().optional(),
   capabilities: z
     .object({
       eventLoop: z.boolean().optional(),
@@ -55,26 +55,26 @@ export const controlHookReadySchema = z.object({
 
 export const controlCaptureStartSchema = z.object({
   type: z.literal('capture-start'),
-  atMs: z.number().finite().optional(),
-  resolutionMs: z.number().finite().optional(),
+  atMs: z.number().optional(),
+  resolutionMs: z.number().optional(),
 });
 
 export const controlHeartbeatSchema = z.object({
   type: z.literal('heartbeat'),
-  atMs: z.number().finite(),
-  lagMs: z.number().finite(),
+  atMs: z.number(),
+  lagMs: z.number(),
 });
 
 export const controlGcSchema = z.object({
   type: z.literal('gc'),
-  atMs: z.number().finite(),
+  atMs: z.number(),
   kind: z.string().optional(),
-  durationMs: z.number().finite(),
+  durationMs: z.number(),
 });
 
 export const controlAppCompleteSchema = z.object({
   type: z.literal('app-complete'),
-  atMs: z.number().finite().optional(),
+  atMs: z.number().optional(),
   integrity: runtimeIntegrityCountersSchema.optional(),
 });
 

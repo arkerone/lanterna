@@ -9,35 +9,35 @@ const memoryHotAllocatorSchema = z.object({
   column: z.number().int(),
   category: frameCategorySchema,
   package: z.string().optional(),
-  selfBytes: z.number().finite().nonnegative(),
-  selfPct: z.number().finite(),
-  totalBytes: z.number().finite().nonnegative(),
-  totalPct: z.number().finite(),
+  selfBytes: z.number().nonnegative(),
+  selfPct: z.number(),
+  totalBytes: z.number().nonnegative(),
+  totalPct: z.number(),
 });
 
 const memoryUsageSampleSchema = z.object({
-  atMs: z.number().finite(),
-  rss: z.number().finite().nonnegative(),
-  heapTotal: z.number().finite().nonnegative(),
-  heapUsed: z.number().finite().nonnegative(),
-  external: z.number().finite().nonnegative(),
-  arrayBuffers: z.number().finite().nonnegative(),
+  atMs: z.number(),
+  rss: z.number().nonnegative(),
+  heapTotal: z.number().nonnegative(),
+  heapUsed: z.number().nonnegative(),
+  external: z.number().nonnegative(),
+  arrayBuffers: z.number().nonnegative(),
 });
 
 const seriesStatsSchema = z.object({
-  startBytes: z.number().finite().nonnegative(),
-  endBytes: z.number().finite().nonnegative(),
-  minBytes: z.number().finite().nonnegative(),
-  maxBytes: z.number().finite().nonnegative(),
-  meanBytes: z.number().finite().nonnegative(),
-  p95Bytes: z.number().finite().nonnegative(),
+  startBytes: z.number().nonnegative(),
+  endBytes: z.number().nonnegative(),
+  minBytes: z.number().nonnegative(),
+  maxBytes: z.number().nonnegative(),
+  meanBytes: z.number().nonnegative(),
+  p95Bytes: z.number().nonnegative(),
   /** Linear regression slope, bytes per second. */
-  slopeBytesPerSec: z.number().finite(),
+  slopeBytesPerSec: z.number(),
 });
 
 const memorySummarySchema = z.object({
-  totalSampledBytes: z.number().finite().nonnegative(),
-  samplingIntervalBytes: z.number().finite().positive(),
+  totalSampledBytes: z.number().nonnegative(),
+  samplingIntervalBytes: z.number().positive(),
   rss: seriesStatsSchema.optional(),
   heapUsed: seriesStatsSchema.optional(),
   external: seriesStatsSchema.optional(),
@@ -47,11 +47,11 @@ const memorySummarySchema = z.object({
       function: z.string(),
       file: z.string(),
       line: z.number().int(),
-      selfPct: z.number().finite(),
-      totalPct: z.number().finite(),
+      selfPct: z.number(),
+      totalPct: z.number(),
     })
     .optional(),
-  externalRatio: z.number().finite().optional(),
+  externalRatio: z.number().optional(),
 });
 
 const heapSnapshotAnalysisSchema = z.object({
@@ -60,21 +60,21 @@ const heapSnapshotAnalysisSchema = z.object({
   start: z.object({ path: z.string() }),
   end: z.object({ path: z.string() }),
   summary: z.object({
-    totalRetainedGrowthBytes: z.number().finite().nonnegative(),
+    totalRetainedGrowthBytes: z.number().nonnegative(),
     topGrowingConstructor: z.string().optional(),
   }),
   growthByConstructor: z.array(
     z.object({
       name: z.string(),
       countDelta: z.number().int(),
-      selfSizeDeltaBytes: z.number().finite(),
-      retainedSizeDeltaBytes: z.number().finite(),
+      selfSizeDeltaBytes: z.number(),
+      retainedSizeDeltaBytes: z.number(),
     }),
   ),
   retainerPaths: z.array(
     z.object({
       constructorName: z.string(),
-      retainedBytes: z.number().finite().nonnegative(),
+      retainedBytes: z.number().nonnegative(),
       path: z.array(z.string()),
       suspectedPattern: z.enum(['closure', 'event-listener', 'timer', 'cache', 'unknown']),
       confidence: z.enum(['low', 'medium', 'high']),
@@ -88,7 +88,7 @@ export const memoryProfileReportSchema = z.object({
   hotAllocators: z.array(memoryHotAllocatorSchema),
   memoryUsage: z.object({
     available: z.boolean(),
-    sampleIntervalMs: z.number().finite().positive(),
+    sampleIntervalMs: z.number().positive(),
     sampleCount: z.number().int().nonnegative(),
     firstSample: memoryUsageSampleSchema.optional(),
     lastSample: memoryUsageSampleSchema.optional(),

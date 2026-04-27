@@ -14,14 +14,14 @@ import {
 } from './primitives.js';
 
 const cpuSummarySchema = z.object({
-  totalCpuMs: z.number().finite(),
-  onCpuRatio: z.number().finite(),
-  userCodeRatio: z.number().finite(),
-  nodeModulesRatio: z.number().finite(),
-  builtinRatio: z.number().finite(),
-  nativeRatio: z.number().finite(),
-  gcRatio: z.number().finite(),
-  idleRatio: z.number().finite(),
+  totalCpuMs: z.number(),
+  onCpuRatio: z.number(),
+  userCodeRatio: z.number(),
+  nodeModulesRatio: z.number(),
+  builtinRatio: z.number(),
+  nativeRatio: z.number(),
+  gcRatio: z.number(),
+  idleRatio: z.number(),
   topCategory: frameCategorySchema,
   dominantBlockingKind: z.union([z.literal('sync-crypto'), z.literal('blocking-io'), z.null()]),
   topUserHotspot: z
@@ -29,8 +29,8 @@ const cpuSummarySchema = z.object({
       function: z.string(),
       file: z.string(),
       line: z.number().int(),
-      selfPct: z.number().finite(),
-      totalPct: z.number().finite(),
+      selfPct: z.number(),
+      totalPct: z.number(),
       eventLoopCorrelation: stallCorrelationSchema.optional(),
       alternativeHotspots: z.array(alternativeHotspotEvidenceSchema).optional(),
     })
@@ -39,7 +39,7 @@ const cpuSummarySchema = z.object({
 
 const hotspotRefSchema = z.object({
   id: z.string().min(1),
-  pct: z.number().finite(),
+  pct: z.number(),
 });
 
 const hotspotSchema = z.object({
@@ -50,10 +50,10 @@ const hotspotSchema = z.object({
   column: z.number().int(),
   category: frameCategorySchema,
   package: z.string().optional(),
-  selfMs: z.number().finite(),
-  selfPct: z.number().finite(),
-  totalMs: z.number().finite(),
-  totalPct: z.number().finite(),
+  selfMs: z.number(),
+  selfPct: z.number(),
+  totalMs: z.number(),
+  totalPct: z.number(),
   callers: z.array(hotspotRefSchema),
   callees: z.array(hotspotRefSchema),
   optimizationState: optimizationStateSchema,
@@ -67,7 +67,7 @@ const hotStackFrameSchema = z.object({
 });
 
 const hotStackSchema = z.object({
-  weightPct: z.number().finite(),
+  weightPct: z.number(),
   frames: z.array(hotStackFrameSchema),
 });
 
@@ -77,20 +77,20 @@ const hotStackClusterSchema = z.object({
     file: z.string(),
     line: z.number().int(),
   }),
-  weightPct: z.number().finite(),
+  weightPct: z.number(),
   stackCount: z.number().int().positive(),
   memberIndices: z.array(z.number().int().nonnegative()),
 });
 
 const gcReportSchema = z.object({
-  totalPauseMs: z.number().finite(),
+  totalPauseMs: z.number(),
   count: gcCountSchema,
-  longestPauseMs: z.number().finite(),
+  longestPauseMs: z.number(),
   pausesOver10ms: z.array(
     z.object({
-      atMs: z.number().finite(),
+      atMs: z.number(),
       kind: z.string(),
-      durationMs: z.number().finite(),
+      durationMs: z.number(),
     }),
   ),
   correlatedHotspots: z.array(correlatedHotspotSchema).optional(),
@@ -98,10 +98,10 @@ const gcReportSchema = z.object({
 });
 
 const eventLoopReportSchema = z.object({
-  maxLagMs: z.number().finite(),
-  p99LagMs: z.number().finite(),
-  p50LagMs: z.number().finite(),
-  meanLagMs: z.number().finite(),
+  maxLagMs: z.number(),
+  p99LagMs: z.number(),
+  p50LagMs: z.number(),
+  meanLagMs: z.number(),
   sampleCount: z.number().int().nonnegative(),
   stallIntervals: z.array(stallIntervalSchema),
   available: z.boolean(),

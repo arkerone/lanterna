@@ -16,14 +16,14 @@ export const blockingIoExtraSchema = attributionEvidenceSchema.extend({
   api: z.string().min(1),
   callee: z.string().min(1),
   eventLoopCorrelation: stallCorrelationSchema.optional(),
-  categoryTotalPct: z.number().finite().optional(),
+  categoryTotalPct: z.number().optional(),
 });
 
 export const syncCryptoExtraSchema = attributionEvidenceSchema.extend({
   callee: z.string().min(1),
-  calleeTotalPct: z.number().finite(),
+  calleeTotalPct: z.number(),
   eventLoopCorrelation: stallCorrelationSchema.optional(),
-  categoryTotalPct: z.number().finite().optional(),
+  categoryTotalPct: z.number().optional(),
 });
 
 export const deoptLoopExtraSchema = z.object({
@@ -31,7 +31,7 @@ export const deoptLoopExtraSchema = z.object({
   reason: z.string().min(1),
   bailoutType: z.string().min(1),
   count: z.number().int().nonnegative(),
-  hotspotTotalPct: z.number().finite().optional(),
+  hotspotTotalPct: z.number().optional(),
 });
 
 export const requireInHotPathExtraSchema = attributionEvidenceSchema.extend({
@@ -40,8 +40,8 @@ export const requireInHotPathExtraSchema = attributionEvidenceSchema.extend({
 
 export const excessiveGcExtraSchema = z.object({
   proofLevel: z.literal('aggregate-correlation'),
-  gcRatio: z.number().finite(),
-  longestPauseMs: z.number().finite(),
+  gcRatio: z.number(),
+  longestPauseMs: z.number(),
   timedGcEventCount: z.number().int().nonnegative(),
   ratioConfidence: z.enum(['high', 'medium']),
   counts: gcCountSchema,
@@ -50,8 +50,8 @@ export const excessiveGcExtraSchema = z.object({
 
 export const eventLoopStallExtraSchema = z.object({
   proofLevel: z.literal('aggregate-correlation'),
-  p99LagMs: z.number().finite(),
-  maxLagMs: z.number().finite(),
+  p99LagMs: z.number(),
+  maxLagMs: z.number(),
   measurementBasis: measurementBasisSchema,
   confidence: measurementConfidenceSchema,
   histogram: eventLoopHistogramSchema.optional(),
@@ -61,9 +61,9 @@ export const eventLoopStallExtraSchema = z.object({
 
 export const jsonHotPathExtraSchema = attributionEvidenceSchema.extend({
   callee: z.string().min(1),
-  calleeTotalPct: z.number().finite(),
+  calleeTotalPct: z.number(),
   eventLoopCorrelation: stallCorrelationSchema.optional(),
-  categoryTotalPct: z.number().finite().optional(),
+  categoryTotalPct: z.number().optional(),
 });
 
 export const nodeModulesHotspotExtraSchema = attributionEvidenceSchema.extend({
@@ -71,7 +71,7 @@ export const nodeModulesHotspotExtraSchema = attributionEvidenceSchema.extend({
   callee: z.string().min(1),
   calleeFile: z.string().min(1).optional(),
   calleeLine: z.number().int().optional(),
-  calleeTotalPct: z.number().finite(),
+  calleeTotalPct: z.number(),
   eventLoopCorrelation: stallCorrelationSchema.optional(),
   alternativeHotspots: z.array(alternativeHotspotEvidenceSchema).optional(),
 });
@@ -93,18 +93,18 @@ const findingEvidenceSchema = z.object({
   file: z.string(),
   line: z.number().int(),
   function: z.string(),
-  selfPct: z.number().finite(),
+  selfPct: z.number(),
   extra: z.union([builtinFindingExtraSchema, genericFindingExtraSchema]).optional(),
 });
 
 const findingMeasurementsSchema = z.object({
-  observed: z.record(z.string(), z.number().finite()),
-  thresholds: z.record(z.string(), z.number().finite()),
+  observed: z.record(z.string(), z.number()),
+  thresholds: z.record(z.string(), z.number()),
 });
 
 const findingPrioritySchema = z.object({
-  score: z.number().finite(),
-  impactEstimateMs: z.number().finite().optional(),
+  score: z.number(),
+  impactEstimateMs: z.number().optional(),
   actionConfidence: z.enum(['low', 'medium', 'high']),
 });
 

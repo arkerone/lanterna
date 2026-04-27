@@ -3,17 +3,17 @@ import type { CdpClient } from '../../inspector/client.js';
 import type { MemoryUsageSample } from '../../report/types.js';
 
 const memoryUsageSampleSchema = z.object({
-  atMs: z.number().finite(),
-  rss: z.number().finite().nonnegative(),
-  heapTotal: z.number().finite().nonnegative(),
-  heapUsed: z.number().finite().nonnegative(),
-  external: z.number().finite().nonnegative(),
-  arrayBuffers: z.number().finite().nonnegative(),
+  atMs: z.number(),
+  rss: z.number().nonnegative(),
+  heapTotal: z.number().nonnegative(),
+  heapUsed: z.number().nonnegative(),
+  external: z.number().nonnegative(),
+  arrayBuffers: z.number().nonnegative(),
 });
 
 const memoryUsageReadSchema = z.object({
   samples: z.array(memoryUsageSampleSchema),
-  sampleIntervalMs: z.number().finite().positive(),
+  sampleIntervalMs: z.number().positive(),
 });
 
 export interface MemoryUsageReadResult {

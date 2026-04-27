@@ -21,14 +21,14 @@ export const hotspotAttributionSchema = z.object({
   function: z.string(),
   file: z.string(),
   line: z.number().int(),
-  samplePct: z.number().finite(),
-  supportPct: z.number().finite(),
+  samplePct: z.number(),
+  supportPct: z.number(),
   confidence: z.enum(['low', 'high']),
 });
 
 export const stallCorrelationSchema = z.object({
-  overlapPct: z.number().finite(),
-  samplePct: z.number().finite(),
+  overlapPct: z.number(),
+  samplePct: z.number(),
 });
 
 export const attributionEvidenceSchema = z.object({
@@ -43,8 +43,8 @@ export const alternativeHotspotEvidenceSchema = z.object({
   function: z.string(),
   file: z.string(),
   line: z.number().int(),
-  selfPct: z.number().finite(),
-  totalPct: z.number().finite(),
+  selfPct: z.number(),
+  totalPct: z.number(),
 });
 
 export const correlatedHotspotSchema = z.object({
@@ -52,8 +52,8 @@ export const correlatedHotspotSchema = z.object({
   function: z.string(),
   file: z.string(),
   line: z.number().int(),
-  overlapPct: z.number().finite(),
-  samplePct: z.number().finite(),
+  overlapPct: z.number(),
+  samplePct: z.number(),
   rank: z.number().int().positive(),
   confidence: z.enum(['low', 'medium', 'high']),
 });
@@ -62,7 +62,7 @@ export const correlationCoverageSchema = z.object({
   samplesInWindows: z.number().int().nonnegative(),
   samplesAttributed: z.number().int().nonnegative(),
   windowCount: z.number().int().nonnegative(),
-  attributionRate: z.number().finite(),
+  attributionRate: z.number(),
 });
 
 export const gcCountSchema = z.object({
@@ -73,14 +73,14 @@ export const gcCountSchema = z.object({
 });
 
 export const eventLoopHistogramSchema = z.object({
-  maxLagMs: z.number().finite(),
-  p99LagMs: z.number().finite(),
-  p50LagMs: z.number().finite(),
-  meanLagMs: z.number().finite(),
+  maxLagMs: z.number(),
+  p99LagMs: z.number(),
+  p50LagMs: z.number(),
+  meanLagMs: z.number(),
 });
 
 export const stallIntervalSchema = z.object({
-  startMs: z.number().finite(),
-  endMs: z.number().finite(),
-  maxLagMs: z.number().finite(),
+  startMs: z.number(),
+  endMs: z.number(),
+  maxLagMs: z.number(),
 });
