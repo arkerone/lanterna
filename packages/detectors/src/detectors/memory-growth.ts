@@ -63,6 +63,8 @@ function buildGrowthFinding(
     severity,
     category: 'memory-growth',
     title: `${label} grew ${formatRate(slopeMBPerSec)} during the capture`,
+    confidence: sampleCount >= thresholds.minSamples * 2 ? 'high' : 'medium',
+    proofLevel: 'heuristic',
     evidence: {
       file: 'process.memoryUsage',
       line: 0,

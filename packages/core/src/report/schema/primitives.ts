@@ -1,6 +1,14 @@
 import { z } from 'zod';
 
 export const findingSeveritySchema = z.enum(['info', 'warning', 'critical']);
+export const profileConfidenceSchema = z.enum(['low', 'medium', 'high']);
+export const findingConfidenceSchema = z.enum(['low', 'medium', 'high']);
+export const findingReportProofLevelSchema = z.enum([
+  'direct-sample',
+  'correlated-window',
+  'trace-only',
+  'heuristic',
+]);
 export const measurementBasisSchema = z.enum(['none', 'heartbeats', 'histogram', 'both']);
 export const measurementConfidenceSchema = z.enum(['none', 'low', 'high']);
 export const frameCategorySchema = z.enum([

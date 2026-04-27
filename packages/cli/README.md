@@ -4,7 +4,7 @@ The `lanterna` command-line binary for [Lanterna](https://github.com/arkerone/la
 
 Profile a Node process (spawn or attach), capture one or more profile kinds, run the built-in detectors, and emit a structured `LanternaReport` as JSON to stdout or a file.
 
-> Schema v2: analysis output is grouped under `report.profiles.<kind>.*`. Today the built-in kind is `cpu`, so the CLI defaults to `--kind cpu` on both `run` and `attach`.
+> Schema v2: analysis output is grouped under `report.profiles.<kind>.*`. Built-in kinds are `cpu` and `memory`; the CLI defaults to `--kind cpu` on both `run` and `attach`.
 
 ## Install
 
@@ -79,8 +79,10 @@ When `--heap-snapshot-analysis` is active, stopping with `Ctrl+C` skips the fina
 
 Built-in kinds:
 
-- `cpu` (default): V8 sampling profiler. Produces `profiles.cpu.{summary,hotspots,hotStacks,gc,eventLoop,deopts}` and CPU detectors.
+- `cpu` (default): V8 sampling profiler. Produces `profiles.cpu.{summary,quality,hotspots,hotStacks,gc,eventLoop,deopts}` and CPU detectors.
 - `memory` (opt-in): V8 sampling heap profiler plus `process.memoryUsage()` time series. Produces `profiles.memory.{summary,hotAllocators,memoryUsage}` and memory detectors (`memory-growth`, `large-allocator`, `external-buffer-pressure`, `alloc-in-hot-path`).
+
+When CPU confidence is low, the CLI prints a warning based on `profiles.cpu.quality.reasons[]` and still writes the JSON report. Treat that report as an investigation lead and rerun with a longer or more representative workload when possible.
 
 Unknown kind ids fail before capture starts with:
 

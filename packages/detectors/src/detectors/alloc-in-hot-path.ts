@@ -58,6 +58,8 @@ function buildFinding(
     severity,
     category: 'alloc-in-hot-path',
     title: `${hotspot.function} is hot on CPU and a top allocator`,
+    confidence: 'high',
+    proofLevel: 'direct-sample',
     evidence: {
       file: hotspot.file,
       line: hotspot.line,

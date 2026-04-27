@@ -166,6 +166,7 @@ Lanterna emits a `LanternaReport` (schema v2) with per-kind sections nested unde
 | --- | --- |
 | `meta` | Capture metadata, mode, duration, successfully captured `profileKinds`, integrity flags. |
 | `profiles.cpu.summary` | High-level CPU ratios (user / builtin / native / GC). |
+| `profiles.cpu.quality` | Confidence gate for CPU evidence, degraded-signal reasons, and rerun recommendations. |
 | `profiles.cpu.hotspots` | Aggregated functions with self/total CPU + callers/callees. |
 | `profiles.cpu.hotStacks` | Most frequent sampled stacks. |
 | `profiles.cpu.gc` | Pause totals, counts, longest pause, correlated hotspots. |
@@ -175,12 +176,12 @@ Lanterna emits a `LanternaReport` (schema v2) with per-kind sections nested unde
 | `profiles.memory.hotAllocators` | Frames ranked by `selfBytes` / `totalBytes`, with file/line and frame category. |
 | `profiles.memory.memoryUsage` | Compact `process.memoryUsage()` metadata (`sampleCount`, first/last sample). Raw samples are included only with `--include-memory-samples`. |
 | `profiles.memory.heapSnapshotAnalysis` | Optional start/end retained-growth summary when `--heap-snapshot-analysis` is enabled. Very large snapshots are skipped with a warning instead of being parsed unbounded. |
-| `findings` | Actionable detector output (cross-kind, each tagged `profileKind`), sorted by severity. |
+| `findings` | Actionable detector output (cross-kind, each tagged `profileKind`), with `confidence` and `proofLevel` when available. |
 
 > [!NOTE]
 > Schema **v2** (current) nests per-kind data under `profiles.<id>.*`. Built-in kinds are `cpu` (default) and `memory` (opt-in via `--kind memory`). Future kinds (async, ...) will land under their own keys. Select kinds via `--kind <id>` (repeatable).
 
-**Read it in this order:** `profiles.cpu.summary.topCategory` → `findings[]` → top `profiles.cpu.hotspots` → `eventLoop` & `gc`. Full schema in [docs/reading-a-report.md](docs/reading-a-report.md).
+**Read it in this order:** `profiles.cpu.quality` → `profiles.cpu.summary.topCategory` → `findings[]` → top `profiles.cpu.hotspots` → `eventLoop` & `gc`. Full schema in [docs/reading-a-report.md](docs/reading-a-report.md).
 
 <details>
 <summary><strong>Example output</strong></summary>
@@ -227,6 +228,16 @@ Lanterna emits a `LanternaReport` (schema v2) with per-kind sections nested unde
       "hotStacks": [],
       "gc": {},
       "eventLoop": {},
+      "quality": {
+        "confidence": "high",
+        "sampleCount": 30000,
+        "durationMs": 30000,
+        "idleRatio": 0.09,
+        "samplesTimed": true,
+        "durationBasis": "timeDeltas",
+        "reasons": [],
+        "recommendations": []
+      },
       "deopts": []
     }
   },
@@ -253,7 +264,7 @@ Lanterna emits a `LanternaReport` (schema v2) with per-kind sections nested unde
 | `external-buffer-pressure` | `external-buffer-pressure` | Mean `external` exceeds 0.5× `heapUsed` (and ≥ 32 MB absolute). |
 | `alloc-in-hot-path:<frame>` | `alloc-in-hot-path` | Same frame is hot on CPU **and** in top allocators (requires `--kind cpu memory`). |
 
-Builtin-backed findings include a `proofLevel` so consumers can distinguish direct callee evidence from caller attribution.
+Builtin-backed findings include `confidence` and `proofLevel` so consumers can distinguish direct sampled evidence, timed correlation, diagnostic traces, and heuristic trend signals.
 
 Lanterna is extensible: you can ship your own detectors as plugins. See [Extending Lanterna](#extending-lanterna) below.
 
@@ -261,10 +272,13 @@ Lanterna is extensible: you can ship your own detectors as plugins. See [Extendi
 
 ```bash
 # Critical and warning findings
-jq '.findings[] | select(.severity != "info") | {id, severity, file: .evidence.file, line: .evidence.line}' report.json
+jq '.findings[] | select(.severity != "info") | {id, severity, confidence, proofLevel, file: .evidence.file, line: .evidence.line}' report.json
+
+# CPU quality gate
+jq '.profiles.cpu.quality' report.json
 
 # Top 5 hotspots
-jq '.profiles.cpu.hotspots[:5] | .[] | {fn: .function, selfPct, totalPct, file}' report.json
+jq '.profiles.cpu.hotspots[:5] | .[] | {fn: .function, selfPct, totalPct, selfMs, totalMs, file}' report.json
 
 # Top 5 hot allocators
 jq '.profiles.memory.hotAllocators[:5] | .[] | {fn: .function, file, line, selfBytes, selfPct, totalPct}' report.json
@@ -276,7 +290,7 @@ jq '.profiles.memory.summary | {startMB: (.rss.startBytes/1048576), endMB: (.rss
 jq '{basis: .profiles.cpu.eventLoop.measurementBasis, confidence: .profiles.cpu.eventLoop.confidence, maxLagMs: .profiles.cpu.eventLoop.maxLagMs, p99LagMs: .profiles.cpu.eventLoop.p99LagMs}' report.json
 
 # Memory findings only
-jq '.findings[] | select(.profileKind == "memory") | {id, severity, file: .evidence.file}' report.json
+jq '.findings[] | select(.profileKind == "memory") | {id, severity, confidence, proofLevel, file: .evidence.file}' report.json
 
 # Capture integrity
 jq '.meta.captureIntegrity' report.json
@@ -290,6 +304,7 @@ jq '.meta.captureIntegrity' report.json
 - The target must run under Node with inspector support.
 - Passive CDP discovery scans `127.0.0.1:9229..9238`; use `--inspect-url` for other ports.
 - Event-loop lag quality depends on both timed heartbeats and the event-loop histogram - Lanterna degrades and reports when either is missing.
+- CPU report quality is summarized at `profiles.cpu.quality`; low confidence means findings are leads, not proof.
 - `--deep` is required for deopt findings; without it, `deopts[]` is empty by design.
 - Low-load or short-lived captures can be valid, but produce weaker attribution and less representative ratios.
 

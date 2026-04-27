@@ -58,6 +58,8 @@ export const excessiveGcDetector: KindScopedDetector<'cpu'> = {
         severity,
         category: 'excessive-gc',
         title: 'Excessive garbage collection',
+        confidence: hasTimedGcEvidence ? 'high' : 'medium',
+        proofLevel: 'correlated-window',
         evidence: {
           file: topCandidate?.file ?? '(process)',
           line: topCandidate?.line ?? 0,

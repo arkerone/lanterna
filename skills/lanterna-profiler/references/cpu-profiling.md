@@ -9,8 +9,8 @@ Use this when interpreting the built-in CPU profile kind. The current built-in k
 - Use `--deep` only with `lanterna run`; it enables deopt tracing and can make target diagnostics noisier.
 - Attach mode cannot enable `--deep`; `profiles.cpu.deopts[]` will stay empty.
 - Use `--sample-interval <us>` below `1000` only for suspected sub-millisecond hotspots; minimum is `50`.
-- If `profiles.cpu.summary.idleRatio > 0.8`, treat the capture as mostly idle and usually rerun with load.
-- If `meta.kinds.cpu.samplesTotal` is very low for the requested duration, degrade confidence.
+- Use `profiles.cpu.quality` as the primary confidence gate. Its `reasons[]` and `recommendations[]` already summarize low samples, short duration, high idle ratio, and untimed samples.
+- If `profiles.cpu.quality.confidence === "low"`, treat findings as leads, not proof, unless corroborated by source inspection and a stronger rerun.
 
 ## Report Paths
 
@@ -20,14 +20,18 @@ Use this when interpreting the built-in CPU profile kind. The current built-in k
 - `profiles.cpu.hotStackClusters[]`: hot stacks grouped by user-code anchor.
 - `profiles.cpu.gc`: pauses, counts, and GC-correlated hotspots.
 - `profiles.cpu.eventLoop`: lag metrics, measurement basis, stall intervals, correlated hotspots.
+- `profiles.cpu.quality`: confidence gate, degraded-signal reasons, rerun recommendations, and millisecond basis.
 - `profiles.cpu.deopts[]`: V8 deopts when `meta.kinds.cpu.deep === true`.
 
-Ratios such as `onCpuRatio` and `idleRatio` are `0..1`; multiply by 100 before presenting percentages. Hotspot `selfPct` and `totalPct` are already percentages.
+Ratios such as `onCpuRatio` and `idleRatio` are `0..1`; multiply by 100 before presenting percentages. Hotspot `selfPct` and `totalPct` are already percentages. Hotspot `selfMs` and `totalMs` use real V8 `timeDeltas` when `profiles.cpu.quality.durationBasis === "timeDeltas"`; otherwise they are interval-based estimates.
 
 ## Signal Quality
 
 Before prescribing, check:
 
+- `profiles.cpu.quality.confidence`
+- `profiles.cpu.quality.reasons[]`
+- `profiles.cpu.quality.durationBasis`
 - `meta.captureIntegrity.controlChannelExpected && !meta.captureIntegrity.controlChannel`
 - `meta.captureIntegrity.eventLoopTimed`
 - `meta.captureIntegrity.gcTimed`
@@ -53,10 +57,13 @@ Prefer `eventLoop.correlatedHotspots[]` over generic hotspot guesses. If `correl
 
 Start with `findings[]`, which are already sorted by `priority.score`, severity, and `evidence.selfPct`. Validate the ranking before prescribing:
 
+- Prefer `finding.confidence === "high"` and `finding.proofLevel === "direct-sample"` for concrete code changes.
+- Treat `proofLevel === "correlated-window"` as strong investigation evidence, not a single-line proof.
+- Treat `proofLevel === "trace-only"` and `proofLevel === "heuristic"` as hypotheses until source and/or rerun evidence corroborates them.
 - Compare `measurements.observed` to `measurements.thresholds`; a large threshold ratio is stronger than severity alone.
 - Patch mechanically only when attribution is high-confidence and `remediation` is populated.
 - For attributed findings (`blocking-io`, `sync-crypto`, `require-in-hot-path`, `node-modules-hotspot`, `json-on-hot-path`), do not patch the user caller when `evidence.extra.attributionConfidence === "low"`.
-- For aggregate findings (`excessive-gc`, `event-loop-stall`, `deopt-loop`), treat `proofLevel === "aggregate-correlation" | "deopt-trace-only"` as a hypothesis unless corroborated by high-confidence candidate hotspots.
+- For legacy reports without top-level `finding.proofLevel`, fall back to `evidence.extra.proofLevel`.
 - If `categoryTotalPct` is much larger than `calleeTotalPct`, prefer a structural fix for the family of calls over replacing one call site.
 
 Strongest actionable lead:
@@ -67,7 +74,7 @@ Strongest actionable lead:
 
 ## Interpretation Order
 
-1. State command or PID, duration, samples, top category, and `onCpuRatio * 100`.
+1. State command or PID, duration, samples, top category, `onCpuRatio * 100`, and CPU quality.
 2. Summarize actionable findings with evidence location and confidence.
 3. List top user-relevant hotspots, even when no detector fired.
 4. Summarize GC only when pauses or ratios are materially high.

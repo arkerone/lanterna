@@ -9,6 +9,7 @@ import {
   measurementBasisSchema,
   measurementConfidenceSchema,
   optimizationStateSchema,
+  profileConfidenceSchema,
   stallCorrelationSchema,
   stallIntervalSchema,
 } from './primitives.js';
@@ -122,6 +123,17 @@ const deoptEntrySchema = z.object({
   explanation: z.string(),
 });
 
+const profileQualitySchema = z.object({
+  confidence: profileConfidenceSchema,
+  sampleCount: z.number().int().nonnegative(),
+  durationMs: z.number().nonnegative(),
+  idleRatio: z.number(),
+  samplesTimed: z.boolean(),
+  durationBasis: z.enum(['timeDeltas', 'sampleInterval']),
+  reasons: z.array(z.string()),
+  recommendations: z.array(z.string()),
+});
+
 export const cpuProfileReportSchema = z.object({
   summary: cpuSummarySchema,
   hotspots: z.array(hotspotSchema),
@@ -129,5 +141,6 @@ export const cpuProfileReportSchema = z.object({
   hotStackClusters: z.array(hotStackClusterSchema).optional(),
   gc: gcReportSchema,
   eventLoop: eventLoopReportSchema,
+  quality: profileQualitySchema,
   deopts: z.array(deoptEntrySchema),
 });

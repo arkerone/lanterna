@@ -83,6 +83,16 @@ Important global integrity flags:
       "hotStacks": [],
       "gc": {},
       "eventLoop": {},
+      "quality": {
+        "confidence": "high",
+        "sampleCount": 1200,
+        "durationMs": 5000,
+        "idleRatio": 0.2,
+        "samplesTimed": true,
+        "durationBasis": "timeDeltas",
+        "reasons": [],
+        "recommendations": []
+      },
       "deopts": []
     },
     "memory": {
@@ -143,15 +153,38 @@ Common fields:
 | `evidence.selfPct` | CPU share or kind-specific share represented by the evidence |
 | `evidence.extra` | Detector-specific proof, attribution, and correlation details |
 | `measurements.observed`, `measurements.thresholds` | Numeric trigger data |
+| `confidence` | Finding-level confidence: `"low"`, `"medium"`, or `"high"` when supplied |
+| `proofLevel` | Evidence class: `"direct-sample"`, `"correlated-window"`, `"trace-only"`, or `"heuristic"` when supplied |
 | `priority.score`, `priority.actionConfidence` | Action ordering and confidence |
 | `remediation` | Optional mechanical patch hints |
 
 Rules:
 
 - Read `evidence.file` before proposing code changes.
-- Use `measurements` and `priority`, not severity alone.
+- Use `confidence`, `proofLevel`, `measurements`, and `priority`, not severity alone.
 - Unknown categories are extension findings, not schema violations.
 - Treat missing optional fields as absent signal, not as zero.
+
+## CPU Quality
+
+`profiles.cpu.quality` is the first place to check before drawing conclusions from CPU data.
+
+| Field | Meaning |
+|---|---|
+| `confidence` | Overall CPU-profile confidence: `high`, `medium`, or `low` |
+| `sampleCount` | CPU samples used for hotspot and ratio analysis |
+| `durationMs` | Capture duration used for quality scoring |
+| `idleRatio` | Same ratio as `profiles.cpu.summary.idleRatio`, included for quick triage |
+| `samplesTimed` | Whether CPU samples have usable per-sample timing |
+| `durationBasis` | `timeDeltas` when hotspot milliseconds use V8 timing; otherwise `sampleInterval` |
+| `reasons[]` | Why confidence was degraded |
+| `recommendations[]` | How to rerun or interpret the report more safely |
+
+Rules:
+
+- If `confidence === "low"`, lead with the caveat and avoid definitive root-cause claims.
+- Trust percentages before milliseconds when `durationBasis === "sampleInterval"`.
+- If `reasons[]` mentions idleness or low samples, recommend a longer capture under representative load.
 
 ## `extensions`
 

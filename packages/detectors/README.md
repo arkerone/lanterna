@@ -127,6 +127,8 @@ const prismaHotspotDetector: KindScopedDetector<'cpu'> = {
         severity: 'warning',
         category: 'prisma-hotspot',
         title: `Prisma client dominates CPU in ${hotspot.function}`,
+        confidence: attribution ? 'high' : 'medium',
+        proofLevel: 'direct-sample',
         evidence: {
           file: attribution?.file ?? hotspot.file,
           line: attribution?.line ?? hotspot.line,

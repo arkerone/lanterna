@@ -49,6 +49,8 @@ export const eventLoopStallDetector: KindScopedDetector<'cpu'> = {
         severity,
         category: 'event-loop-stall',
         title: `Event loop stalled (max ${maxLagMs.toFixed(0)}ms)`,
+        confidence: strongCorrelation ? 'high' : 'medium',
+        proofLevel: 'correlated-window',
         evidence: {
           file: strongCorrelation ? topCandidate.file : '(process)',
           line: strongCorrelation ? topCandidate.line : 0,

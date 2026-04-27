@@ -63,6 +63,8 @@ function buildFinding(
     severity,
     category: 'large-allocator',
     title: `${allocator.function} accounts for ${score.toFixed(1)}% of sampled allocations`,
+    confidence: 'high',
+    proofLevel: 'direct-sample',
     evidence: {
       file: allocator.file,
       line: allocator.line,

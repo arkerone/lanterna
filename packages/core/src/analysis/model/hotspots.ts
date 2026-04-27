@@ -55,6 +55,8 @@ interface HotspotAggregate {
   package?: string;
   selfSamples: number;
   totalSamples: number;
+  selfMs: number;
+  totalMs: number;
   optimizationState: OptimizationState;
   callerSamples: Map<string, number>;
   calleeSamples: Map<string, number>;
@@ -145,6 +147,8 @@ export function buildHotspotAnalysis(
         category: node.category,
         selfSamples: 0,
         totalSamples: 0,
+        selfMs: 0,
+        totalMs: 0,
         optimizationState: node.optimizationState,
         callerSamples: new Map(),
         calleeSamples: new Map(),
@@ -165,8 +169,17 @@ export function buildHotspotAnalysis(
   // non-user frame (used later for attribution scoring).
   const totalSamples = Math.max(1, tree.totalSamples);
   const sampleLeafIds = profile.samples ?? [];
+  const sampleDurationsMs = buildSampleDurationsMs(profile, tree.sampleIntervalMs);
   if (sampleLeafIds.length > 0) {
-    for (const leafId of sampleLeafIds) {
+    for (let sampleIndex = 0; sampleIndex < sampleLeafIds.length; sampleIndex++) {
+      const leafId = sampleLeafIds[sampleIndex];
+      if (leafId === undefined) continue;
+      const sampleDurationMs = sampleDurationsMs[sampleIndex] ?? tree.sampleIntervalMs;
+      const leafAggregateKey = aggregateKeyByNodeId.get(leafId);
+      if (leafAggregateKey) {
+        const leafAggregate = hotspotAggregatesByKey.get(leafAggregateKey);
+        if (leafAggregate) leafAggregate.selfMs += sampleDurationMs;
+      }
       const aggregatePath = buildAggregatedPath(leafId, tree, aggregateKeyByNodeId);
       if (aggregatePath.length === 0) continue;
 
@@ -192,6 +205,7 @@ export function buildHotspotAnalysis(
         const aggregate = hotspotAggregatesByKey.get(aggregateKey);
         if (!aggregate) continue;
         aggregate.pathSamples += 1;
+        aggregate.totalMs += sampleDurationMs;
       }
 
       let nearestUserAncestorKey: string | undefined;
@@ -221,6 +235,8 @@ export function buildHotspotAnalysis(
       aggregateTotalSamples += subtreeSamples(tree, nodeId);
     }
     aggregate.totalSamples = aggregateTotalSamples;
+    aggregate.selfMs = aggregate.selfSamples * tree.sampleIntervalMs;
+    aggregate.totalMs = aggregate.totalSamples * tree.sampleIntervalMs;
   }
 
   // ── Phase 3: Materialize aggregates into Hotspot objects ─────────────────
@@ -243,9 +259,9 @@ export function buildHotspotAnalysis(
       line: aggregate.line,
       column: aggregate.column,
       category: aggregate.category,
-      selfMs: aggregate.selfSamples * tree.sampleIntervalMs,
+      selfMs: aggregate.selfMs,
       selfPct: (aggregate.selfSamples / totalSamples) * 100,
-      totalMs: aggregate.totalSamples * tree.sampleIntervalMs,
+      totalMs: aggregate.totalMs,
       totalPct: (aggregate.totalSamples / totalSamples) * 100,
       callers: topRefs(aggregate.callerSamples, hotspotAggregatesByKey, totalSamples, 3),
       callees: topRefs(aggregate.calleeSamples, hotspotAggregatesByKey, totalSamples, 3),
@@ -287,6 +303,16 @@ export function buildHotspotAnalysis(
     hotspotById,
     userAttributionById,
   };
+}
+
+function buildSampleDurationsMs(profile: RawCpuProfile, fallbackMs: number): number[] {
+  const sampleCount = profile.samples?.length ?? 0;
+  if (sampleCount === 0) return [];
+  const deltas = profile.timeDeltas;
+  if (!deltas || deltas.length !== sampleCount) {
+    return Array.from({ length: sampleCount }, () => fallbackMs);
+  }
+  return deltas.map((deltaUs) => deltaUs / 1000);
 }
 
 function topRefs(

@@ -20,7 +20,7 @@ npm install @lanterna-profiler/core
 - **Kind-scoped detectors** — `KindScopedDetector<K>` + `createFindingAnalyzerFromKindScopedDetector(detector)` for typed multi-kind detectors.
 - **Analysis pipeline** — `createAnalysisPipeline({ kinds, ... })` with `defineFindingAnalyzer` / `defineSectionAnalyzer` to register custom rules.
 - **Report** — `buildLanternaReport(bundle, analysis, kinds, options)` + `serializeReport(report, { pretty, kinds })` + `buildReportSchema(kinds)` (Zod schema is composed dynamically from the active kinds — schema v2 nests CPU data under `profiles.cpu.*` and per-kind meta under `meta.kinds.<id>.*`).
-- **Types** — `CaptureBundle`, `LanternaReport`, `Finding`, `Hotspot`, `AnalysisContext`, `FindingAnalyzer`, etc.
+- **Types** — `CaptureBundle`, `LanternaReport`, `Finding`, `ProfileQuality`, `Hotspot`, `AnalysisContext`, `FindingAnalyzer`, etc.
 - **Runtime hook framework** — active kinds can contribute hook fragments through `ProfileKind.hookInstaller`; the capture coordinator composes them with the cross-cutting runtime-signals installer for GC + event-loop lag.
 
 Default detectors (sync-crypto, blocking-io, excessive-gc, event-loop-stall, …) live in `@lanterna-profiler/detectors` so core stays minimal.
@@ -66,6 +66,8 @@ pipeline.register(defineFindingAnalyzer({
       severity: 'warning',
       category: 'my.custom-rule',
       title: `Hot function dominates CPU: ${top.function}`,
+      confidence: 'medium',
+      proofLevel: 'direct-sample',
       evidence: { file: top.file, line: top.line, function: top.function, selfPct: top.selfPct, extra: {} },
       why: 'Single function owns >40% of self CPU.',
       suggestion: 'Investigate for unnecessary work or algorithmic improvements.',
@@ -82,7 +84,7 @@ process.stdout.write(serializeReport(report, { pretty: true, kinds: [cpuKind] })
 
 ## Adding a new profile kind
 
-Out of the box `core` ships the CPU kind. Future memory/async kinds can be added without touching existing files. See the built-in `kinds/cpu/` implementation for reference and [../../docs/how-lanterna-works.md](../../docs/how-lanterna-works.md) for the architectural overview.
+Out of the box `core` ships the CPU and memory kinds. Future async or domain-specific kinds can be added without touching existing files. See the built-in `kinds/cpu/` and `kinds/memory/` implementations for reference and [../../docs/how-lanterna-works.md](../../docs/how-lanterna-works.md) for the architectural overview.
 
 ## Related packages
 

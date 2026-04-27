@@ -57,6 +57,8 @@ const detector: KindScopedDetector<'cpu'> = {
         severity: 'info',
         category: 'custom',
         title: 'Custom finding',
+        confidence: 'medium',
+        proofLevel: 'heuristic',
         evidence: {
           file: 'src/app.js',
           line: 1,
@@ -73,6 +75,17 @@ const detector: KindScopedDetector<'cpu'> = {
 
 pipeline.register(createFindingAnalyzerFromKindScopedDetector(detector));
 ```
+
+Use top-level `confidence` and `proofLevel` when the detector can characterize its evidence:
+
+| `proofLevel` | Use for |
+|---|---|
+| `direct-sample` | A sampled CPU/heap frame directly supports the finding. |
+| `correlated-window` | Timed windows or cross-signal correlation support the finding. |
+| `trace-only` | Diagnostic trace output supports the finding, usually requiring corroboration. |
+| `heuristic` | Derived trend or threshold evidence that should be treated as a lead. |
+
+Set `confidence` to `high`, `medium`, or `low` based on sample volume, attribution strength, and whether the detector points to a direct edit location.
 
 ## Multi-Kind Contract
 

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { classifyFrame } from '../src/analysis/model/classify.js';
 import { buildHotspotAnalysis, enrichCpuTree } from '../src/analysis/model/hotspots.js';
+import type { RawCpuProfile } from '../src/capture/core/types.js';
 import { CWD, loadProfile } from './helpers.js';
 
 describe('classifyFrame', () => {
@@ -141,5 +142,49 @@ describe('buildHotspotAnalysis', () => {
     });
     expect(topHotspot?.selfPct).toBeGreaterThan(50);
     expect(topHotspot?.callers[0]?.pct).toBeGreaterThan(0);
+  });
+
+  it('uses real CPU sample timeDeltas when reporting hotspot milliseconds', () => {
+    const profile: RawCpuProfile = {
+      startTime: 0,
+      endTime: 12_000,
+      nodes: [
+        {
+          id: 1,
+          callFrame: {
+            functionName: '(root)',
+            scriptId: '0',
+            url: '',
+            lineNumber: 0,
+            columnNumber: 0,
+          },
+          children: [2],
+        },
+        {
+          id: 2,
+          callFrame: {
+            functionName: 'expensive',
+            scriptId: '1',
+            url: `file://${CWD}/src/worker.js`,
+            lineNumber: 9,
+            columnNumber: 0,
+          },
+          hitCount: 2,
+        },
+      ],
+      samples: [2, 2],
+      timeDeltas: [3000, 9000],
+    };
+
+    const tree = enrichCpuTree(profile, CWD, 1000);
+    const [hotspot] = buildHotspotAnalysis(profile, tree).publicHotspots;
+
+    expect(hotspot).toMatchObject({
+      function: 'expensive',
+      selfMs: 12,
+      totalMs: 12,
+      selfPct: 100,
+      totalPct: 100,
+    });
   });
 });
