@@ -1,5 +1,11 @@
 # @lanterna-profiler/core
 
+## 1.4.1
+
+### Patch Changes
+
+- 63b44d7: Drop deprecated `z.number().finite()` chains from the report and runtime-signals schemas. In Zod 4, `z.number()` already rejects `NaN` and `Infinity`, making `.finite()` a no-op. Output schema and validation behavior are unchanged.
+
 ## 1.4.0
 
 ### Minor Changes
