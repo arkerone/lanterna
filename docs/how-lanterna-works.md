@@ -161,9 +161,10 @@ Each sampled frame is placed into exactly one category:
 | `gc` | Garbage collector frames | V8 GC synthetic frames. |
 | `program` | `(program)` pseudo-frame | V8 idle/top-of-stack marker. |
 | `idle` | `(idle)` pseudo-frame | V8 idle samples. |
+| `lanterna` | Lanterna's preload, runtime-signals hooks, or `node_modules/@lanterna/*` | Path matches a known profiler artifact. |
 | `unknown` | Frames that fit nothing above | Fallback bucket. |
 
-Classification feeds `profiles.cpu.summary` ratios and several findings. The runtime-signals installer itself is deliberately classified as internal/native noise, **not** user code.
+Classification feeds `profiles.cpu.summary` ratios and several findings. Frames in the `lanterna` category are dropped from `profiles.cpu.hotspots`, `profiles.memory.hotAllocators`, and the heap snapshot retainer paths so the report only describes the profiled application. Set `LANTERNA_DEBUG_SELF=1` to keep them visible when working on Lanterna itself.
 
 ### Hotspots
 
