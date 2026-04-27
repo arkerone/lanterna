@@ -93,6 +93,41 @@ describe('profile commands', () => {
     expect(mocks.indicator.succeed).toHaveBeenCalledWith('Lanterna profile complete');
   });
 
+  it('warns when the CPU profile confidence is low', async () => {
+    const report = {
+      meta: {},
+      profiles: {
+        cpu: {
+          quality: {
+            confidence: 'low',
+            sampleCount: 83,
+            durationMs: 400,
+            idleRatio: 0.92,
+            samplesTimed: true,
+            durationBasis: 'timeDeltas',
+            reasons: ['only 83 CPU samples captured', 'process was 92% idle'],
+            recommendations: ['Rerun with --duration 5s or generate load during capture.'],
+          },
+        },
+      },
+      findings: [],
+    };
+    mocks.runProfile.mockResolvedValue(report);
+
+    await runCommand({
+      command: ['node', 'app.js'],
+      pretty: true,
+      deep: false,
+      sampleIntervalMicros: 1000,
+      detectors: [],
+      kinds: ['cpu'],
+    });
+
+    expect(mocks.indicator.update).toHaveBeenCalledWith(
+      expect.stringContaining('Low confidence profile: only 83 CPU samples captured'),
+    );
+  });
+
   it('attachCommand writes output and returns without exiting the process', async () => {
     const exit = vi.spyOn(process, 'exit').mockImplementation((() => undefined) as never);
     const report = { meta: {}, profiles: {}, findings: [] };

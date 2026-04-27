@@ -65,6 +65,8 @@ export async function executeProfileCommand(command: ExecuteProfileCommandOption
       indicator.update(message);
     });
 
+    const qualityWarning = formatProfileQualityWarning(report);
+    if (qualityWarning) indicator.update(qualityWarning);
     indicator.update('Writing the Lanterna report output...');
     await writeReportOutput(report, command.options.output, command.options.pretty, kinds);
     indicator.succeed(command.successMessage);
@@ -76,6 +78,26 @@ export async function executeProfileCommand(command: ExecuteProfileCommandOption
     }
     throw error;
   }
+}
+
+function formatProfileQualityWarning(report: {
+  profiles?: {
+    cpu?: {
+      quality?: {
+        confidence?: string;
+        reasons?: string[];
+        recommendations?: string[];
+      };
+    };
+  };
+}): string | undefined {
+  const quality = report.profiles?.cpu?.quality;
+  if (!quality || quality.confidence !== 'low') return undefined;
+  const reasons = quality.reasons?.filter(Boolean) ?? [];
+  const recommendations = quality.recommendations?.filter(Boolean) ?? [];
+  const reasonText = reasons.length > 0 ? reasons.join('; ') : 'capture quality is low';
+  const recommendationText = recommendations.length > 0 ? ` ${recommendations.join(' ')}` : '';
+  return `Low confidence profile: ${reasonText}.${recommendationText}`;
 }
 
 function buildMemoryKind(command: ExecuteProfileCommandOptions): ProfileKind {
