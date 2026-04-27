@@ -28,7 +28,10 @@
 - **V8 CPU profile + timed signals** - CPU samples correlated with GC pauses, event-loop lag and stalls, optional deopt traces (`--deep`).
 - **Heap allocation profile** - hot allocators by self/total bytes plus a continuous RSS / heapUsed / external / arrayBuffers series with linear growth slope.
 - **Enriched `LanternaReport`** - categorized hotspots, hot call stacks, ratios, capture-integrity flags.
-- **Built-in findings** - sync crypto, blocking I/O, CPU-bound user code, JSON on the hot path, dependency hotspots, excessive GC, event-loop stalls, deopt loops, module loading on the hot path, sustained memory growth, large allocators, off-heap buffer pressure, and cross-kind alloc-in-hot-path.
+- **Built-in findings**
+  - _CPU kind_ - sync crypto, blocking I/O, JSON on the hot path, dependency hotspots, excessive GC, event-loop stalls, deopt loops, module loading on the hot path.
+  - _Memory kind_ - sustained memory growth, large allocators, off-heap buffer pressure.
+  - _Cross-kind_ - alloc-in-hot-path.
 - **Actionable evidence** - each finding ships with file/line, severity, rationale, and remediation hints.
 - **Agent-ready** - stable JSON schema, `skills/lanterna-profiler/` workflow for Claude Code.
 
