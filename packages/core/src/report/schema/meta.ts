@@ -26,7 +26,7 @@ export const metaSchema = z.object({
   arch: z.string().min(1),
   pid: z.number().int().positive(),
   startedAt: z.string().min(1),
-  durationMs: z.number().finite(),
+  durationMs: z.number(),
   cwd: z.string().min(1),
   command: z.array(z.string()),
   lanternaVersion: z.string().min(1),
