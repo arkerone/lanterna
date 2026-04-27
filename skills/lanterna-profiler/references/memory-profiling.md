@@ -113,7 +113,7 @@ Reading order:
 | `external-buffer-pressure` | `external-buffer-pressure` | Mean `external` ≥ 0.5 × `heapUsed` and ≥ 32 MB absolute. Critical at ≥ 1.5×. |
 | `alloc-in-hot-path:<frame>` | `alloc-in-hot-path` | Same frame appears in top CPU hotspots (`totalPct ≥ 5 %`) **and** top memory allocators (`totalPct ≥ 5 %`). Requires `--kind cpu memory`. Critical when combined % ≥ 60. |
 
-Each memory finding's `evidence.extra` carries the raw counters (slope, MB delta, ratio, combined pct). Use `measurements.thresholds` to explain *why* the finding fired.
+Each memory finding's `evidence.extra` carries the raw counters (slope, MB delta, ratio, combined pct). Use top-level `confidence`, `proofLevel`, and `measurements.thresholds` to explain *why* the finding fired and how strongly to trust it.
 
 ## Common interpretation patterns
 
@@ -133,7 +133,7 @@ jq '.profiles.memory.summary | {topAllocator, rssMB:{start:(.rss.startBytes/1048
 jq '.profiles.memory.hotAllocators[:5] | .[] | {fn:.function, file, line, selfMB:(.selfBytes/1048576), selfPct, totalPct}' report.json
 
 # Memory findings only
-jq '.findings[] | select(.profileKind == "memory") | {id, severity, file:.evidence.file, line:.evidence.line}' report.json
+jq '.findings[] | select(.profileKind == "memory") | {id, severity, confidence, proofLevel, file:.evidence.file, line:.evidence.line}' report.json
 
 # RSS curve as CSV (requires --include-memory-samples)
 jq -r '.profiles.memory.memoryUsage.samples[] | [.atMs, (.rss/1048576), (.heapUsed/1048576), (.external/1048576)] | @csv' report.json
