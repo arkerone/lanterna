@@ -2,7 +2,7 @@
 
 Common problems and how to resolve them.
 
-> Field paths below use **schema v2**: CPU data lives under `profiles.cpu.*`. When a bare name like `summary.userCodeRatio` or `eventLoop.confidence` appears in this doc, it is short-hand for `profiles.cpu.summary.userCodeRatio` / `profiles.cpu.eventLoop.confidence` — the kind of thing you'd pass to `jq`.
+> Field paths below use **schema v2**: CPU data lives under `profiles.cpu.*`. When a bare name like `summary.userCodeRatio`, `quality.confidence`, or `eventLoop.confidence` appears in this doc, it is short-hand for `profiles.cpu.summary.userCodeRatio` / `profiles.cpu.quality.confidence` / `profiles.cpu.eventLoop.confidence` — the kind of thing you'd pass to `jq`.
 
 ## Quick triage
 
@@ -11,6 +11,7 @@ Common problems and how to resolve them.
 | `timed out waiting for inspector URL` on `run` | [Inspector timeout](#inspector-timeout) |
 | `timed out waiting for inspector on pid ...` | [Attach by pid times out](#attach-by-pid-times-out) |
 | `findings` / `profiles.cpu.hotspots` is `[]` | [Empty report](#empty-report) |
+| `profiles.cpu.quality.confidence` is `"low"` | [Low-confidence CPU profile](#low-confidence-cpu-profile) |
 | `profiles.cpu.summary.userCodeRatio` near 0 | [Ratios look wrong](#ratios-look-wrong) |
 | `captureIntegrity.*` flags are `false` | [Degraded capture integrity](#degraded-capture-integrity) |
 | Unexpected `event-loop-stall` finding | [Spurious event-loop stall](#spurious-event-loop-stall) |
@@ -75,7 +76,7 @@ Common problems and how to resolve them.
 
 **Causes and fixes:**
 
-1. **Profiling window too short, or the process was idle.** Check `profiles.cpu.summary.idleRatio`. If it is above `0.8`, the process was mostly waiting. Either increase `--duration` or generate load against the process before running. (This matches the rerun threshold used by the `lanterna-profiler` skill.)
+1. **Profiling window too short, or the process was idle.** Check `profiles.cpu.quality`. Its `reasons[]` should say whether the capture was too short, under-sampled, or mostly idle. Either increase `--duration` or generate load against the process before running.
 
 2. **The profiling window missed the hot code.** If your app has a startup phase that loads modules and then settles, the default window may land on idle steady state. Time the window to cover the actual load.
 
@@ -86,6 +87,27 @@ Common problems and how to resolve them.
    ```
 
 4. **GC findings suppressed on very short captures.** If `durationMs < 250` and no timed GC events were captured, the `excessive-gc` detector suppresses findings to avoid false positives. Run for longer.
+
+---
+
+## Low-confidence CPU profile
+
+**Symptom:** `profiles.cpu.quality.confidence` is `"low"`.
+
+**What to inspect:**
+
+```bash
+jq '.profiles.cpu.quality' report.json
+```
+
+Common reasons and fixes:
+
+1. **Too few CPU samples.** Increase `--duration` or run the workload harder during capture.
+2. **Capture too short.** For server routes, capture several seconds of representative load instead of startup or idle time.
+3. **High idle ratio.** Generate traffic against the target before and during the capture window.
+4. **Untimed CPU samples.** Percentages remain useful, but hotspot `selfMs` / `totalMs` are interval-based estimates and temporal correlation is weaker.
+
+Low confidence does not make the report useless. Use it to choose what to inspect, but avoid claiming a root cause until a stronger rerun or source-level evidence corroborates it.
 
 ---
 
@@ -114,12 +136,13 @@ Common problems and how to resolve them.
 | `controlChannel` | The preload hook's FD 3 pipe never sent events. GC and event-loop heartbeats are absent. |
 | `eventLoopTimed` | No heartbeat events received. Event-loop measurements come from the histogram only. |
 | `gcTimed` | GC events have no timestamps. GC-hotspot correlation is unavailable. |
-| `kinds.cpu.samplesTimed` | `samples[]` and `timeDeltas[]` lengths differ. CPU stack correlation is approximate. (Under `meta.captureIntegrity.kinds.cpu`.) |
+| `kinds.cpu.samplesTimed` | `samples[]` and `timeDeltas[]` lengths differ. CPU stack correlation and hotspot milliseconds are approximate. (Under `meta.captureIntegrity.kinds.cpu`.) |
 
 **What to do:**
 
 - A fully degraded capture (`controlChannel: false` in spawn mode) can happen if the child closes FD 3 early. Some process managers (pm2, Docker entrypoints) close extra file descriptors. Try running the process directly.
 - In **attach mode**, `controlChannel: false` is expected - judge quality from `eventLoopTimed`, `gcTimed`, `meta.captureIntegrity.kinds.cpu.samplesTimed`.
+- Also read `profiles.cpu.quality`; it folds these low-level signals into user-facing `confidence`, `reasons[]`, and `recommendations[]`.
 - On an interrupted attach capture, Lanterna prefers a partial report with degraded flags over hanging while waiting for late runtime reads.
 - `eventLoopTimed: false` with `gcTimed: false` is normal for very short processes (< 200 ms) - measurements didn't have time to land.
 - Always read `captureIntegrity` before drawing conclusions from correlation evidence.
@@ -145,12 +168,12 @@ Common problems and how to resolve them.
 **Symptom:** `lanterna run ... --kind <id>` or `lanterna attach ... --kind <id>` exits with:
 
 ```text
-unknown profile kind(s): <ids>. Available kinds: cpu
+unknown profile kind(s): <ids>. Available kinds: cpu, memory
 ```
 
 **What it means:**
 
-1. **Today `cpu` is the only built-in kind.** Both `run` and `attach` default to `--kind cpu` when you omit the flag.
+1. **Built-in kind ids are `cpu` and `memory`.** Both `run` and `attach` default to `--kind cpu` when you omit the flag.
 
 2. **`--kind` accepts repeated flags and comma-separated shorthand.** These are equivalent:
 

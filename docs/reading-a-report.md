@@ -2,20 +2,21 @@
 
 Lanterna emits a structured `LanternaReport` (schema v2). This guide walks through each section — **in reading order** — and how to interpret it.
 
-> **Schema v2 convention.** Per-kind analysis output lives under `report.profiles.<kind>.*`. Today the only kind is `cpu`, so every field named below without an explicit path is short-hand for `report.profiles.cpu.<field>`. `findings[]` is cross-kind at the root; each finding carries a required `profileKind` tag. `meta.profileKinds` lists the kinds that successfully produced capture data in this report.
+> **Schema v2 convention.** Per-kind analysis output lives under `report.profiles.<kind>.*`. Built-in kinds are `cpu` and `memory`; every CPU field named below without an explicit path is short-hand for `report.profiles.cpu.<field>`. `findings[]` is cross-kind at the root; each finding carries a required `profileKind` tag. `meta.profileKinds` lists the kinds that successfully produced capture data in this report.
 
 ## At a glance
 
 | # | Section | What it tells you | When to distrust it |
 | --- | --- | --- | --- |
 | 1 | `meta` | What was captured (mode, duration, `profileKinds`, integrity flags). | `durationMs` very short, or `captureIntegrity.*` flags `false`. |
-| 2 | `profiles.cpu.summary` | Where CPU time went (ratios, top category). | `idleRatio` > 0.8 — the profile is mostly idle. |
-| 3 | `findings` | Prioritized hypotheses backed by the capture (tagged `profileKind`). | Empty `findings[]` does not prove a healthy profile. |
-| 4 | `profiles.cpu.hotspots` | Where CPU is actually spent (self + inclusive). | A hot leaf in `node_modules` is usually a symptom, not a cause. |
-| 5 | `profiles.cpu.eventLoop` | Latency signal + stall windows. | `confidence = low` or `measurementBasis = histogram` alone. |
-| 6 | `profiles.cpu.gc` | Pause counts, duration, correlated hotspots. | Very short runs with no `gcTimed`. |
-| 7 | `profiles.cpu.hotStacks` | Complete sampled call paths, weighted. | Not always needed — use when a single hotspot is ambiguous. |
-| 8 | `profiles.cpu.deopts` | V8 deoptimisation clusters. | Empty unless `meta.kinds.cpu.deep === true`. |
+| 2 | `profiles.cpu.quality` | Whether CPU evidence is strong enough to trust. | `confidence = low`, high idle, low samples, or untimed samples. |
+| 3 | `profiles.cpu.summary` | Where CPU time went (ratios, top category). | `idleRatio` > 0.8 — the profile is mostly idle. |
+| 4 | `findings` | Prioritized hypotheses backed by the capture (tagged `profileKind`). | Empty `findings[]` does not prove a healthy profile. |
+| 5 | `profiles.cpu.hotspots` | Where CPU is actually spent (self + inclusive). | A hot leaf in `node_modules` is usually a symptom, not a cause. |
+| 6 | `profiles.cpu.eventLoop` | Latency signal + stall windows. | `confidence = low` or `measurementBasis = histogram` alone. |
+| 7 | `profiles.cpu.gc` | Pause counts, duration, correlated hotspots. | Very short runs with no `gcTimed`. |
+| 8 | `profiles.cpu.hotStacks` | Complete sampled call paths, weighted. | Not always needed — use when a single hotspot is ambiguous. |
+| 9 | `profiles.cpu.deopts` | V8 deoptimisation clusters. | Empty unless `meta.kinds.cpu.deep === true`. |
 
 ---
 
@@ -47,7 +48,31 @@ Sanity-check pattern:
 
 ---
 
-## 2. `summary` - where CPU time went
+## 2. `quality` - how much to trust CPU evidence
+
+`profiles.cpu.quality` summarizes whether the CPU section is strong enough to support confident decisions.
+
+| Field | Meaning |
+| --- | --- |
+| `confidence` | `high`, `medium`, or `low` overall CPU-profile confidence. |
+| `sampleCount` | Samples used for hotspot and ratio analysis. |
+| `durationMs` | Capture duration used for confidence scoring. |
+| `idleRatio` | Same value as `summary.idleRatio`, repeated for quick triage. |
+| `samplesTimed` | Whether V8 supplied per-sample timing deltas. |
+| `durationBasis` | `timeDeltas` when hotspot ms use V8 timings; `sampleInterval` when estimated. |
+| `reasons[]` | Why confidence was degraded. |
+| `recommendations[]` | How to improve or interpret the capture. |
+
+Interpretation rules:
+
+- `confidence = high` → rankings and percentages are usually safe to act on after reading source.
+- `confidence = medium` → useful for prioritization, but avoid over-optimizing close calls.
+- `confidence = low` → treat findings as leads. Say what rerun would improve the signal.
+- If `durationBasis = sampleInterval`, trust `selfPct` / `totalPct` before `selfMs` / `totalMs`.
+
+---
+
+## 3. `summary` - where CPU time went
 
 | Field | Meaning |
 | --- | --- |
@@ -71,7 +96,7 @@ Common patterns:
 
 ---
 
-## 3. `findings` - the action queue
+## 4. `findings` - the action queue
 
 Each finding contains:
 
@@ -82,12 +107,14 @@ Each finding contains:
 | `severity` | `critical` / `warning` / `info`. |
 | `category` | Grouping for filtering. |
 | `title` | Short human label. |
+| `confidence` | Finding-level confidence (`high`, `medium`, or `low`) when supplied. |
+| `proofLevel` | Evidence class: `direct-sample`, `correlated-window`, `trace-only`, or `heuristic`. |
 | `evidence` | File, line, function, CPU weight, detector-specific `extra`. |
 | `why` | Why this pattern matters. |
 | `suggestion` | Concrete remediation hint. |
 | `references` | Links to docs or related findings. |
 
-Read `findings[]` as **prioritized hypotheses backed by the capture**. Filter by `profileKind` when multiple kinds are captured; today every built-in finding is `profileKind: "cpu"`.
+Read `findings[]` as **prioritized hypotheses backed by the capture**. Filter by `profileKind` when multiple kinds are captured.
 
 ### Evidence attribution
 
@@ -104,12 +131,14 @@ For some detectors, `evidence.file` points to the **user caller** rather than th
 
 | Value | Meaning |
 | --- | --- |
-| `direct-builtin` | Lanterna directly sampled the builtin/native callee. |
-| `attributed-caller` | The builtin was sampled and Lanterna has high-confidence user-caller attribution. |
-| `aggregate-correlation` | Based on aggregate timing/correlation rather than a directly sampled callee. |
-| `deopt-trace-only` | Comes from `--trace-deopt`, gated by CPU heat. |
+| `direct-sample` | A sampled CPU or heap frame directly supports the finding. |
+| `correlated-window` | Timed windows or cross-signal correlation support the finding. |
+| `trace-only` | Diagnostic trace output supports the finding; corroborate before patching. |
+| `heuristic` | Derived trend or threshold evidence; useful as a lead, not proof. |
 
 </details>
+
+Older reports may only have detector-specific `evidence.extra.proofLevel` values such as `direct-builtin`, `attributed-caller`, `aggregate-correlation`, or `deopt-trace-only`. Prefer the top-level `proofLevel` when present.
 
 ### Detector reference
 
@@ -140,7 +169,7 @@ A dependency hotspot is often a symptom - your code controls when and how often 
 
 ---
 
-## 4. `hotspots` - where CPU is actually spent
+## 5. `hotspots` - where CPU is actually spent
 
 | Field | Meaning |
 | --- | --- |
@@ -156,10 +185,11 @@ How to read it:
 - Use `selfPct` to find the hottest direct leaves.
 - Use `totalPct` to find broad expensive paths where work happens in descendants or native code.
 - Use `callers[]` when a builtin or dependency is hot - the caller is often the real source fix.
+- Use `selfMs` / `totalMs` as timed measurements only when `profiles.cpu.quality.durationBasis === "timeDeltas"`.
 
 ---
 
-## 5. `eventLoop` - latency signal
+## 6. `eventLoop` - latency signal
 
 Tells you whether CPU pressure translated into event-loop delay.
 
@@ -181,7 +211,7 @@ Interpretation rules:
 
 ---
 
-## 6. `gc` - allocation pressure and pauses
+## 7. `gc` - allocation pressure and pauses
 
 | Field | Meaning |
 | --- | --- |
@@ -206,7 +236,7 @@ What to inspect in code:
 
 ---
 
-## 7. `hotStacks` - sampled call paths
+## 8. `hotStacks` - sampled call paths
 
 Useful when a single hotspot is not enough.
 
@@ -223,7 +253,7 @@ Use hot stacks when:
 
 ---
 
-## 8. `deopts` - V8 JIT instability
+## 9. `deopts` - V8 JIT instability
 
 Populated only when `meta.kinds.cpu.deep === true`.
 
@@ -256,16 +286,20 @@ How to use it:
 > **Ignoring `idleRatio`.** A profile captured without real load can be technically valid but operationally misleading.
 
 > [!WARNING]
+> **Skipping `profiles.cpu.quality`.** `summary` and `findings` can be mechanically valid while the profile is too short, too idle, or under-sampled for confident decisions.
+
+> [!WARNING]
 > **Reading event-loop lag without reading confidence.** Always read `measurementBasis` and `confidence` alongside the lag numbers.
 
 ---
 
 ## What to do after reading a report
 
-1. Act on `critical` findings first.
-2. Inspect the top 5 hotspots even if they did not trigger a finding.
-3. If the run was mostly idle, rerun under representative load.
-4. If you suspect JIT instability, rerun with `--deep`.
-5. Read the actual source file named in `evidence.file` before making changes.
+1. Check `profiles.cpu.quality` and capture integrity.
+2. Act on high-confidence `critical` findings first.
+3. Inspect the top 5 hotspots even if they did not trigger a finding.
+4. If the run was mostly idle, rerun under representative load.
+5. If you suspect JIT instability, rerun with `--deep`.
+6. Read the actual source file named in `evidence.file` before making changes.
 
 Want to understand *why* these fields and flags exist? Read [how-lanterna-works.md](how-lanterna-works.md).

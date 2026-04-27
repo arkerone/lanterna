@@ -198,6 +198,8 @@ Nodes sharing the same `(file, function, line)` are aggregated into a public hot
 - top callers / callees
 - optimization state
 
+When the raw CPU profile includes `samples[]` and matching `timeDeltas[]`, `selfMs` and `totalMs` are accumulated from those V8 timing deltas. If timed samples are unavailable, Lanterna falls back to the configured sampling interval. The report exposes this through `profiles.cpu.quality.durationBasis` (`timeDeltas` or `sampleInterval`).
+
 ### Hot stacks
 
 `profiles.cpu.hotStacks` keeps the most frequent complete sampled stacks. Useful when a single hotspot is ambiguous and you need the surrounding call path.
@@ -228,6 +230,15 @@ Findings are detectors running on the enriched snapshot, not on the raw bundle. 
 
 Findings are sorted by `priority.score` first, then by severity and attributed CPU weight. Dominant user-code CPU is exposed as `profiles.cpu.summary.topUserHotspot` for context instead of as an actionable finding.
 
+Built-in findings may also expose:
+
+| Field | Meaning |
+| --- | --- |
+| `confidence` | Detector-level confidence (`high`, `medium`, `low`). |
+| `proofLevel` | Evidence class: `direct-sample`, `correlated-window`, `trace-only`, or `heuristic`. |
+
+These fields are intentionally separate from `severity`: severity estimates impact; confidence/proof level explain how strong the evidence is.
+
 ---
 
 ## Signal quality
@@ -244,6 +255,23 @@ Lanterna exposes several indicators so consumers can judge how trustworthy a rep
 | `kinds.cpu.samplesTimed` | The CPU profile included timing deltas (under `meta.captureIntegrity.kinds.cpu`). |
 
 If one of these flags is `false`, the report is still usable — but some interpretation should be more cautious.
+
+### `profiles.cpu.quality`
+
+The CPU kind turns low-level integrity and statistical checks into an agent-facing quality gate:
+
+| Field | Meaning |
+| --- | --- |
+| `confidence` | `high`, `medium`, or `low` overall confidence for CPU interpretation. |
+| `sampleCount` | Number of CPU samples used for ratios and hotspots. |
+| `durationMs` | Capture duration used by the scorer. |
+| `idleRatio` | Idle ratio repeated from `summary` for quick triage. |
+| `samplesTimed` | Whether V8 per-sample timing was usable. |
+| `durationBasis` | Whether hotspot milliseconds use `timeDeltas` or the configured sample interval. |
+| `reasons[]` | Degradation reasons such as low samples, short capture, high idle, or untimed samples. |
+| `recommendations[]` | Rerun or interpretation guidance. |
+
+Consumers should read this before `findings[]`: a low-confidence profile can still identify leads, but it should not be treated as proof.
 
 ### `profiles.cpu.eventLoop.measurementBasis`
 
@@ -292,6 +320,7 @@ A technically valid profile may still be operationally weak:
 - high `profiles.cpu.summary.idleRatio` means the process spent most of the capture idle
 - short captures may under-sample real bottlenecks
 - with no meaningful workload, the hottest path may just be startup noise
+- `profiles.cpu.quality` will describe these as degraded confidence with concrete rerun guidance
 </details>
 
 <details>
