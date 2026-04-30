@@ -12,22 +12,17 @@ function renderText(report: LanternaReport): string {
   const lines: string[] = [];
   lines.push('Lanterna Report');
   lines.push('');
-  lines.push(`Mode: ${report.meta?.mode ?? 'unknown'}`);
   lines.push(`Duration: ${formatMs(report.meta?.durationMs)}`);
   lines.push(`Command: ${formatCommand(report.meta?.command)}`);
-  lines.push(`Kinds: ${formatList(report.meta?.profileKinds)}`);
   lines.push('');
 
   const cpu = report.profiles?.cpu;
   if (cpu) {
     lines.push('CPU');
-    lines.push(`  Confidence: ${cpu.quality?.confidence ?? 'unknown'}`);
-    lines.push(`  Samples: ${cpu.quality?.sampleCount ?? 'unknown'}`);
     lines.push(`  On CPU: ${formatRatio(cpu.summary?.onCpuRatio)}`);
-    lines.push(`  Idle: ${formatRatio(cpu.summary?.idleRatio)}`);
     lines.push(`  Event loop: ${formatEventLoop(cpu.eventLoop)}`);
     lines.push(
-      `  GC: ${formatMs(cpu.gc?.totalPauseMs)} total pause, ${cpu.gc?.longestPauseMs ?? 0}ms longest`,
+      `  GC: ${formatMs(cpu.gc?.totalPauseMs)} total pause, ${formatMs(cpu.gc?.longestPauseMs)} longest`,
     );
     lines.push('  Top hotspots:');
     pushHotspotsText(lines, cpu.hotspots ?? [], '    ');
@@ -38,7 +33,6 @@ function renderText(report: LanternaReport): string {
   if (memory) {
     lines.push('Memory');
     lines.push(`  Total sampled: ${formatBytes(memory.summary?.totalSampledBytes)}`);
-    lines.push(`  Memory samples: ${memory.memoryUsage?.sampleCount ?? 0}`);
     lines.push('  Top allocators:');
     pushAllocatorsText(lines, memory.hotAllocators ?? [], '    ');
     lines.push('');
@@ -55,23 +49,18 @@ function renderMarkdown(report: LanternaReport): string {
   lines.push('');
   lines.push('| Field | Value |');
   lines.push('| --- | --- |');
-  lines.push(`| Mode | ${escapePipe(report.meta?.mode ?? 'unknown')} |`);
   lines.push(`| Duration | ${formatMs(report.meta?.durationMs)} |`);
   lines.push(`| Command | \`${escapeBackticks(formatCommand(report.meta?.command))}\` |`);
-  lines.push(`| Kinds | ${escapePipe(formatList(report.meta?.profileKinds))} |`);
   lines.push('');
 
   const cpu = report.profiles?.cpu;
   if (cpu) {
     lines.push('## CPU');
     lines.push('');
-    lines.push(`- Confidence: ${cpu.quality?.confidence ?? 'unknown'}`);
-    lines.push(`- Samples: ${cpu.quality?.sampleCount ?? 'unknown'}`);
     lines.push(`- On CPU: ${formatRatio(cpu.summary?.onCpuRatio)}`);
-    lines.push(`- Idle: ${formatRatio(cpu.summary?.idleRatio)}`);
     lines.push(`- Event loop: ${formatEventLoop(cpu.eventLoop)}`);
     lines.push(
-      `- GC: ${formatMs(cpu.gc?.totalPauseMs)} total pause, ${cpu.gc?.longestPauseMs ?? 0}ms longest`,
+      `- GC: ${formatMs(cpu.gc?.totalPauseMs)} total pause, ${formatMs(cpu.gc?.longestPauseMs)} longest`,
     );
     lines.push('');
     lines.push('### Top CPU Hotspots');
@@ -84,7 +73,6 @@ function renderMarkdown(report: LanternaReport): string {
     lines.push('## Memory');
     lines.push('');
     lines.push(`- Total sampled: ${formatBytes(memory.summary?.totalSampledBytes)}`);
-    lines.push(`- Memory samples: ${memory.memoryUsage?.sampleCount ?? 0}`);
     lines.push('');
     lines.push('### Top Allocators');
     pushAllocatorsMarkdown(lines, memory.hotAllocators ?? []);
@@ -244,10 +232,6 @@ function renderValue(value: unknown): string[] {
 
 function formatCommand(command: string[] | undefined): string {
   return command && command.length > 0 ? command.join(' ') : '(unknown)';
-}
-
-function formatList(values: string[] | undefined): string {
-  return values && values.length > 0 ? values.join(', ') : '(none)';
 }
 
 function formatMs(value: number | undefined): string {
