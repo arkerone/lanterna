@@ -46,6 +46,32 @@ describe('activity indicator', () => {
       expect.objectContaining({
         symbol: expect.stringContaining('✔'),
         text: expect.stringContaining('Step one'),
+        prefixText: expect.stringContaining('Lanterna'),
+      }),
+    );
+    expect(start).toHaveBeenCalled();
+  });
+
+  it('appends a relative timing hint to persisted history entries', async () => {
+    const { startActivityIndicator } = await import('../src/activity-indicator.js');
+    const indicator = startActivityIndicator('Step one', { keepHistory: true });
+
+    indicator.update('Step two');
+
+    const persistedText = String(stopAndPersist.mock.calls[0]?.[0]?.text ?? '');
+    expect(persistedText).toMatch(/\((\d+ms|\d+(\.\d+)?s)\)/);
+  });
+
+  it('persists a neutral info step when info() is called with history enabled', async () => {
+    const { startActivityIndicator } = await import('../src/activity-indicator.js');
+    const indicator = startActivityIndicator('Loading detector', { keepHistory: true });
+
+    indicator.info('Detector skipped');
+
+    expect(stopAndPersist).toHaveBeenCalledWith(
+      expect.objectContaining({
+        symbol: expect.stringContaining('◇'),
+        text: expect.stringContaining('Loading detector'),
       }),
     );
     expect(start).toHaveBeenCalled();
@@ -61,6 +87,7 @@ describe('activity indicator', () => {
       expect.objectContaining({
         symbol: expect.stringContaining('✖'),
         text: expect.stringContaining('Connecting to CDP'),
+        prefixText: expect.stringContaining('Lanterna'),
       }),
     );
     expect(writeSync).toHaveBeenCalledWith(
