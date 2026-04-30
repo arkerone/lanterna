@@ -96,3 +96,6 @@ jobs:
 
       - name: Test
         run: npm test
+
+      - name: Check package contents
+        run: npm run pack:check

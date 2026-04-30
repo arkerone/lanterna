@@ -12,7 +12,10 @@
     }
   },
   "files": [
-    "dist"
+    "dist/**/*.d.ts",
+    "dist/**/*.js",
+    "dist/**/*.map",
+    "LICENSE"
   ],
   "scripts": {
     "build": "tsc -b",
