@@ -6,6 +6,7 @@ import chalk from 'chalk';
 import Table from 'cli-table3';
 import psList from 'ps-list';
 import type { AttachProfileOptions } from './parse.js';
+import { renderCommandHeader } from './terminal-style.js';
 
 const NODE_LAUNCHERS = new Set([
   'node',
@@ -62,12 +63,19 @@ export async function resolveAttachTarget(
     );
   }
 
-  intro(chalk.cyanBright('Lanterna Attach'), { output: process.stderr });
+  intro(
+    renderCommandHeader({
+      command: 'attach',
+      subtitle: 'Pick a running Node.js process',
+    }),
+    { output: process.stderr },
+  );
   log.step('Select a running Node.js process to profile.', { output: process.stderr });
   process.stderr.write(`${renderProcessTable(processes)}\n`);
   process.stderr.write(
     `${chalk.gray('* PID attach = best effort via SIGUSR1 on a live, signalable process')}\n`,
   );
+  process.stderr.write(`${chalk.gray('  Use ↑/↓ to move · Enter to attach · Ctrl+C to cancel')}\n`);
 
   const selection = await select({
     message: 'Which running program should Lanterna attach to?',
