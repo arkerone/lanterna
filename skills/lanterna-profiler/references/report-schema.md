@@ -2,6 +2,8 @@
 
 Use this for report navigation and multi-kind path conventions. For CPU-specific interpretation, see [cpu-profiling.md](cpu-profiling.md).
 
+For human-readable triage of an existing report, run `lanterna report <file> --format text` or `lanterna report <file> --format markdown`. This renders the same schema without changing the JSON report shape.
+
 ## Top-Level Shape
 
 ```json

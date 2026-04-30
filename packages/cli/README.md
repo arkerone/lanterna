@@ -2,7 +2,7 @@
 
 The `lanterna` command-line binary for [Lanterna](https://github.com/arkerone/lanterna), the agent-first Node.js profiler.
 
-Profile a Node process (spawn or attach), capture one or more profile kinds, run the built-in detectors, and emit a structured `LanternaReport` as JSON to stdout or a file.
+Profile a Node process (spawn or attach), capture one or more profile kinds, run the built-in detectors, and emit a structured `LanternaReport` as JSON, text, or Markdown to stdout or a file.
 
 > Schema v2: analysis output is grouped under `report.profiles.<kind>.*`. Built-in kinds are `cpu` and `memory`; the CLI defaults to `--kind cpu` on both `run` and `attach`.
 
@@ -29,10 +29,14 @@ lanterna run --duration 30s --output report.json -- node app.js
 # or, without installing:
 npx -y @lanterna-profiler/cli run --duration 30s --output report.json -- node app.js
 
+lanterna run --duration 30s --format markdown --output report.md -- node app.js
+lanterna run --duration 30s --wait-for-url http://127.0.0.1:3000/health --workload "npx -y autocannon http://127.0.0.1:3000" -- node server.js
 lanterna run --deep --duration 15s -- node server.js
 lanterna run --kind cpu --pretty -- node script.js
 lanterna run --pretty -- node script.js
 ```
+
+Use `--wait-for-url` for server readiness and `--workload` to generate activity while the capture is running. `--workload` is a shell command string; examples include `npx -y autocannon ...`, `npx -y artillery run load.yml`, `npm run load`, and `node scripts/load.mjs`.
 
 ### `lanterna attach`
 
@@ -51,14 +55,33 @@ lanterna attach --inspect-url ws://127.0.0.1:9229/<uuid> --kind cpu
 
 > `attach --pid` relies on `SIGUSR1` and is POSIX-only. On Windows, use `--inspect-url`. Attach mode does **not** support `--deep`.
 
+### `lanterna report`
+
+```bash
+lanterna report <file> [options]
+```
+
+Reads an existing JSON `LanternaReport` and renders it as text by default.
+
+```bash
+lanterna report report.json --format text
+lanterna report report.json --format markdown --output report.md
+lanterna report report.json --format json --pretty
+```
+
 ### Options
 
 | Option | Description |
 | --- | --- |
 | `--duration <ms\|s\|m>` | Profile duration. Omit to run until the child/target exits. |
-| `--output <path>` | Write JSON to a file instead of stdout. |
+| `--output <path>` | Write the selected output format to a file instead of stdout. |
+| `--format <json\|text\|markdown>` | Output format. Capture commands default to `json`; `report` defaults to `text`. |
 | `--pretty` | Pretty-print JSON with 2-space indentation. |
 | `--deep` | Enable `--trace-deopt` (run mode only). |
+| `--wait-for-url <url>` | In `run`, wait for a URL to respond before capture starts. |
+| `--wait-timeout <ms\|s\|m>` | Readiness timeout for `--wait-for-url` (default `30s`). |
+| `--capture-delay <ms\|s\|m>` | Extra delay after readiness before capture starts. |
+| `--workload <command>` | Shell command to run in parallel during `run` capture. |
 | `--sample-interval <us>` | V8 CPU sampling interval in µs (default `1000`, min `50`). |
 | `--kind <id>` | Profile kind to capture. Repeatable or comma-separated (default `cpu`). Built-in: `cpu`, `memory`. |
 | `--heap-sample-interval <size>` | V8 heap sampling interval (memory kind). Accepts raw bytes or a KiB/MiB suffix: `524288`, `512KiB`, `1MiB`. Default `512KiB`, min `1KiB`. |
@@ -116,6 +139,21 @@ You can also list detectors in a `.lanterna.json` (or `.lanterna.config.json`) f
 
 ```json
 {
+  "duration": "30s",
+  "output": "report.md",
+  "format": "markdown",
+  "pretty": true,
+  "kinds": ["cpu", "memory"],
+  "sampleInterval": 1000,
+  "heapSampleInterval": "512KiB",
+  "memoryUsageInterval": 250,
+  "includeMemorySamples": false,
+  "heapSnapshotAnalysis": false,
+  "heapSnapshotDir": ".lanterna-heapsnapshots",
+  "waitForUrl": "http://127.0.0.1:3000/health",
+  "waitTimeout": "30s",
+  "captureDelay": "250ms",
+  "workload": "npx -y autocannon http://127.0.0.1:3000",
   "detectors": [
     "@acme/lanterna-detectors-prisma",
     "./scripts/lanterna-plugin.mjs"

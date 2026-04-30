@@ -81,13 +81,26 @@ The installer does **not** capture CPU samples — that's the CPU probe's job ov
 
 These events are emitted over the control FD as JSON lines. The parent treats the channel as best effort: malformed events are ignored, and partial channels still produce a report — `captureIntegrity.*` records what was actually observed.
 
-### 5. Start capture
+### 5. Optional readiness and workload orchestration
+
+In `lanterna run`, the CLI can delay the profiling window until the server is actually ready:
+
+1. Lanterna starts the target under the inspector and releases the startup breakpoint.
+2. If `--wait-for-url <url>` is set, Lanterna polls that URL until it responds or `--wait-timeout` elapses.
+3. If `--capture-delay <duration>` is set, Lanterna waits that extra time after readiness.
+4. Lanterna starts the capture probes.
+5. If `--workload <command>` is set, Lanterna launches that shell command in parallel with the active capture.
+
+This keeps server captures from measuring only startup or idle time. The workload is external to the profiled app; it exists to generate the traffic or job activity being measured. Typical examples are `npx -y autocannon http://127.0.0.1:3000`, `npx -y artillery run load.yml`, `npm run load`, or `node scripts/load.mjs`.
+
+If the workload exits non-zero, Lanterna still writes the report when possible and then returns an error so automation can fail the run without losing the captured evidence.
+
+### 6. Start capture
 
 Once the inspector is connected, the coordinator:
 
 1. marks the start of the capture in the target runtime (via the preload global)
 2. calls each kind probe's `start(cdp)` (for CPU: `Profiler.start`)
-3. releases the paused process
 
 From that moment, signal families accumulate:
 
@@ -97,7 +110,7 @@ From that moment, signal families accumulate:
 
 With `--deep`, V8 deopt traces are also collected from the child's diagnostic output and parsed later into grouped `deopts[]`. V8 may emit those trace lines on stdout or stderr; Lanterna keeps trace diagnostics out of JSON stdout while preserving normal target stdout/stderr.
 
-### 6. Stop capture
+### 7. Stop capture
 
 Lanterna stops when the requested duration elapses, the target finishes first, or a signal (SIGINT/SIGTERM) is received. During shutdown it:
 

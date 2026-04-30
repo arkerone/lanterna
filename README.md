@@ -80,6 +80,9 @@ lanterna run --duration 30s --output report.json -- node app.js
 # or, without installing:
 npx -y @lanterna-profiler/cli run --duration 30s --output report.json -- node app.js
 
+# Read a report in a terminal-friendly format
+lanterna report report.json --format text
+
 # Profile memory only (heap allocations + RSS series)
 lanterna run --kind memory --duration 30s --output report.json -- node app.js
 
@@ -89,7 +92,14 @@ lanterna run --kind cpu --kind memory --duration 30s --output report.json -- nod
 # Attach to a running Node process
 lanterna attach --pid 4242 --duration 15s --output report.json
 
-# Inspect findings with jq
+# Profile a server after readiness and generate representative traffic
+lanterna run \
+  --duration 30s \
+  --wait-for-url http://127.0.0.1:3000/health \
+  --workload "npx -y autocannon http://127.0.0.1:3000" \
+  -- node server.js
+
+# Inspect findings with jq after advanced analysis
 jq '.findings[] | select(.severity != "info") | {id, severity}' report.json
 ```
 
@@ -112,7 +122,18 @@ lanterna run --pretty -- node server.js
 
 # Include V8 deopt tracing
 lanterna run --duration 30s --deep -- node app.js
+
+# Start the app, wait until it is ready, then run load in parallel with capture
+lanterna run \
+  --duration 30s \
+  --format markdown \
+  --output report.md \
+  --wait-for-url http://127.0.0.1:3000/health \
+  --workload "npx -y autocannon http://127.0.0.1:3000" \
+  -- node server.js
 ```
+
+`--workload` is a shell command string executed from the same cwd and environment as Lanterna. Use it for external traffic generators such as `npx -y autocannon ...`, `npx -y artillery run load.yml`, `npm run load`, `pnpm load`, `bunx ...`, or `node scripts/load.mjs`. Prefer `npx -y` for one-off tools so the workload cannot block on an install confirmation prompt.
 
 ### Attach to a running process
 
@@ -136,14 +157,33 @@ lanterna attach --inspect-url ws://127.0.0.1:9229/<uuid>
 > [!WARNING]
 > `attach --pid` relies on `SIGUSR1` and is POSIX-only. On Windows, use `--inspect-url`. Attach mode does **not** support `--deep` - deopt tracing cannot be enabled on a process that is already running.
 
+### Render an existing report
+
+```bash
+lanterna report <file> [options]
+```
+
+`report` reads an existing `LanternaReport` JSON file and renders it as terminal text by default. Use Markdown for issues and PRs, or JSON to reformat a report.
+
+```bash
+lanterna report report.json --format text
+lanterna report report.json --format markdown --output report.md
+lanterna report report.json --format json --pretty
+```
+
 ### Options
 
 | Option | Description |
 | --- | --- |
 | `--duration <ms\|s\|m>` | Profile duration. Omit to run until the child/target exits. |
-| `--output <path>` | Write JSON to a file instead of stdout. |
+| `--output <path>` | Write the selected output format to a file instead of stdout. |
+| `--format <json\|text\|markdown>` | Output format. Capture commands default to `json`; `report` defaults to `text`. |
 | `--pretty` | Pretty-print JSON with 2-space indentation. |
 | `--deep` | Enable `--trace-deopt` (spawn mode only). |
+| `--wait-for-url <url>` | In `run`, wait for the target URL to respond before capture starts. |
+| `--wait-timeout <ms\|s\|m>` | Readiness timeout for `--wait-for-url` (default `30s`). |
+| `--capture-delay <ms\|s\|m>` | Extra delay after readiness and before capture starts. |
+| `--workload <command>` | Shell command to run in parallel during `run` capture. |
 | `--sample-interval <us>` | V8 CPU sampling interval in µs (default `1000`, min `50`). |
 | `--kind <id>` | Profile kind to capture (default `cpu`). Repeatable or comma-separated. Built-in: `cpu`, `memory`. |
 | `--heap-sample-interval <size>` | V8 heap sampling interval (memory kind). Accepts raw bytes or a KiB/MiB suffix: `524288`, `512KiB`, `1MiB`. Default `512KiB`, min `1KiB`. |
@@ -268,7 +308,16 @@ Builtin-backed findings include `confidence` and `proofLevel` so consumers can d
 
 Lanterna is extensible: you can ship your own detectors as plugins. See [Extending Lanterna](#extending-lanterna) below.
 
-## Querying a report with jq
+## Reading a report
+
+Start with Lanterna's built-in renderer for a readable summary:
+
+```bash
+lanterna report report.json --format text
+lanterna report report.json --format markdown --output report.md
+```
+
+Use `jq` when you need precise fields or automation:
 
 ```bash
 # Critical and warning findings
@@ -348,6 +397,21 @@ lanterna run --detectors @acme/lanterna-detectors-prisma --detectors ./my-plugin
 
 ```json
 {
+  "duration": "30s",
+  "output": "report.md",
+  "format": "markdown",
+  "pretty": true,
+  "kinds": ["cpu", "memory"],
+  "sampleInterval": 1000,
+  "heapSampleInterval": "512KiB",
+  "memoryUsageInterval": 250,
+  "includeMemorySamples": false,
+  "heapSnapshotAnalysis": false,
+  "heapSnapshotDir": ".lanterna-heapsnapshots",
+  "waitForUrl": "http://127.0.0.1:3000/health",
+  "waitTimeout": "30s",
+  "captureDelay": "250ms",
+  "workload": "npx -y autocannon http://127.0.0.1:3000",
   "detectors": [
     "@acme/lanterna-detectors-prisma",
     "./scripts/lanterna-plugin.mjs"
@@ -355,7 +419,7 @@ lanterna run --detectors @acme/lanterna-detectors-prisma --detectors ./my-plugin
 }
 ```
 
-Config entries load first, then any flag-specified plugins. See [`@lanterna-profiler/detectors`](packages/detectors#writing-a-detector-plugin) for the plugin contract, exposed helpers (`buildAttributedFinding`, `resolveAttribution`, `buildAttributionEvidence`, `CpuHotspotContext`, `withBuiltInCpuDetectors`, `createCpuProfileKindWithBuiltInDetectors`), and the full list of built-in detectors you can use as templates.
+Config loads first, then CLI flags win. `detectors` are additive: config entries load first, then any flag-specified plugins. See [`@lanterna-profiler/detectors`](packages/detectors#writing-a-detector-plugin) for the plugin contract, exposed helpers (`buildAttributedFinding`, `resolveAttribution`, `buildAttributionEvidence`, `CpuHotspotContext`, `withBuiltInCpuDetectors`, `createCpuProfileKindWithBuiltInDetectors`), and the full list of built-in detectors you can use as templates.
 
 ## Programmatic API
 
