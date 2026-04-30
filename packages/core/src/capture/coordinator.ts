@@ -46,6 +46,10 @@ export interface RunCaptureOptions<TSourceOptions> {
   stopSignal?: Promise<void>;
   /** Optional abort signal for interrupting finalization after stop has begun. */
   abortSignal?: AbortSignal;
+  /** Optional hook after the target is running but before the capture clock starts. */
+  beforeCaptureStart?: () => void | Promise<void>;
+  /** Optional hook after probes start, before waiting for capture completion. */
+  onCaptureStarted?: () => void | Promise<void>;
 }
 
 /**
@@ -79,6 +83,8 @@ export async function runCapture<TSourceOptions>(
   const captureIntegrity: CaptureIntegrity = connected.initialIntegrity;
 
   try {
+    await options.beforeCaptureStart?.();
+
     const target = await fetchTargetInfo(cdp, { pid: connected.target.pid });
     await markCaptureStart(cdp);
     const runtimeCaptureStartMs = await readRuntimeClockNow(cdp);
@@ -126,6 +132,8 @@ export async function runCapture<TSourceOptions>(
         });
       }
     }
+
+    await options.onCaptureStarted?.();
 
     emitCaptureProgress(options.sourceOptions, {
       stage: 'capture-running',

@@ -24,6 +24,8 @@ export interface RunProfileOptions {
   extraAnalyzers?: (FindingAnalyzer | SectionAnalyzer)[];
   setupPipeline?: ProfilePipelinePlugin;
   onTargetDiagnosticChunk?: (chunk: string) => void;
+  beforeCaptureStart?: () => void | Promise<void>;
+  onCaptureStarted?: () => void | Promise<void>;
 }
 
 export interface AttachProfileOptions {
