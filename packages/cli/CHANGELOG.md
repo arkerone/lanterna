@@ -1,5 +1,14 @@
 # @lanterna-profiler/cli
 
+## 1.5.1
+
+### Patch Changes
+
+- a043cb5: Add package license files and tighten published package contents.
+- Updated dependencies [a043cb5]
+  - @lanterna-profiler/core@1.5.1
+  - @lanterna-profiler/detectors@1.4.1
+
 ## 1.5.0
 
 ### Minor Changes
