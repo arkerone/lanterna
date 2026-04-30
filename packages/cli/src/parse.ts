@@ -9,6 +9,7 @@ import { Command, CommanderError } from 'commander';
 interface ParsedCommonOptions {
   duration?: number;
   output?: string;
+  format?: OutputFormat;
   pretty?: boolean;
   sampleInterval?: number;
   heapSampleInterval?: number;
@@ -23,6 +24,7 @@ interface ParsedCommonOptions {
 interface NormalizedCommonOptions {
   durationMs?: number;
   output?: string;
+  format: OutputFormat;
   pretty: boolean;
   sampleIntervalMicros: number;
   heapSamplingIntervalBytes: number;
@@ -38,6 +40,10 @@ interface NormalizedCommonOptions {
 
 interface ParsedRunOptions extends ParsedCommonOptions {
   deep?: boolean;
+  waitForUrl?: string;
+  waitTimeout?: number;
+  captureDelay?: number;
+  workload?: string;
 }
 
 interface ParsedAttachOptions extends ParsedCommonOptions {
@@ -49,6 +55,7 @@ export interface RunProfileOptions {
   command: string[];
   durationMs?: number;
   output?: string;
+  format: OutputFormat;
   pretty: boolean;
   deep: boolean;
   sampleIntervalMicros: number;
@@ -61,6 +68,10 @@ export interface RunProfileOptions {
   };
   detectors: string[];
   kinds: string[];
+  waitForUrl?: string;
+  waitTimeoutMs?: number;
+  captureDelayMs?: number;
+  workload?: string;
 }
 
 export interface AttachProfileOptions {
@@ -69,6 +80,7 @@ export interface AttachProfileOptions {
   promptForTarget?: boolean;
   durationMs?: number;
   output?: string;
+  format: OutputFormat;
   pretty: boolean;
   sampleIntervalMicros: number;
   heapSamplingIntervalBytes: number;
@@ -81,6 +93,18 @@ export interface AttachProfileOptions {
   detectors: string[];
   kinds: string[];
 }
+
+export interface ReportOptions {
+  file: string;
+  output?: string;
+  format: OutputFormat;
+  pretty: boolean;
+}
+
+export type OutputFormat = 'json' | 'text' | 'markdown';
+
+const PROVIDED_FLAGS = Symbol('lanterna.providedFlags');
+const DEFAULT_WAIT_TIMEOUT_MS = 30_000;
 
 export function parseRunArgs(args: string[]): RunProfileOptions {
   const separatorIndex = args.indexOf('--');
@@ -95,11 +119,18 @@ export function parseRunArgs(args: string[]): RunProfileOptions {
     throw new Error('no command provided. Use: lanterna run [options] -- <command> [args...]');
   }
 
-  return {
+  const options: RunProfileOptions = {
     command: targetCommand,
     deep: Boolean(parsed.deep),
     ...normalizeCommonOptions(parsed),
+    ...(parsed.waitForUrl ? { waitForUrl: parsed.waitForUrl } : {}),
+    ...(parsed.waitForUrl || parsed.waitTimeout !== undefined
+      ? { waitTimeoutMs: parsed.waitTimeout ?? DEFAULT_WAIT_TIMEOUT_MS }
+      : {}),
+    ...(parsed.captureDelay !== undefined ? { captureDelayMs: parsed.captureDelay } : {}),
+    ...(parsed.workload ? { workload: parsed.workload } : {}),
   };
+  return withProvidedFlags(options, collectProvidedFlags(optionArgs));
 }
 
 export function parseAttachArgs(args: string[]): AttachProfileOptions {
@@ -114,12 +145,30 @@ export function parseAttachArgs(args: string[]): AttachProfileOptions {
     throw new Error('`lanterna attach` accepts at most one of --pid or --inspect-url');
   }
 
-  return {
+  const options: AttachProfileOptions = {
     ...normalizeCommonOptions(parsed),
     ...(parsed.pid !== undefined && parsed.pid !== true ? { pid: parsed.pid } : {}),
     ...(promptForTarget ? { promptForTarget: true } : {}),
     ...(parsed.inspectUrl ? { inspectUrl: parsed.inspectUrl } : {}),
   };
+  return withProvidedFlags(options, collectProvidedFlags(args));
+}
+
+export function parseReportArgs(args: string[]): ReportOptions {
+  const command = createReportParser();
+  parseCommand(command, args);
+  const parsed = command.opts<Pick<ParsedCommonOptions, 'output' | 'format' | 'pretty'>>();
+  const file = command.args[0];
+  if (!file) {
+    throw new Error('no report file provided. Use: lanterna report <file> [options]');
+  }
+  const options: ReportOptions = {
+    file,
+    ...(parsed.output ? { output: parsed.output } : {}),
+    format: parsed.format ?? 'text',
+    pretty: Boolean(parsed.pretty),
+  };
+  return withProvidedFlags(options, collectProvidedFlags(args));
 }
 
 function normalizeCommonOptions(parsed: ParsedCommonOptions): NormalizedCommonOptions {
@@ -132,6 +181,7 @@ function normalizeCommonOptions(parsed: ParsedCommonOptions): NormalizedCommonOp
   return {
     ...(parsed.duration !== undefined ? { durationMs: parsed.duration } : {}),
     ...(parsed.output ? { output: parsed.output } : {}),
+    format: parsed.format ?? 'json',
     pretty: Boolean(parsed.pretty),
     sampleIntervalMicros: parsed.sampleInterval ?? DEFAULT_SAMPLE_INTERVAL_MICROS,
     heapSamplingIntervalBytes: parsed.heapSampleInterval ?? DEFAULT_MEMORY_SAMPLING_INTERVAL_BYTES,
@@ -167,10 +217,12 @@ function resolveKinds(raw: string[] | undefined): string[] {
 }
 
 function createRunParser(): Command {
-  return addCommonProfilingOptions(createBaseParser('run').allowUnknownOption(false)).option(
-    '--deep',
-    'Enable --trace-deopt',
-  );
+  return addCommonProfilingOptions(createBaseParser('run').allowUnknownOption(false))
+    .option('--deep', 'Enable --trace-deopt')
+    .option('--wait-for-url <url>', 'Wait until the target URL responds before capture')
+    .option('--wait-timeout <value>', 'Readiness timeout', parseDuration)
+    .option('--capture-delay <value>', 'Extra delay after readiness before capture', parseDuration)
+    .option('--workload <command>', 'Shell command to run in parallel during capture');
 }
 
 function createAttachParser(): Command {
@@ -187,7 +239,8 @@ function createAttachParser(): Command {
 function addCommonProfilingOptions(command: Command): Command {
   return command
     .option('--duration <value>', 'Profiling duration', parseDuration)
-    .option('--output, -o <path>', 'Write JSON report to path')
+    .option('--output, -o <path>', 'Write report to path')
+    .option('--format <format>', 'Output format: json, text, or markdown', parseOutputFormat)
     .option('--pretty', 'Pretty-print JSON')
     .option(
       '--sample-interval <us>',
@@ -229,6 +282,14 @@ function addCommonProfilingOptions(command: Command): Command {
       '--heap-snapshot-dir <dir>',
       'Directory for start/end .heapsnapshot files (memory kind only)',
     );
+}
+
+function createReportParser(): Command {
+  return createBaseParser('report')
+    .argument('[file]')
+    .option('--output, -o <path>', 'Write rendered report to path')
+    .option('--format <format>', 'Output format: json, text, or markdown', parseOutputFormat)
+    .option('--pretty', 'Pretty-print JSON output');
 }
 
 function appendRepeatableValue(value: string, previous: string[]): string[] {
@@ -276,7 +337,12 @@ function normalizeCommanderError(
   }
   if (error.code === 'commander.optionMissingArgument') {
     if (joinedArgs.includes('--duration')) return '--duration expects a value';
+    if (joinedArgs.includes('--format')) return '--format expects a value';
     if (joinedArgs.includes('--inspect-url')) return '--inspect-url expects a value';
+    if (joinedArgs.includes('--wait-for-url')) return '--wait-for-url expects a value';
+    if (joinedArgs.includes('--wait-timeout')) return '--wait-timeout expects a value';
+    if (joinedArgs.includes('--capture-delay')) return '--capture-delay expects a value';
+    if (joinedArgs.includes('--workload')) return '--workload expects a value';
   }
   return error.message;
 }
@@ -336,6 +402,15 @@ function parseMemoryUsageInterval(value: string): number {
   return parsed;
 }
 
+function parseOutputFormat(value: string): OutputFormat {
+  if (value === 'json' || value === 'text' || value === 'markdown') return value;
+  throw new CommanderError(
+    1,
+    'lanterna.invalidFormat',
+    `invalid --format: ${value} (expected json, text, or markdown)`,
+  );
+}
+
 function parseSampleInterval(value: string): number {
   const parsed = Number(value);
   if (!Number.isFinite(parsed) || parsed < MIN_SAMPLE_INTERVAL_MICROS) {
@@ -363,3 +438,54 @@ function parseOptionalPid(value: string | undefined): number | true {
 
 export type RunOptions = RunProfileOptions;
 export type AttachOptions = AttachProfileOptions;
+
+export function getProvidedFlags(options: object): ReadonlySet<string> {
+  return Reflect.get(options, PROVIDED_FLAGS) ?? new Set<string>();
+}
+
+function withProvidedFlags<T extends object>(options: T, providedFlags: Set<string>): T {
+  Object.defineProperty(options, PROVIDED_FLAGS, {
+    value: providedFlags,
+    enumerable: false,
+    configurable: false,
+  });
+  return options;
+}
+
+function collectProvidedFlags(args: string[]): Set<string> {
+  const provided = new Set<string>();
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (arg === '--') break;
+    if (arg === '-o') {
+      provided.add('output');
+      continue;
+    }
+    if (!arg?.startsWith('--')) continue;
+    const name = arg.slice(2).split('=')[0] ?? '';
+    if (name) provided.add(normalizeFlagName(name));
+  }
+  return provided;
+}
+
+function normalizeFlagName(flag: string): string {
+  const aliases: Record<string, string> = {
+    'heap-sample-interval': 'heapSamplingIntervalBytes',
+    'memory-usage-interval': 'memoryUsageIntervalMs',
+    'include-memory-samples': 'includeMemoryUsageSamples',
+    'heap-snapshot-analysis': 'heapSnapshotAnalysis',
+    'heap-snapshot-dir': 'heapSnapshotAnalysis',
+    'sample-interval': 'sampleIntervalMicros',
+    'wait-for-url': 'waitForUrl',
+    'wait-timeout': 'waitTimeoutMs',
+    'capture-delay': 'captureDelayMs',
+    detectors: 'detectors',
+    kind: 'kind',
+    duration: 'durationMs',
+    output: 'output',
+    format: 'format',
+    pretty: 'pretty',
+    workload: 'workload',
+  };
+  return aliases[flag] ?? flag;
+}

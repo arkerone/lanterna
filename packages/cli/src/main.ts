@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import chalk from 'chalk';
 import { AttachSelectionCancelledError } from './attach-target.js';
 import { attachCommand } from './commands/attach.js';
+import { reportCommand } from './commands/report.js';
 import { runCommand } from './commands/run.js';
 import {
   formatExamples,
@@ -13,7 +14,7 @@ import {
   formatSection,
   formatUnknownCommandError,
 } from './help.js';
-import { parseAttachArgs, parseRunArgs } from './parse.js';
+import { parseAttachArgs, parseReportArgs, parseRunArgs } from './parse.js';
 import { renderBrandHeader, renderCommandHeader } from './terminal-style.js';
 
 function readPackageVersion(): string {
@@ -72,6 +73,10 @@ const captureRunRows = [
     'default 1000',
   ),
   formatOptionRow('--deep', 'Enable deopt tracing', 'stderr becomes noisier'),
+  formatOptionRow('--wait-for-url <url>', 'Wait for app readiness before capture'),
+  formatOptionRow('--wait-timeout <ms|s|m>', 'Readiness timeout', 'default 30s'),
+  formatOptionRow('--capture-delay <ms|s|m>', 'Extra delay after readiness before capture'),
+  formatOptionRow('--workload <command>', 'Shell command to run in parallel during capture'),
 ];
 
 const captureAttachRows = [
@@ -94,7 +99,8 @@ const captureAttachRows = [
 ];
 
 const outputRows = [
-  formatOptionRow('--output, -o <path>', 'Write the JSON report to a file'),
+  formatOptionRow('--output, -o <path>', 'Write report output to a file'),
+  formatOptionRow('--format <format>', 'Output format', 'json, text, markdown'),
   formatOptionRow('--pretty', 'Pretty-print JSON output'),
 ];
 
@@ -115,16 +121,19 @@ const GLOBAL_HELP = `${renderBrandHeader({
 ${formatSection('Usage', [
   `  ${chalk.cyan('lanterna run')} ${chalk.gray('[options] -- <command> [args...]')}`,
   `  ${chalk.cyan('lanterna attach')} ${chalk.gray('[options]')}`,
+  `  ${chalk.cyan('lanterna report')} ${chalk.gray('<file> [options]')}`,
 ])}
 
 ${formatSection('Commands', [
   formatOptionRow('run', 'Start a Node.js command under Lanterna and capture a profile'),
   formatOptionRow('attach', 'Attach to a running Node.js process by PID, URL, or picker'),
+  formatOptionRow('report', 'Render an existing Lanterna JSON report'),
 ])}
 
 ${formatSection('Common options', [
   formatOptionRow('--duration <ms|s|m>', 'Profiling duration', 'e.g. 15s or 5000ms'),
-  formatOptionRow('--output, -o <path>', 'Write the JSON report to a file instead of stdout'),
+  formatOptionRow('--output, -o <path>', 'Write report output to a file instead of stdout'),
+  formatOptionRow('--format <format>', 'Output format', 'json, text, markdown'),
   formatOptionRow('--pretty', 'Pretty-print JSON output'),
   formatOptionRow(
     '--kind <id>',
@@ -141,6 +150,10 @@ ${formatSection('Common options', [
 
 ${formatSection('Run-only options', [
   formatOptionRow('--deep', 'Enable deopt tracing', 'stderr becomes noisier'),
+  formatOptionRow('--wait-for-url <url>', 'Wait for app readiness before capture'),
+  formatOptionRow('--wait-timeout <ms|s|m>', 'Readiness timeout', 'default 30s'),
+  formatOptionRow('--capture-delay <ms|s|m>', 'Extra delay after readiness before capture'),
+  formatOptionRow('--workload <command>', 'Shell command to run during capture'),
 ])}
 
 ${formatSection('Attach-only options', [
@@ -182,6 +195,10 @@ ${formatSection('Meta', [
 
 ${formatExamples('Examples', [
   {
+    comment: 'Read an existing report in terminal-friendly form',
+    cmd: 'lanterna report report.json --format text',
+  },
+  {
     comment: 'Run a fresh process under the profiler',
     cmd: 'lanterna run --duration 30s --output report.json -- node app.js',
   },
@@ -196,6 +213,10 @@ ${formatExamples('Examples', [
   {
     comment: 'Attach directly by PID',
     cmd: 'lanterna attach --pid 4242 --duration 15s --output report.json',
+  },
+  {
+    comment: 'Profile a ready server under HTTP load',
+    cmd: 'lanterna run --duration 30s --wait-for-url http://127.0.0.1:3000/health --workload "npx -y autocannon http://127.0.0.1:3000" -- node server.js',
   },
   { comment: 'Attach until you stop it manually', cmd: 'lanterna attach --pid 4242' },
   { comment: 'Open the interactive picker', cmd: 'lanterna attach --pid' },
@@ -231,6 +252,14 @@ ${formatExamples('Examples', [
   { comment: 'Enable deopt tracing', cmd: 'lanterna run --deep --duration 15s -- node server.js' },
   { comment: 'Pretty-print JSON to stdout', cmd: 'lanterna run --pretty -- node script.js' },
   {
+    comment: 'Render markdown directly from a capture',
+    cmd: 'lanterna run --format markdown --output report.md -- node script.js',
+  },
+  {
+    comment: 'Wait for a server and run autocannon during capture',
+    cmd: 'lanterna run --duration 30s --wait-for-url http://127.0.0.1:3000/health --workload "npx -y autocannon http://127.0.0.1:3000" -- node server.js',
+  },
+  {
     comment: 'Load a detector plugin',
     cmd: 'lanterna run --detectors @acme/lanterna-detectors-prisma -- node app.js',
   },
@@ -248,6 +277,7 @@ ${formatNotes('Notes', [
   `The ${chalk.cyan('--')} separator is required before the target command`,
   `Without ${chalk.cyan('--duration')}, Lanterna profiles until the child exits`,
   `${chalk.cyan('--kind')} works on ${chalk.cyan('run')} and ${chalk.cyan('attach')}; repeat it or use ${chalk.cyan('--kind cpu,memory')}`,
+  `Use ${chalk.cyan('--workload "npx -y autocannon ..."')} to generate representative traffic while the capture is running`,
   `Built-in profile kinds: ${chalk.cyan('cpu')} (default) and ${chalk.cyan('memory')}; unknown ids fail with ${chalk.gray('"unknown profile kind(s): <ids>. Available kinds: cpu, memory"')}`,
 ])}
 `;
@@ -292,6 +322,27 @@ ${formatNotes('Notes', [
 ])}
 `;
 
+const REPORT_HELP = `${renderCommandHeader({
+  command: 'report',
+  subtitle: 'Existing report renderer',
+})}
+
+${formatSection('Usage', [`  ${chalk.cyan('lanterna report')} ${chalk.gray('<file> [options]')}`])}
+
+${formatSection('Output', outputRows)}
+
+${formatSection('General', generalRows)}
+
+${formatExamples('Examples', [
+  { comment: 'Read a report in the terminal', cmd: 'lanterna report report.json --format text' },
+  {
+    comment: 'Create markdown for an issue or pull request',
+    cmd: 'lanterna report report.json --format markdown --output report.md',
+  },
+  { comment: 'Reformat JSON', cmd: 'lanterna report report.json --format json --pretty' },
+])}
+`;
+
 export async function main(argv: string[]): Promise<void> {
   if (argv.length === 0 || argv[0] === '-h' || argv[0] === '--help') {
     process.stdout.write(GLOBAL_HELP);
@@ -330,9 +381,17 @@ export async function main(argv: string[]): Promise<void> {
     }
     return;
   }
+  if (subcommand === 'report') {
+    if (rest.length === 0 || rest[0] === '-h' || rest[0] === '--help') {
+      process.stdout.write(REPORT_HELP);
+      return;
+    }
+    await reportCommand(parseReportArgs(rest));
+    return;
+  }
 
   process.stderr.write(formatUnknownCommandError(subcommand ?? ''));
   process.exitCode = 2;
 }
 
-export { ATTACH_HELP, GLOBAL_HELP, RUN_HELP, VERSION };
+export { ATTACH_HELP, GLOBAL_HELP, REPORT_HELP, RUN_HELP, VERSION };
