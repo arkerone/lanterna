@@ -1,7 +1,5 @@
 import type {
   Finding,
-  FindingMeasurements,
-  FindingPriority,
   FindingRemediation,
   Hotspot,
   LanternaReport,
@@ -170,23 +168,18 @@ function pushFindingsText(lines: string[], findings: Finding[], indent: string):
   }
   for (const f of findings) {
     lines.push(`${indent}[${f.severity}] ${f.title}`);
-    lines.push(`${indent}  Kind: ${f.profileKind} | category: ${f.category}`);
-    if (f.confidence) lines.push(`${indent}  Confidence: ${f.confidence}`);
-    if (f.proofLevel) lines.push(`${indent}  Proof: ${f.proofLevel}`);
     lines.push(`${indent}  Why: ${f.why}`);
     lines.push(`${indent}  Suggestion: ${f.suggestion}`);
     lines.push(
-      `${indent}  Evidence: ${f.evidence.function} (${formatLocation(f.evidence.file, f.evidence.line)}) self ${formatPct(f.evidence.selfPct)}`,
+      `${indent}  Where: ${f.evidence.function} (${formatLocation(f.evidence.file, f.evidence.line)}) — self ${formatPct(f.evidence.selfPct)}`,
     );
     if (f.evidence.extra !== undefined) {
       const extra = renderValue(f.evidence.extra);
       if (extra.length > 0) {
-        lines.push(`${indent}  Evidence extra:`);
+        lines.push(`${indent}  Details:`);
         for (const line of extra) lines.push(`${indent}    ${line}`);
       }
     }
-    if (f.measurements) pushMeasurementsText(lines, f.measurements, `${indent}  `);
-    if (f.priority) pushPriorityText(lines, f.priority, `${indent}  `);
     if (f.remediation) pushRemediationText(lines, f.remediation, `${indent}  `);
     if (f.references.length > 0) {
       lines.push(`${indent}  References:`);
@@ -201,27 +194,20 @@ function pushFindingsMarkdown(lines: string[], findings: Finding[]): void {
     return;
   }
   for (const f of findings) {
-    lines.push(`### ${f.title}`);
+    lines.push(`### [${f.severity}] ${f.title}`);
     lines.push('');
-    lines.push(`- Severity: ${f.severity}`);
-    lines.push(`- Kind: ${f.profileKind}`);
-    lines.push(`- Category: ${f.category}`);
-    if (f.confidence) lines.push(`- Confidence: ${f.confidence}`);
-    if (f.proofLevel) lines.push(`- Proof: ${f.proofLevel}`);
     lines.push(`- Why: ${f.why}`);
     lines.push(`- Suggestion: ${f.suggestion}`);
     lines.push(
-      `- Evidence: \`${escapeBackticks(f.evidence.function)}\` at \`${escapeBackticks(formatLocation(f.evidence.file, f.evidence.line))}\` (self ${formatPct(f.evidence.selfPct)})`,
+      `- Where: \`${escapeBackticks(f.evidence.function)}\` at \`${escapeBackticks(formatLocation(f.evidence.file, f.evidence.line))}\` — self ${formatPct(f.evidence.selfPct)}`,
     );
     if (f.evidence.extra !== undefined) {
       const extra = renderValue(f.evidence.extra);
       if (extra.length > 0) {
-        lines.push('- Evidence extra:');
+        lines.push('- Details:');
         for (const line of extra) lines.push(`  ${line}`);
       }
     }
-    if (f.measurements) pushMeasurementsMarkdown(lines, f.measurements);
-    if (f.priority) pushPriorityMarkdown(lines, f.priority);
     if (f.remediation) pushRemediationMarkdown(lines, f.remediation);
     if (f.references.length > 0) {
       lines.push('- References:');
@@ -229,62 +215,6 @@ function pushFindingsMarkdown(lines: string[], findings: Finding[]): void {
     }
     lines.push('');
   }
-}
-
-function pushMeasurementsText(
-  lines: string[],
-  measurements: FindingMeasurements,
-  indent: string,
-): void {
-  const observed = Object.entries(measurements.observed);
-  const thresholds = Object.entries(measurements.thresholds);
-  if (observed.length === 0 && thresholds.length === 0) return;
-  lines.push(`${indent}Measurements:`);
-  for (const [key, value] of observed) {
-    const threshold = measurements.thresholds[key];
-    const suffix = threshold !== undefined ? ` (threshold ${formatNumber(threshold)})` : '';
-    lines.push(`${indent}  ${key}: ${formatNumber(value)}${suffix}`);
-  }
-  for (const [key, value] of thresholds) {
-    if (key in measurements.observed) continue;
-    lines.push(`${indent}  ${key}: threshold ${formatNumber(value)}`);
-  }
-}
-
-function pushMeasurementsMarkdown(lines: string[], measurements: FindingMeasurements): void {
-  const observed = Object.entries(measurements.observed);
-  const thresholds = Object.entries(measurements.thresholds);
-  if (observed.length === 0 && thresholds.length === 0) return;
-  lines.push('- Measurements:');
-  for (const [key, value] of observed) {
-    const threshold = measurements.thresholds[key];
-    const suffix = threshold !== undefined ? ` (threshold ${formatNumber(threshold)})` : '';
-    lines.push(`  - ${key}: ${formatNumber(value)}${suffix}`);
-  }
-  for (const [key, value] of thresholds) {
-    if (key in measurements.observed) continue;
-    lines.push(`  - ${key}: threshold ${formatNumber(value)}`);
-  }
-}
-
-function pushPriorityText(lines: string[], priority: FindingPriority, indent: string): void {
-  const impact =
-    priority.impactEstimateMs !== undefined
-      ? `, impact ~${formatMs(priority.impactEstimateMs)}`
-      : '';
-  lines.push(
-    `${indent}Priority: score ${priority.score}, action confidence ${priority.actionConfidence}${impact}`,
-  );
-}
-
-function pushPriorityMarkdown(lines: string[], priority: FindingPriority): void {
-  const impact =
-    priority.impactEstimateMs !== undefined
-      ? `, impact ~${formatMs(priority.impactEstimateMs)}`
-      : '';
-  lines.push(
-    `- Priority: score ${priority.score}, action confidence ${priority.actionConfidence}${impact}`,
-  );
 }
 
 function pushRemediationText(
@@ -381,12 +311,6 @@ function formatBytes(value: number | undefined): string {
   const kib = value / 1024;
   if (kib < 1024) return `${kib.toFixed(1)} KiB`;
   return `${(kib / 1024).toFixed(1)} MiB`;
-}
-
-function formatNumber(value: number): string {
-  if (!Number.isFinite(value)) return 'unknown';
-  if (Number.isInteger(value)) return value.toString();
-  return value.toFixed(2);
 }
 
 function formatLocation(file: string, line: number): string {
