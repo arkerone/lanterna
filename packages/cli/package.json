@@ -8,9 +8,13 @@
   },
   "files": [
     "bin",
-    "dist"
+    "dist/**/*.d.ts",
+    "dist/**/*.js",
+    "dist/**/*.map",
+    "LICENSE"
   ],
   "scripts": {
+    "pretest": "npm run build",
     "build": "tsc -b",
     "dev": "tsc -b --watch",
     "test": "vitest run",

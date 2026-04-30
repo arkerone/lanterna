@@ -19,10 +19,11 @@
     "check": "biome check .",
     "check:fix": "biome check --write .",
     "typecheck": "turbo run typecheck",
+    "pack:check": "node scripts/check-packages.mjs",
     "clean": "turbo run clean && rm -rf node_modules/.cache .turbo",
     "changeset": "changeset",
     "version-packages": "changeset version",
-    "release": "turbo run build && changeset publish",
+    "release": "npm run clean && turbo run build && npm run pack:check && changeset publish",
     "prepare": "husky"
   },
   "engines": {

@@ -12,7 +12,11 @@
     }
   },
   "files": [
-    "dist"
+    "dist/**/*.cjs",
+    "dist/**/*.d.ts",
+    "dist/**/*.js",
+    "dist/**/*.map",
+    "LICENSE"
   ],
   "scripts": {
     "prebuild": "node scripts/generate-version.js",
