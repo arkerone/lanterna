@@ -172,6 +172,7 @@ export type {
   MemorySummary,
   MemoryUsageSample,
   NodeModulesHotspotEvidenceExtra,
+  ProfileQuality,
   ReportMeta,
   RequireInHotPathEvidenceExtra,
   StallCorrelation,
