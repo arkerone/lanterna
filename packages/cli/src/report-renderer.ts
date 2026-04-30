@@ -1,10 +1,4 @@
-import type {
-  Finding,
-  FindingRemediation,
-  Hotspot,
-  LanternaReport,
-  MemoryHotAllocator,
-} from '@lanterna-profiler/core';
+import type { Finding, Hotspot, LanternaReport, MemoryHotAllocator } from '@lanterna-profiler/core';
 import type { OutputFormat } from './parse.js';
 
 export function renderReport(
@@ -168,10 +162,9 @@ function pushFindingsText(lines: string[], findings: Finding[], indent: string):
   }
   for (const f of findings) {
     lines.push(`${indent}[${f.severity}] ${f.title}`);
-    lines.push(`${indent}  Why: ${f.why}`);
-    lines.push(`${indent}  Suggestion: ${f.suggestion}`);
+    lines.push(`${indent}  ${f.suggestion}`);
     lines.push(
-      `${indent}  Where: ${f.evidence.function} (${formatLocation(f.evidence.file, f.evidence.line)}) — self ${formatPct(f.evidence.selfPct)}`,
+      `${indent}  Evidence: ${f.evidence.function} (${formatLocation(f.evidence.file, f.evidence.line)})`,
     );
     if (f.evidence.extra !== undefined) {
       const extra = renderValue(f.evidence.extra);
@@ -179,11 +172,6 @@ function pushFindingsText(lines: string[], findings: Finding[], indent: string):
         lines.push(`${indent}  Details:`);
         for (const line of extra) lines.push(`${indent}    ${line}`);
       }
-    }
-    if (f.remediation) pushRemediationText(lines, f.remediation, `${indent}  `);
-    if (f.references.length > 0) {
-      lines.push(`${indent}  References:`);
-      for (const ref of f.references) lines.push(`${indent}    - ${ref}`);
     }
   }
 }
@@ -194,13 +182,14 @@ function pushFindingsMarkdown(lines: string[], findings: Finding[]): void {
     return;
   }
   for (const f of findings) {
-    lines.push(`### [${f.severity}] ${f.title}`);
+    lines.push(`### ${f.title}`);
     lines.push('');
-    lines.push(`- Why: ${f.why}`);
-    lines.push(`- Suggestion: ${f.suggestion}`);
+    lines.push(`- Severity: ${f.severity}`);
+    lines.push(`- Kind: ${f.profileKind}`);
     lines.push(
-      `- Where: \`${escapeBackticks(f.evidence.function)}\` at \`${escapeBackticks(formatLocation(f.evidence.file, f.evidence.line))}\` — self ${formatPct(f.evidence.selfPct)}`,
+      `- Evidence: \`${escapeBackticks(f.evidence.function)}\` at \`${escapeBackticks(formatLocation(f.evidence.file, f.evidence.line))}\``,
     );
+    lines.push(`- Suggestion: ${f.suggestion}`);
     if (f.evidence.extra !== undefined) {
       const extra = renderValue(f.evidence.extra);
       if (extra.length > 0) {
@@ -208,37 +197,8 @@ function pushFindingsMarkdown(lines: string[], findings: Finding[]): void {
         for (const line of extra) lines.push(`  ${line}`);
       }
     }
-    if (f.remediation) pushRemediationMarkdown(lines, f.remediation);
-    if (f.references.length > 0) {
-      lines.push('- References:');
-      for (const ref of f.references) lines.push(`  - ${ref}`);
-    }
     lines.push('');
   }
-}
-
-function pushRemediationText(
-  lines: string[],
-  remediation: FindingRemediation,
-  indent: string,
-): void {
-  const parts = [`kind: ${remediation.kind}`];
-  if (remediation.replace) parts.push(`replace: ${remediation.replace}`);
-  if (remediation.with) parts.push(`with: ${remediation.with}`);
-  if (remediation.module) parts.push(`module: ${remediation.module}`);
-  if (remediation.docs) parts.push(`docs: ${remediation.docs}`);
-  lines.push(`${indent}Remediation: ${parts.join(' | ')}`);
-  if (remediation.notes) lines.push(`${indent}  Notes: ${remediation.notes}`);
-}
-
-function pushRemediationMarkdown(lines: string[], remediation: FindingRemediation): void {
-  lines.push('- Remediation:');
-  lines.push(`  - Kind: ${remediation.kind}`);
-  if (remediation.replace) lines.push(`  - Replace: \`${escapeBackticks(remediation.replace)}\``);
-  if (remediation.with) lines.push(`  - With: \`${escapeBackticks(remediation.with)}\``);
-  if (remediation.module) lines.push(`  - Module: \`${escapeBackticks(remediation.module)}\``);
-  if (remediation.docs) lines.push(`  - Docs: ${remediation.docs}`);
-  if (remediation.notes) lines.push(`  - Notes: ${remediation.notes}`);
 }
 
 /**
