@@ -1,130 +1,307 @@
+import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import chalk from 'chalk';
 import { AttachSelectionCancelledError } from './attach-target.js';
 import { attachCommand } from './commands/attach.js';
 import { runCommand } from './commands/run.js';
+import {
+  formatExamples,
+  formatFooterHint,
+  formatNotes,
+  formatOptionRow,
+  formatSection,
+  formatUnknownCommandError,
+} from './help.js';
 import { parseAttachArgs, parseRunArgs } from './parse.js';
+import { renderBrandHeader, renderCommandHeader } from './terminal-style.js';
 
-const GLOBAL_HELP = `${chalk.bold.cyan('lanterna')} ${chalk.gray('Agent-first Node.js CPU profiler')}
+function readPackageVersion(): string {
+  try {
+    const here = dirname(fileURLToPath(import.meta.url));
+    // dist/main.js → ../package.json
+    const pkgPath = resolve(here, '..', 'package.json');
+    const raw = readFileSync(pkgPath, 'utf8');
+    const parsed = JSON.parse(raw) as { version?: string };
+    return parsed.version ?? '0.0.0';
+  } catch {
+    return '0.0.0';
+  }
+}
 
-${chalk.bold('Usage')}
-  ${chalk.cyan('lanterna run')} ${chalk.gray('[options] -- <command> [args...]')}
-  ${chalk.cyan('lanterna attach')} ${chalk.gray('[options]')}
+const VERSION = readPackageVersion();
 
-${chalk.bold('Commands')}
-  ${chalk.cyan('run')}     Start a new Node.js command under Lanterna and capture a CPU profile
-  ${chalk.cyan('attach')}  Attach to a running Node.js process by PID, inspector URL, or interactive selection
+const memoryOptionRows = [
+  formatOptionRow(
+    '--heap-sample-interval <size>',
+    'V8 heap sampling interval (bytes or KiB/MiB)',
+    'memory kind, default 512KiB',
+  ),
+  formatOptionRow(
+    '--memory-usage-interval <ms>',
+    'process.memoryUsage() cadence in ms',
+    'memory kind, default 250',
+  ),
+  formatOptionRow(
+    '--include-memory-samples',
+    'Include raw process.memoryUsage() samples in JSON output',
+    'memory kind',
+  ),
+  formatOptionRow(
+    '--heap-snapshot-analysis',
+    'Capture start/end heap snapshots and summarize retained growth',
+    'memory kind, heavy',
+  ),
+  formatOptionRow(
+    '--heap-snapshot-dir <dir>',
+    'Directory for .heapsnapshot files',
+    'memory kind, default .lanterna-heapsnapshots',
+  ),
+];
 
-${chalk.bold('Global Options')}
-  ${chalk.cyan('--duration <ms|s|m>')}     Profiling duration, for example ${chalk.gray('15s')} or ${chalk.gray('5000ms')}
-  ${chalk.cyan('--output, -o <path>')}     Write the JSON report to a file instead of stdout
-  ${chalk.cyan('--pretty')}                Pretty-print JSON output
-  ${chalk.cyan('--sample-interval <us>')}  V8 sample interval in microseconds ${chalk.gray('(default: 1000)')}
-  ${chalk.cyan('-h, --help')}              Show this help
+const captureRunRows = [
+  formatOptionRow('--duration <ms|s|m>', 'Stop automatically after the given duration'),
+  formatOptionRow(
+    '--kind <id>',
+    'Profile kind to capture. Repeatable or comma-separated',
+    'default cpu, built-in: cpu, memory',
+  ),
+  formatOptionRow(
+    '--sample-interval <us>',
+    'V8 CPU sample interval in microseconds',
+    'default 1000',
+  ),
+  formatOptionRow('--deep', 'Enable deopt tracing', 'stderr becomes noisier'),
+];
 
-${chalk.bold('Run Options')}
-  ${chalk.cyan('--deep')}                  Enable deopt tracing for ${chalk.cyan('run')} ${chalk.gray('(stderr becomes noisier)')}
+const captureAttachRows = [
+  formatOptionRow(
+    '--pid [pid]',
+    'Attach by PID, or open the interactive picker if no pid is given',
+  ),
+  formatOptionRow('--inspect-url <url>', 'Attach to an existing inspector WebSocket URL'),
+  formatOptionRow('--duration <ms|s|m>', 'Stop automatically after the given duration'),
+  formatOptionRow(
+    '--kind <id>',
+    'Profile kind to capture. Repeatable or comma-separated',
+    'default cpu, built-in: cpu, memory',
+  ),
+  formatOptionRow(
+    '--sample-interval <us>',
+    'V8 CPU sample interval in microseconds',
+    'default 1000',
+  ),
+];
 
-${chalk.bold('Attach Options')}
-  ${chalk.cyan('--pid [pid]')}             Attach by PID, or open the interactive picker if no pid is provided
-  ${chalk.cyan('--inspect-url <url>')}     Attach directly to an existing inspector WebSocket URL
-  ${chalk.gray('omit --duration')}         Keep profiling until the target exits or you stop Lanterna with ${chalk.cyan('Ctrl+C')}
-  ${chalk.gray('--pid with no value')}     Open the interactive process picker in a TTY
+const outputRows = [
+  formatOptionRow('--output, -o <path>', 'Write the JSON report to a file'),
+  formatOptionRow('--pretty', 'Pretty-print JSON output'),
+];
 
-${chalk.bold('Examples')}
-  ${chalk.gray('# Run a fresh process under the profiler')}
-  lanterna run --duration 30s --output report.json -- node app.js
+const pluginRows = [
+  formatOptionRow(
+    '--detectors <spec>',
+    'Load an additional detector plugin (package name or path). Repeatable',
+  ),
+];
 
-  ${chalk.gray('# Run with deopt tracing')}
-  lanterna run --deep --duration 15s -- node server.js
+const generalRows = [formatOptionRow('-h, --help', 'Show this help')];
 
-  ${chalk.gray('# Attach with an explicit profile kind')}
-  lanterna attach --inspect-url ws://127.0.0.1:9229/<uuid> --kind cpu --duration 15s
+const GLOBAL_HELP = `${renderBrandHeader({
+  subtitle: 'Agent-first Node.js profiler',
+  accent: 'CPU and memory captures for real Node.js workloads',
+})}
 
-  ${chalk.gray('# Attach directly by PID')}
-  lanterna attach --pid 4242 --duration 15s --output report.json
+${formatSection('Usage', [
+  `  ${chalk.cyan('lanterna run')} ${chalk.gray('[options] -- <command> [args...]')}`,
+  `  ${chalk.cyan('lanterna attach')} ${chalk.gray('[options]')}`,
+])}
 
-  ${chalk.gray('# Attach until you stop it manually')}
-  lanterna attach --pid 4242
+${formatSection('Commands', [
+  formatOptionRow('run', 'Start a Node.js command under Lanterna and capture a profile'),
+  formatOptionRow('attach', 'Attach to a running Node.js process by PID, URL, or picker'),
+])}
 
-  ${chalk.gray('# Open the interactive picker')}
-  lanterna attach --pid
+${formatSection('Common options', [
+  formatOptionRow('--duration <ms|s|m>', 'Profiling duration', 'e.g. 15s or 5000ms'),
+  formatOptionRow('--output, -o <path>', 'Write the JSON report to a file instead of stdout'),
+  formatOptionRow('--pretty', 'Pretty-print JSON output'),
+  formatOptionRow(
+    '--kind <id>',
+    'Profile kind to capture. Repeatable or comma-separated',
+    'default cpu, built-in: cpu, memory',
+  ),
+  formatOptionRow(
+    '--sample-interval <us>',
+    'V8 CPU sample interval in microseconds',
+    'default 1000',
+  ),
+  formatOptionRow('--detectors <spec>', 'Load an additional detector plugin. Repeatable'),
+])}
+
+${formatSection('Run-only options', [
+  formatOptionRow('--deep', 'Enable deopt tracing', 'stderr becomes noisier'),
+])}
+
+${formatSection('Attach-only options', [
+  formatOptionRow(
+    '--pid [pid]',
+    'Attach by PID, or open the interactive picker if no pid is given',
+  ),
+  formatOptionRow('--inspect-url <url>', 'Attach to an existing inspector WebSocket URL'),
+])}
+
+${formatSection('Memory kind options', [
+  formatOptionRow(
+    '--heap-sample-interval <size>',
+    'V8 heap sampling interval (bytes or KiB/MiB)',
+    'default 512KiB',
+  ),
+  formatOptionRow(
+    '--memory-usage-interval <ms>',
+    'process.memoryUsage() cadence in ms',
+    'default 250',
+  ),
+  formatOptionRow('--include-memory-samples', 'Include raw process.memoryUsage() samples in JSON'),
+  formatOptionRow(
+    '--heap-snapshot-analysis',
+    'Capture start/end heap snapshots and summarize retained growth',
+    'heavy',
+  ),
+  formatOptionRow(
+    '--heap-snapshot-dir <dir>',
+    'Directory for .heapsnapshot files',
+    'default .lanterna-heapsnapshots',
+  ),
+])}
+
+${formatSection('Meta', [
+  formatOptionRow('-v, --version', 'Print the Lanterna version'),
+  formatOptionRow('-h, --help', 'Show this help'),
+])}
+
+${formatExamples('Examples', [
+  {
+    comment: 'Run a fresh process under the profiler',
+    cmd: 'lanterna run --duration 30s --output report.json -- node app.js',
+  },
+  {
+    comment: 'Run with deopt tracing',
+    cmd: 'lanterna run --deep --duration 15s -- node server.js',
+  },
+  {
+    comment: 'Attach with an explicit profile kind',
+    cmd: 'lanterna attach --inspect-url ws://127.0.0.1:9229/<uuid> --kind cpu --duration 15s',
+  },
+  {
+    comment: 'Attach directly by PID',
+    cmd: 'lanterna attach --pid 4242 --duration 15s --output report.json',
+  },
+  { comment: 'Attach until you stop it manually', cmd: 'lanterna attach --pid 4242' },
+  { comment: 'Open the interactive picker', cmd: 'lanterna attach --pid' },
+])}
+
+${formatFooterHint('Run `lanterna <command> --help` for command-specific options.')}
 `;
 
-const RUN_HELP = `${chalk.bold.cyan('lanterna run')} ${chalk.gray('Profile a fresh Node.js command')}
+const RUN_HELP = `${renderCommandHeader({
+  command: 'run',
+  subtitle: 'Fresh process capture',
+})}
 
-${chalk.bold('Usage')}
-  ${chalk.cyan('lanterna run')} ${chalk.gray('[options] -- <command> [args...]')}
+${formatSection('Usage', [
+  `  ${chalk.cyan('lanterna run')} ${chalk.gray('[options] -- <command> [args...]')}`,
+])}
 
-${chalk.bold('Options')}
-  ${chalk.cyan('--duration <ms|s|m>')}     Stop automatically after the given duration
-  ${chalk.cyan('--output, -o <path>')}     Write the JSON report to a file
-  ${chalk.cyan('--pretty')}                Pretty-print JSON output
-  ${chalk.cyan('--deep')}                  Enable deopt tracing ${chalk.gray('(stderr becomes noisier)')}
-  ${chalk.cyan('--sample-interval <us>')}  V8 CPU sample interval in microseconds ${chalk.gray('(default: 1000)')}
-  ${chalk.cyan('--detectors <spec>')}      Load an additional detector plugin (package name or path). Repeatable.
-  ${chalk.cyan('--kind <id>')}             Profile kind to capture ${chalk.gray('(default: cpu, built-in: cpu, memory)')}. Repeatable or comma-separated.
-  ${chalk.cyan('--heap-sample-interval <size>')}   V8 heap sampling interval, bytes or KiB/MiB ${chalk.gray('(memory kind, default 512KiB; e.g. 524288, 512KiB, 1MiB)')}
-  ${chalk.cyan('--memory-usage-interval <ms>')}     process.memoryUsage() cadence in ms ${chalk.gray('(memory kind, default 250)')}
-  ${chalk.cyan('--include-memory-samples')}         Include raw process.memoryUsage() samples in JSON output ${chalk.gray('(memory kind)')}
-  ${chalk.cyan('--heap-snapshot-analysis')}         Capture start/end heap snapshots and summarize retained growth ${chalk.gray('(memory kind, heavy)')}
-  ${chalk.cyan('--heap-snapshot-dir <dir>')}        Directory for .heapsnapshot files ${chalk.gray('(memory kind, default .lanterna-heapsnapshots)')}
-  ${chalk.cyan('-h, --help')}              Show this help
+${formatSection('Capture', captureRunRows)}
 
-${chalk.bold('Examples')}
-  lanterna run --duration 15s --output report.json -- node server.js
-  lanterna run --deep --duration 15s -- node server.js
-  lanterna run --pretty -- node script.js
-  lanterna run --detectors @acme/lanterna-detectors-prisma -- node app.js
-  lanterna run --kind cpu -- node app.js
-  lanterna run --kind memory --duration 30s -- node server.js
-  lanterna run --kind cpu,memory --duration 30s -- node server.js
+${formatSection('Memory kind', memoryOptionRows)}
 
-${chalk.bold('Notes')}
-  - The ${chalk.cyan('--')} separator is required before the target command
-  - Without ${chalk.cyan('--duration')}, Lanterna profiles until the child process exits
-  - ${chalk.cyan('--kind')} works here and on ${chalk.cyan('attach')}; repeat it or use ${chalk.cyan('--kind cpu,memory')}
-  - Built-in profile kinds: ${chalk.cyan('cpu')} (default) and ${chalk.cyan('memory')} (V8 sampling heap profiler + ${chalk.cyan('process.memoryUsage()')} series); unknown ids fail with ${chalk.gray('"unknown profile kind(s): <ids>. Available kinds: cpu, memory"')}
+${formatSection('Output', outputRows)}
+
+${formatSection('Plugins', pluginRows)}
+
+${formatSection('General', generalRows)}
+
+${formatExamples('Examples', [
+  {
+    comment: 'Profile a server for 15 seconds',
+    cmd: 'lanterna run --duration 15s --output report.json -- node server.js',
+  },
+  { comment: 'Enable deopt tracing', cmd: 'lanterna run --deep --duration 15s -- node server.js' },
+  { comment: 'Pretty-print JSON to stdout', cmd: 'lanterna run --pretty -- node script.js' },
+  {
+    comment: 'Load a detector plugin',
+    cmd: 'lanterna run --detectors @acme/lanterna-detectors-prisma -- node app.js',
+  },
+  {
+    comment: 'Memory profile only',
+    cmd: 'lanterna run --kind memory --duration 30s -- node server.js',
+  },
+  {
+    comment: 'CPU and memory together',
+    cmd: 'lanterna run --kind cpu,memory --duration 30s -- node server.js',
+  },
+])}
+
+${formatNotes('Notes', [
+  `The ${chalk.cyan('--')} separator is required before the target command`,
+  `Without ${chalk.cyan('--duration')}, Lanterna profiles until the child exits`,
+  `${chalk.cyan('--kind')} works on ${chalk.cyan('run')} and ${chalk.cyan('attach')}; repeat it or use ${chalk.cyan('--kind cpu,memory')}`,
+  `Built-in profile kinds: ${chalk.cyan('cpu')} (default) and ${chalk.cyan('memory')}; unknown ids fail with ${chalk.gray('"unknown profile kind(s): <ids>. Available kinds: cpu, memory"')}`,
+])}
 `;
 
-const ATTACH_HELP = `${chalk.bold.cyan('lanterna attach')} ${chalk.gray('Attach to a running Node.js process')}
+const ATTACH_HELP = `${renderCommandHeader({
+  command: 'attach',
+  subtitle: 'Live process capture',
+})}
 
-${chalk.bold('Usage')}
-  ${chalk.cyan('lanterna attach')} ${chalk.gray('[options]')}
+${formatSection('Usage', [`  ${chalk.cyan('lanterna attach')} ${chalk.gray('[options]')}`])}
 
-${chalk.bold('Options')}
-  ${chalk.cyan('--pid [pid]')}             Attach by PID, or open the interactive picker if no pid is provided
-  ${chalk.cyan('--inspect-url <url>')}     Attach directly to an existing inspector WebSocket URL
-  ${chalk.cyan('--duration <ms|s|m>')}     Stop automatically after the given duration
-  ${chalk.cyan('--output, -o <path>')}     Write the JSON report to a file
-  ${chalk.cyan('--pretty')}                Pretty-print JSON output
-  ${chalk.cyan('--sample-interval <us>')}  V8 CPU sample interval in microseconds ${chalk.gray('(default: 1000)')}
-  ${chalk.cyan('--detectors <spec>')}      Load an additional detector plugin (package name or path). Repeatable.
-  ${chalk.cyan('--kind <id>')}             Profile kind to capture ${chalk.gray('(default: cpu, built-in: cpu, memory)')}. Repeatable or comma-separated.
-  ${chalk.cyan('--heap-sample-interval <size>')}   V8 heap sampling interval, bytes or KiB/MiB ${chalk.gray('(memory kind, default 512KiB; e.g. 524288, 512KiB, 1MiB)')}
-  ${chalk.cyan('--memory-usage-interval <ms>')}     process.memoryUsage() cadence in ms ${chalk.gray('(memory kind, default 250)')}
-  ${chalk.cyan('--include-memory-samples')}         Include raw process.memoryUsage() samples in JSON output ${chalk.gray('(memory kind)')}
-  ${chalk.cyan('--heap-snapshot-analysis')}         Capture start/end heap snapshots and summarize retained growth ${chalk.gray('(memory kind, heavy)')}
-  ${chalk.cyan('--heap-snapshot-dir <dir>')}        Directory for .heapsnapshot files ${chalk.gray('(memory kind, default .lanterna-heapsnapshots)')}
-  ${chalk.cyan('-h, --help')}              Show this help
+${formatSection('Capture', captureAttachRows)}
 
-${chalk.bold('Examples')}
-  lanterna attach --pid 4242 --duration 15s
-  lanterna attach --inspect-url ws://127.0.0.1:9229/<uuid> --kind cpu --duration 15s
-  lanterna attach --pid 4242 --kind memory --duration 30s
-  lanterna attach --pid 4242
-  lanterna attach --pid
+${formatSection('Memory kind', memoryOptionRows)}
 
-${chalk.bold('Notes')}
-  - Without ${chalk.cyan('--duration')}, Lanterna runs until the target exits or you stop it with ${chalk.cyan('Ctrl+C')}
-  - ${chalk.cyan('--pid')} with no value opens the interactive picker in a TTY
-  - ${chalk.cyan('--deep')} is not supported in attach mode
-  - ${chalk.cyan('--kind')} works here and on ${chalk.cyan('run')}; repeat it or use ${chalk.cyan('--kind cpu,memory')}
-  - Built-in profile kinds: ${chalk.cyan('cpu')} (default) and ${chalk.cyan('memory')} (V8 sampling heap profiler + ${chalk.cyan('process.memoryUsage()')} series); unknown ids fail with ${chalk.gray('"unknown profile kind(s): <ids>. Available kinds: cpu, memory"')}
+${formatSection('Output', outputRows)}
+
+${formatSection('Plugins', pluginRows)}
+
+${formatSection('General', generalRows)}
+
+${formatExamples('Examples', [
+  { comment: 'Attach by PID for 15 seconds', cmd: 'lanterna attach --pid 4242 --duration 15s' },
+  {
+    comment: 'Attach via inspector URL',
+    cmd: 'lanterna attach --inspect-url ws://127.0.0.1:9229/<uuid> --kind cpu --duration 15s',
+  },
+  {
+    comment: 'Memory profile of a live process',
+    cmd: 'lanterna attach --pid 4242 --kind memory --duration 30s',
+  },
+  { comment: 'Attach until you stop it manually', cmd: 'lanterna attach --pid 4242' },
+  { comment: 'Open the interactive picker', cmd: 'lanterna attach --pid' },
+])}
+
+${formatNotes('Notes', [
+  `Without ${chalk.cyan('--duration')}, Lanterna runs until the target exits or you press ${chalk.cyan('Ctrl+C')}`,
+  `${chalk.cyan('--pid')} with no value opens the interactive picker in a TTY`,
+  `${chalk.cyan('--deep')} is not supported in attach mode`,
+  `${chalk.cyan('--kind')} works on ${chalk.cyan('run')} and ${chalk.cyan('attach')}; repeat it or use ${chalk.cyan('--kind cpu,memory')}`,
+  `Built-in profile kinds: ${chalk.cyan('cpu')} (default) and ${chalk.cyan('memory')}; unknown ids fail with ${chalk.gray('"unknown profile kind(s): <ids>. Available kinds: cpu, memory"')}`,
+])}
 `;
 
 export async function main(argv: string[]): Promise<void> {
   if (argv.length === 0 || argv[0] === '-h' || argv[0] === '--help') {
     process.stdout.write(GLOBAL_HELP);
+    return;
+  }
+
+  if (argv[0] === '-v' || argv[0] === '--version') {
+    process.stdout.write(
+      `${chalk.bold.cyan('lanterna')} ${chalk.gray('v')}${chalk.bold(VERSION)}\n`,
+    );
     return;
   }
 
@@ -154,8 +331,8 @@ export async function main(argv: string[]): Promise<void> {
     return;
   }
 
-  process.stderr.write(`Unknown command: ${subcommand}\n\n${GLOBAL_HELP}`);
+  process.stderr.write(formatUnknownCommandError(subcommand ?? ''));
   process.exitCode = 2;
 }
 
-export { ATTACH_HELP, GLOBAL_HELP, RUN_HELP };
+export { ATTACH_HELP, GLOBAL_HELP, RUN_HELP, VERSION };
