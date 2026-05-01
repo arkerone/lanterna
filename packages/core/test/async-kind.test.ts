@@ -1,4 +1,5 @@
 import { createRequire } from 'node:module';
+import vm from 'node:vm';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createAnalysisPipeline } from '../src/analysis/core/pipeline.js';
 import type { CaptureBundle } from '../src/capture/core/types.js';
@@ -7,7 +8,9 @@ import { createAsyncProbe, createAsyncProfileKind } from '../src/kinds/async/ind
 import type { AsyncKindData, AsyncOperationRecord } from '../src/kinds/async/types.js';
 import { buildLanternaReport, serializeReport } from '../src/report/index.js';
 import { buildReportSchema } from '../src/report/schema.js';
+import { composeAttachScript } from '../src/runtime-signals/hooks/framework.js';
 import { createAsyncOperationsInstaller } from '../src/runtime-signals/hooks/installers/async-operations.js';
+import { runtimeSignalsInstaller } from '../src/runtime-signals/hooks/installers/runtime-signals.js';
 
 const requireForTest = createRequire(import.meta.url);
 
@@ -379,10 +382,11 @@ describe('async kind round-trip', () => {
 
     collector.sampleConcurrency();
 
-    const last = collector.read().concurrency.at(-1);
+    const read = collector.read();
+    const last = read.concurrency.at(-1);
     expect(last?.inflight).toBe(1);
-    expect(collector.read().integrity.destroyCount).toBe(1);
-    expect(collector.read().integrity.recordsDropped).toBe(1);
+    expect(read.integrity.destroyCount).toBe(1);
+    expect(read.integrity.recordsDropped).toBe(1);
   });
 
   it('decrements inflight only once for promiseResolve followed by destroy', () => {
@@ -393,10 +397,11 @@ describe('async kind round-trip', () => {
     collector.callbacks.destroy(1);
     collector.sampleConcurrency();
 
-    const samples = collector.read().concurrency.slice(-2);
+    const read = collector.read();
+    const samples = read.concurrency.slice(-2);
     expect(samples.map((sample) => sample.inflight)).toEqual([0, 0]);
-    expect(collector.read().integrity.resolveCount).toBe(1);
-    expect(collector.read().integrity.destroyCount).toBe(1);
+    expect(read.integrity.resolveCount).toBe(1);
+    expect(read.integrity.destroyCount).toBe(1);
   });
 
   it('attributes CPU to a long-running window hidden behind more recent starts', () => {
@@ -606,6 +611,71 @@ describe('async installer lifecycle', () => {
     expect(harness.intervalsCleared).toEqual(harness.intervalsCreated);
   });
 
+  it('makes disable() idempotent', () => {
+    const harness = instrument();
+
+    harness.globalValue.disable?.();
+    harness.globalValue.disable?.();
+
+    expect(harness.hookDisableCalls).toBe(1);
+    expect(harness.intervalsCleared).toEqual(harness.intervalsCreated);
+  });
+
+  it('clears retained records, stacks, and samples after read()', () => {
+    let globalValue:
+      | {
+          read: () => {
+            records: Array<{ asyncId: number; initStack: unknown[] }>;
+            concurrency: unknown[];
+            integrity: { initCount: number; orphanCount: number };
+          };
+        }
+      | undefined;
+    let callbacks: Partial<AsyncHookCallbacks> | undefined;
+    let sampleConcurrency: (() => void) | undefined;
+
+    vi.stubGlobal('setInterval', (fn: () => void) => {
+      sampleConcurrency = fn;
+      return { unref() {} };
+    });
+    vi.stubGlobal('clearInterval', () => {});
+
+    const api = {
+      performance: { now: () => 1 },
+      registerGlobal: (_name: string, value: unknown) => {
+        globalValue = value as typeof globalValue;
+      },
+      addResetHook: () => {},
+      getBuiltin: (name: string) =>
+        name === 'async_hooks'
+          ? {
+              createHook: (hookCallbacks: Partial<AsyncHookCallbacks>) => {
+                callbacks = hookCallbacks;
+                return { enable() {}, disable() {} };
+              },
+            }
+          : null,
+    };
+
+    const installer = createAsyncOperationsInstaller({ instrumentationMode: 'off' });
+    new Function('__lanterna', installer.source)(api);
+    if (!globalValue || !callbacks?.init || !sampleConcurrency) throw new Error('install failed');
+
+    callbacks.init(1, 'PROMISE', 0);
+    sampleConcurrency();
+
+    const first = globalValue.read();
+    const second = globalValue.read();
+
+    expect(first.records).toHaveLength(1);
+    expect(first.concurrency.length).toBeGreaterThan(0);
+    expect(first.integrity.initCount).toBe(1);
+    expect(first.integrity.orphanCount).toBe(1);
+    expect(second.records).toHaveLength(0);
+    expect(second.concurrency).toHaveLength(0);
+    expect(second.integrity.initCount).toBe(0);
+  });
+
   it('exposes a no-op disable() when async_hooks is unavailable', () => {
     let globalValue: { read: () => unknown; disable?: () => void } | undefined;
     vi.stubGlobal('setInterval', () => ({ unref() {} }));
@@ -693,16 +763,31 @@ describe('async probe lifecycle', () => {
 });
 
 describe('async installer safe-mode patches', () => {
-  it('restores Promise.then, setTimeout, and fetch after disable', () => {
+  it('restores Promise, timers, fetch, fs callbacks, and http request after disable', () => {
     const originalThen = Promise.prototype.then;
     const originalCatch = Promise.prototype.catch;
     const originalFinally = Promise.prototype.finally;
     const originalSetTimeout = globalThis.setTimeout;
+    const originalSetImmediate = globalThis.setImmediate;
     const originalFetch = globalThis.fetch;
+    const fs = {
+      readFile: vi.fn(),
+      writeFile: vi.fn(),
+      appendFile: vi.fn(),
+      readdir: vi.fn(),
+      stat: vi.fn(),
+      lstat: vi.fn(),
+    };
+    const http = { request: vi.fn() };
+    const https = { request: vi.fn() };
+    const originalFsReadFile = fs.readFile;
+    const originalHttpRequest = http.request;
+    const originalHttpsRequest = https.request;
 
     let globalValue: { read: () => unknown; disable?: () => void } | undefined;
     vi.stubGlobal('setInterval', () => ({ unref() {} }));
     vi.stubGlobal('clearInterval', () => {});
+    const originalSetInterval = globalThis.setInterval;
     const api = {
       performance: { now: () => 0 },
       registerGlobal: (_name: string, value: unknown) => {
@@ -715,7 +800,13 @@ describe('async installer safe-mode patches', () => {
               createHook: () => ({ enable() {}, disable() {} }),
               executionAsyncId: () => 0,
             }
-          : null,
+          : name === 'fs'
+            ? fs
+            : name === 'http'
+              ? http
+              : name === 'https'
+                ? https
+                : null,
     };
 
     const installer = createAsyncOperationsInstaller({ instrumentationMode: 'safe' });
@@ -724,6 +815,11 @@ describe('async installer safe-mode patches', () => {
     // Patches are in place.
     expect(Promise.prototype.then).not.toBe(originalThen);
     expect(globalThis.setTimeout).not.toBe(originalSetTimeout);
+    expect(globalThis.setInterval).not.toBe(originalSetInterval);
+    expect(globalThis.setImmediate).not.toBe(originalSetImmediate);
+    expect(fs.readFile).not.toBe(originalFsReadFile);
+    expect(http.request).not.toBe(originalHttpRequest);
+    expect(https.request).not.toBe(originalHttpsRequest);
 
     globalValue?.disable?.();
 
@@ -732,7 +828,38 @@ describe('async installer safe-mode patches', () => {
     expect(Promise.prototype.catch).toBe(originalCatch);
     expect(Promise.prototype.finally).toBe(originalFinally);
     expect(globalThis.setTimeout).toBe(originalSetTimeout);
+    expect(globalThis.setInterval).toBe(originalSetInterval);
+    expect(globalThis.setImmediate).toBe(originalSetImmediate);
     if (typeof originalFetch === 'function') expect(globalThis.fetch).toBe(originalFetch);
+    expect(fs.readFile).toBe(originalFsReadFile);
+    expect(http.request).toBe(originalHttpRequest);
+    expect(https.request).toBe(originalHttpsRequest);
+  });
+
+  it('installs async hooks on a later attach after disable when the framework already exists', () => {
+    const context = {
+      process,
+      performance: { now: () => 0 },
+      setTimeout: () => ({ unref() {} }),
+      clearTimeout: () => {},
+      setInterval: () => ({ unref() {} }),
+      clearInterval: () => {},
+      globalThis: {} as Record<string, unknown>,
+    };
+    context.globalThis = context as unknown as typeof context.globalThis;
+    const script = composeAttachScript(
+      [runtimeSignalsInstaller, createAsyncOperationsInstaller({ instrumentationMode: 'off' })],
+      { resolutionMs: 20 },
+    );
+
+    vm.runInNewContext(script, context);
+    const first = context.globalThis.__LANTERNA_ASYNC__ as { disable(): void };
+    first.disable();
+
+    vm.runInNewContext(script, context);
+
+    expect(context.globalThis.__LANTERNA_ASYNC__).toBeDefined();
+    expect(context.globalThis.__LANTERNA_ASYNC__).not.toBe(first);
   });
 });
 

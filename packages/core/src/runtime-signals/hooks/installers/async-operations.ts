@@ -109,6 +109,7 @@ interface AsyncInstallerApi {
   performance: typeof globalThis.performance;
   registerGlobal(name: string, value: unknown): void;
   addResetHook(fn: () => void): void;
+  releaseInstaller?(id: string): void;
   getBuiltin<T extends object>(name: string): T | null;
 }
 
@@ -189,7 +190,9 @@ function installAsyncOperations(
         attachPartialCapture,
         clockSyncUncertaintyMs: 0,
       }),
-      disable: () => {},
+      disable: () => {
+        api.releaseInstaller?.('async-operations');
+      },
     });
     return;
   }
@@ -233,6 +236,7 @@ function installAsyncOperations(
   let activeCount = 0;
   let inflightCount = 0;
   const restoredApis: Array<() => void> = [];
+  let disabled = false;
   // `await` transform pushes the call-site stack here, keyed by the
   // triggerAsyncId observed at await time (the parent context creating the
   // resulting promise). The promise's own `init` then finds its entry by
@@ -732,6 +736,21 @@ function installAsyncOperations(
     inflightCount = 0;
   });
 
+  const clearRetainedState = () => {
+    records.clear();
+    completedRecords.clear();
+    openRuns.clear();
+    concurrency.length = 0;
+    pendingAwaitStacks.length = 0;
+    for (const key of Object.keys(filteredCounts)) delete filteredCounts[key];
+    recordsDropped = 0;
+    initCount = 0;
+    destroyCount = 0;
+    resolveCount = 0;
+    activeCount = 0;
+    inflightCount = 0;
+  };
+
   api.registerGlobal('__LANTERNA_ASYNC__', {
     read: () => {
       let orphanCount = 0;
@@ -744,7 +763,7 @@ function installAsyncOperations(
           orphan: isOrphan,
         });
       }
-      return {
+      const snapshot = {
         available: true,
         maxRecords,
         records: out,
@@ -762,17 +781,23 @@ function installAsyncOperations(
         clockSyncUncertaintyMs,
         transformStats: { ...transformStats },
       };
+      clearRetainedState();
+      return snapshot;
     },
     disable: () => {
+      if (disabled) return;
+      disabled = true;
       hook.disable();
       clearInterval(concurrencyTimer);
       for (const restore of restoredApis) restore();
-      pendingAwaitStacks.length = 0;
+      restoredApis.length = 0;
+      clearRetainedState();
       // ESM module hooks registered via node:module register() cannot be
       // unregistered, so transformed modules loaded after disable would still
       // call __LANTERNA_ASYNC_AWAIT__. Replace it with a passthrough so we
       // don't keep accumulating dead state.
       (globalThis as Record<string, unknown>).__LANTERNA_ASYNC_AWAIT__ = (value: unknown) => value;
+      api.releaseInstaller?.('async-operations');
     },
   });
 }

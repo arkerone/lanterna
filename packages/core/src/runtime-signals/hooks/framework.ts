@@ -27,6 +27,7 @@ export interface ComposePreloadOptions {
  * - `__lanterna.controlChannel.emit(event)` — best-effort control-channel write
  * - `__lanterna.registerGlobal(name, value)` — install a global
  * - `__lanterna.addResetHook(fn)` — register a hook called on capture reset
+ * - `__lanterna.releaseInstaller(id)` — let a cleaned installer run again
  * - `__lanterna.resolutionMs` — heartbeat resolution in ms
  * - `__lanterna.integrity` — shared integrity counters
  * - `__lanterna.getBuiltin(name)` — get a node builtin safely
@@ -112,6 +113,7 @@ interface FrameworkApi {
   registerGlobal(name: string, value: unknown): void;
   addResetHook(fn: () => void): void;
   registerInstaller(id: string, install: () => void): void;
+  releaseInstaller(id: string): void;
   getBuiltin<T extends object>(name: string): T | null;
   markGcObserverFailure(): void;
 }
@@ -241,6 +243,10 @@ export function installLanternaFramework(
     installedInstallers.add(id);
   };
 
+  const releaseInstaller = (id: string) => {
+    installedInstallers.delete(id);
+  };
+
   const api: FrameworkApi = {
     performance: performanceApi,
     resolutionMs,
@@ -250,6 +256,7 @@ export function installLanternaFramework(
     registerGlobal,
     addResetHook,
     registerInstaller,
+    releaseInstaller,
     getBuiltin,
     markGcObserverFailure,
   };
