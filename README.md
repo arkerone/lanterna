@@ -5,7 +5,7 @@
 <h1 align="center">Lanterna</h1>
 
 <p align="center">
-  <strong>Agent-first Node.js CPU & memory profiler.</strong><br />
+  <strong>Agent-first Node.js CPU, memory & experimental async profiler.</strong><br />
   Runs your program, captures a V8 profile plus timed runtime signals,<br />
   and emits a structured JSON report that humans <em>and</em> AI agents can act on directly.
 </p>
@@ -31,6 +31,7 @@
 - **Built-in findings**
   - _CPU kind_ - sync crypto, blocking I/O, JSON on the hot path, dependency hotspots, excessive GC, event-loop stalls, deopt loops, module loading on the hot path.
   - _Memory kind_ - sustained memory growth, large allocators, off-heap buffer pressure.
+  - _Async kind (experimental)_ - long-await, orphan-async-resource, deep-async-chain, microtask-flood, hot-async-context.
   - _Cross-kind_ - alloc-in-hot-path.
 - **Actionable evidence** - each finding ships with file/line, severity, rationale, and remediation hints.
 - **Agent-ready** - stable JSON schema, `skills/lanterna-profiler/` workflow for Claude Code.
@@ -194,11 +195,17 @@ lanterna report report.json --format json --pretty
 | `--include-memory-samples` | Include raw `process.memoryUsage()` samples in JSON output (memory kind). |
 | `--heap-snapshot-analysis` | Capture start/end V8 heap snapshots and include retained-growth synthesis (memory kind, opt-in and heavy). |
 | `--heap-snapshot-dir <dir>` | Directory for `.heapsnapshot` files when snapshot analysis is enabled. |
+| `--async-max-events <n>` | Cap on retained async resource records (async kind, default `50000`). |
+| `--async-stack-depth <n>` | V8 async call-stack depth (async kind, default `32`, max `64`). |
+| `--async-include-microtasks` | Include TickObject / Microtask resources in the async capture (very noisy). |
+| `--async-concurrency-interval <ms>` | Concurrency timeline cadence in ms (async kind, default `100`). |
 | `--async-instrumentation <off\|safe\|full>` | Extra async instrumentation mode for `--kind async` (experimental; `full` rewrites later-loaded awaits and is higher risk). |
 | `--pid [pid]` | Attach by PID, or open the interactive picker if no value. |
 | `--inspect-url <url>` | Attach to an existing inspector WebSocket URL. |
 | `--detectors <spec>` | Load an additional detector plugin (package name or path). Repeatable. |
 | `-h, --help` | Show help. |
+
+See the [CLI documentation](packages/cli/README.md) for full flag details and command examples.
 
 The `--` separator is required before the target command in `run` mode.
 
