@@ -39,7 +39,7 @@ export class SpawnSource implements ProfileSource<SpawnStartOptions> {
     );
     await writeFile(preloadPath, preload.preloadScript, { encoding: 'utf8' });
 
-    const nodeOptions = ['--inspect-brk=0', `--require=${preloadPath}`];
+    const nodeOptions = ['--inspect-brk=0', `--require=${preloadPath}`, ...preload.nodeOptions];
     const env: NodeJS.ProcessEnv = {
       ...process.env,
       NODE_OPTIONS: [process.env.NODE_OPTIONS, ...nodeOptions].filter(Boolean).join(' '),
@@ -183,9 +183,6 @@ export class SpawnSource implements ProfileSource<SpawnStartOptions> {
         }
       };
 
-      // Release the inspector breakpoint so the target begins running.
-      await cdp.send('Runtime.runIfWaitingForDebugger');
-
       return {
         cdp,
         target: {
@@ -199,6 +196,22 @@ export class SpawnSource implements ProfileSource<SpawnStartOptions> {
         startedAtEpoch: Date.now(),
         initialIntegrity: captureIntegrity,
         waitForExit,
+        releaseRuntime: async () => {
+          let resolvePaused = () => {};
+          const pausedPromise = new Promise<void>((resolve) => {
+            resolvePaused = resolve;
+          });
+          const unsubscribePaused = cdp.on('Debugger.paused', resolvePaused);
+          await cdp.send('Runtime.runIfWaitingForDebugger');
+          try {
+            await Promise.race([pausedPromise, new Promise((resolve) => setTimeout(resolve, 500))]);
+            await cdp.send('Debugger.resume');
+          } catch {
+            // The target may already be running when no probe enabled Debugger.
+          } finally {
+            unsubscribePaused();
+          }
+        },
         drainLiveSignals,
         finalize,
       };

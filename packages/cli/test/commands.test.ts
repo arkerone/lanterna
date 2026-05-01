@@ -29,6 +29,9 @@ vi.mock('@lanterna-profiler/detectors', () => ({
   createBuiltInMemoryFindingAnalyzers: vi.fn(() => []),
   withBuiltInMemoryDetectors: vi.fn((kind) => kind),
   createMemoryProfileKindWithBuiltInDetectors: vi.fn(() => ({ id: 'memory' })),
+  createBuiltInAsyncFindingAnalyzers: vi.fn(() => []),
+  withBuiltInAsyncDetectors: vi.fn((kind) => kind),
+  createAsyncProfileKindWithBuiltInDetectors: vi.fn(() => ({ id: 'async' })),
 }));
 
 vi.mock('../src/activity-indicator.js', () => ({
@@ -57,7 +60,10 @@ const { attachCommand } = await import('../src/commands/attach.js');
 const { reportCommand } = await import('../src/commands/report.js');
 
 describe('profile commands', () => {
+  let stderrWrite: ReturnType<typeof vi.spyOn>;
+
   beforeEach(() => {
+    stderrWrite = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
     mocks.runProfile.mockResolvedValue({ meta: {}, profiles: {}, findings: [] });
     mocks.attachProfile.mockResolvedValue({ meta: {}, profiles: {}, findings: [] });
     mocks.loadLanternaConfig.mockResolvedValue(undefined);
@@ -137,6 +143,45 @@ describe('profile commands', () => {
 
     expect(mocks.indicator.update).toHaveBeenCalledWith(
       expect.stringContaining('Low confidence profile: only 83 CPU samples captured'),
+    );
+  });
+
+  it('warns when async kind is selected', async () => {
+    await runCommand({
+      command: ['node', 'app.js'],
+      pretty: true,
+      format: 'json',
+      deep: false,
+      sampleIntervalMicros: 1000,
+      detectors: [],
+      kinds: ['async'],
+    });
+
+    expect(stderrWrite).toHaveBeenCalledWith(
+      expect.stringContaining('--kind async is experimental'),
+    );
+    expect(stderrWrite).toHaveBeenCalledWith(
+      expect.stringContaining('Attach mode remains partial'),
+    );
+  });
+
+  it('keeps the stronger warning for full async instrumentation', async () => {
+    await runCommand({
+      command: ['node', 'app.js'],
+      pretty: true,
+      format: 'json',
+      deep: false,
+      sampleIntervalMicros: 1000,
+      detectors: [],
+      kinds: ['async'],
+      asyncInstrumentation: 'full',
+    });
+
+    expect(stderrWrite).toHaveBeenCalledWith(
+      expect.stringContaining('--kind async is experimental'),
+    );
+    expect(stderrWrite).toHaveBeenCalledWith(
+      expect.stringContaining('--async-instrumentation=full is experimental'),
     );
   });
 

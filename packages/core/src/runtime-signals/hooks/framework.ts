@@ -1,5 +1,7 @@
 export interface HookInstaller {
   id: string;
+  /** Extra Node flags needed before user code starts (for example ESM loaders). */
+  nodeOptions?: string[];
   /**
    * Source fragment appended inside the composed preload script body. The
    * fragment runs with the framework helpers bound under `__lanterna.*` and
@@ -25,6 +27,7 @@ export interface ComposePreloadOptions {
  * - `__lanterna.controlChannel.emit(event)` — best-effort control-channel write
  * - `__lanterna.registerGlobal(name, value)` — install a global
  * - `__lanterna.addResetHook(fn)` — register a hook called on capture reset
+ * - `__lanterna.releaseInstaller(id)` — let a cleaned installer run again
  * - `__lanterna.resolutionMs` — heartbeat resolution in ms
  * - `__lanterna.integrity` — shared integrity counters
  * - `__lanterna.getBuiltin(name)` — get a node builtin safely
@@ -110,6 +113,7 @@ interface FrameworkApi {
   registerGlobal(name: string, value: unknown): void;
   addResetHook(fn: () => void): void;
   registerInstaller(id: string, install: () => void): void;
+  releaseInstaller(id: string): void;
   getBuiltin<T extends object>(name: string): T | null;
   markGcObserverFailure(): void;
 }
@@ -162,7 +166,9 @@ export function installLanternaFramework(
     } else if (typeof require === 'function') {
       builtin = require(`node:${name}`) as unknown;
     }
-    return builtin && typeof builtin === 'object' ? (builtin as T) : null;
+    return builtin && (typeof builtin === 'object' || typeof builtin === 'function')
+      ? (builtin as T)
+      : null;
   };
 
   interface PerfHooksBuiltin {
@@ -237,6 +243,10 @@ export function installLanternaFramework(
     installedInstallers.add(id);
   };
 
+  const releaseInstaller = (id: string) => {
+    installedInstallers.delete(id);
+  };
+
   const api: FrameworkApi = {
     performance: performanceApi,
     resolutionMs,
@@ -246,6 +256,7 @@ export function installLanternaFramework(
     registerGlobal,
     addResetHook,
     registerInstaller,
+    releaseInstaller,
     getBuiltin,
     markGcObserverFailure,
   };

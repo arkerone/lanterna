@@ -108,6 +108,60 @@ export interface DetectorThresholds {
   readonly largeAllocator: LargeAllocatorThresholds;
   readonly externalBufferPressure: ExternalBufferPressureThresholds;
   readonly allocInHotPath: AllocInHotPathThresholds;
+  readonly longAwait: LongAwaitThresholds;
+  readonly orphanAsyncResource: OrphanAsyncResourceThresholds;
+  readonly deepAsyncChain: DeepAsyncChainThresholds;
+  readonly microtaskFlood: MicrotaskFloodThresholds;
+  readonly hotAsyncContext: HotAsyncContextThresholds;
+}
+
+export interface HotAsyncContextThresholds {
+  /** A chain root crossing this %CPU is reported. */
+  readonly minCpuPct: number;
+  /** Above this %CPU the finding is `critical`. */
+  readonly criticalCpuPct: number;
+  /** Don't fire unless attributed coverage is at least this %. */
+  readonly minAttributedCoveragePct: number;
+  /** Cap on emitted findings. */
+  readonly maxFindings: number;
+}
+
+export interface LongAwaitThresholds {
+  /** An async operation lasting longer than this (ms) is reported. */
+  readonly minDurationMs: number;
+  /** Above this duration the finding is `critical`. */
+  readonly criticalDurationMs: number;
+  /** Cap on emitted findings. */
+  readonly maxFindings: number;
+  /** Don't fire if fewer ops were captured than this (low confidence). */
+  readonly minOperations: number;
+}
+
+export interface OrphanAsyncResourceThresholds {
+  /** Don't fire below this orphan count — short-lived processes have transients. */
+  readonly minOrphans: number;
+  /** Above this orphan count the finding is `critical`. */
+  readonly criticalOrphans: number;
+  /** Skip orphans younger than this many ms (likely just inflight at flush time). */
+  readonly minOrphanAgeMs: number;
+}
+
+export interface DeepAsyncChainThresholds {
+  /** Chain depth that triggers a finding. */
+  readonly minDepth: number;
+  /** Chain depth that escalates to `critical`. */
+  readonly criticalDepth: number;
+  /** Cap on emitted findings. */
+  readonly maxFindings: number;
+}
+
+export interface MicrotaskFloodThresholds {
+  /** Mean inflight async resources crossing this triggers a `warning`. */
+  readonly meanInflight: number;
+  /** Max inflight crossing this triggers `critical`. */
+  readonly criticalMaxInflight: number;
+  /** Don't fire below this number of concurrency samples. */
+  readonly minSamples: number;
 }
 
 export interface MemoryGrowthThresholds {
@@ -261,5 +315,45 @@ export const DETECTOR_THRESHOLDS: DetectorThresholds = {
     minCpuTotalPct: 5,
     minAllocTotalPct: 5,
     criticalCombinedPct: 60,
+  },
+  // 100ms is the conventional p99 latency budget for a Node.js request. An
+  // async op alive that long is worth surfacing; 1s is unambiguously bad.
+  longAwait: {
+    minDurationMs: 100,
+    criticalDurationMs: 1000,
+    maxFindings: 5,
+    minOperations: 5,
+  },
+  // Orphans: dozens at flush is normal. A few hundred persistent async
+  // resources older than 1s is a leak signature.
+  orphanAsyncResource: {
+    minOrphans: 50,
+    criticalOrphans: 500,
+    minOrphanAgeMs: 1000,
+  },
+  // Async chains > 30 deep usually indicate runaway recursion or callback
+  // hell; > 100 is pathological.
+  deepAsyncChain: {
+    minDepth: 30,
+    criticalDepth: 100,
+    maxFindings: 3,
+  },
+  // Sustained backlog of pending async work — tracks closely with event-loop
+  // saturation but uses async data so it surfaces even without lag samples.
+  microtaskFlood: {
+    meanInflight: 200,
+    criticalMaxInflight: 2000,
+    minSamples: 10,
+  },
+  // Hot-async-context: 10% CPU under one async chain is meaningful in a
+  // request-handler-style app; 30% is the prime optimization target. Require
+  // at least 15% of total CPU to be attributable to async chains before
+  // emitting — below that the ranking is dominated by sampling noise and we
+  // risk fingering a chain that just happened to overlap a hot frame.
+  hotAsyncContext: {
+    minCpuPct: 10,
+    criticalCpuPct: 30,
+    minAttributedCoveragePct: 15,
+    maxFindings: 3,
   },
 };

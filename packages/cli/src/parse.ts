@@ -1,7 +1,11 @@
 import {
+  DEFAULT_ASYNC_CONCURRENCY_INTERVAL_MS,
+  DEFAULT_ASYNC_MAX_RECORDS,
+  DEFAULT_ASYNC_STACK_DEPTH,
   DEFAULT_MEMORY_SAMPLING_INTERVAL_BYTES,
   DEFAULT_MEMORY_USAGE_INTERVAL_MS,
   DEFAULT_SAMPLE_INTERVAL_MICROS,
+  MAX_ASYNC_STACK_DEPTH,
   MIN_SAMPLE_INTERVAL_MICROS,
 } from '@lanterna-profiler/core';
 import { Command, CommanderError } from 'commander';
@@ -32,6 +36,11 @@ interface ParsedCommonOptions {
   includeMemorySamples?: boolean;
   heapSnapshotAnalysis?: boolean;
   heapSnapshotDir?: string;
+  asyncMaxEvents?: number;
+  asyncStackDepth?: number;
+  asyncIncludeMicrotasks?: boolean;
+  asyncConcurrencyInterval?: number;
+  asyncInstrumentation?: 'off' | 'safe' | 'full';
   detectors?: string[];
   kind?: string[];
 }
@@ -49,6 +58,11 @@ interface NormalizedCommonOptions {
     enabled: boolean;
     outputDir?: string;
   };
+  asyncMaxRecords: number;
+  asyncStackDepth: number;
+  asyncIncludeMicrotasks: boolean;
+  asyncConcurrencyIntervalMs: number;
+  asyncInstrumentation: 'off' | 'safe' | 'full';
   detectors: string[];
   kinds: string[];
 }
@@ -81,6 +95,11 @@ export interface RunProfileOptions {
     enabled: boolean;
     outputDir?: string;
   };
+  asyncMaxRecords: number;
+  asyncStackDepth: number;
+  asyncIncludeMicrotasks: boolean;
+  asyncConcurrencyIntervalMs: number;
+  asyncInstrumentation: 'off' | 'safe' | 'full';
   detectors: string[];
   kinds: string[];
   waitForUrl?: string;
@@ -105,6 +124,11 @@ export interface AttachProfileOptions {
     enabled: boolean;
     outputDir?: string;
   };
+  asyncMaxRecords: number;
+  asyncStackDepth: number;
+  asyncIncludeMicrotasks: boolean;
+  asyncConcurrencyIntervalMs: number;
+  asyncInstrumentation: 'off' | 'safe' | 'full';
   detectors: string[];
   kinds: string[];
 }
@@ -183,6 +207,15 @@ function normalizeCommonOptions(parsed: ParsedCommonOptions): NormalizedCommonOp
     const option = heapSnapshotOptionName(parsed);
     throw new Error(`${option} requires --kind memory`);
   }
+  const asyncFlagRequested =
+    parsed.asyncMaxEvents !== undefined ||
+    parsed.asyncStackDepth !== undefined ||
+    parsed.asyncIncludeMicrotasks !== undefined ||
+    parsed.asyncConcurrencyInterval !== undefined ||
+    parsed.asyncInstrumentation !== undefined;
+  if (asyncFlagRequested && !kinds.includes('async')) {
+    throw new Error('--async-* options require --kind async');
+  }
   const options: NormalizedCommonOptions = {
     format: parsed.format ?? 'json',
     pretty: Boolean(parsed.pretty),
@@ -193,6 +226,12 @@ function normalizeCommonOptions(parsed: ParsedCommonOptions): NormalizedCommonOp
     heapSnapshotAnalysis: {
       enabled: Boolean(parsed.heapSnapshotAnalysis),
     },
+    asyncMaxRecords: parsed.asyncMaxEvents ?? DEFAULT_ASYNC_MAX_RECORDS,
+    asyncStackDepth: parsed.asyncStackDepth ?? DEFAULT_ASYNC_STACK_DEPTH,
+    asyncIncludeMicrotasks: Boolean(parsed.asyncIncludeMicrotasks),
+    asyncConcurrencyIntervalMs:
+      parsed.asyncConcurrencyInterval ?? DEFAULT_ASYNC_CONCURRENCY_INTERVAL_MS,
+    asyncInstrumentation: parsed.asyncInstrumentation ?? 'safe',
     detectors: parsed.detectors ?? [],
     kinds,
   };
@@ -262,7 +301,7 @@ function addCommonProfilingOptions(command: Command): Command {
     )
     .option(
       OPTION_FLAGS.kind,
-      'Profile kind to capture (default: cpu). Repeatable or comma-separated. Built-in: cpu, memory.',
+      'Profile kind to capture (default: cpu). Repeatable or comma-separated. Built-in: cpu, memory, async.',
       appendRepeatableValue,
       [] as string[],
     )
@@ -287,6 +326,30 @@ function addCommonProfilingOptions(command: Command): Command {
     .option(
       OPTION_FLAGS.heapSnapshotDir,
       'Directory for start/end .heapsnapshot files (memory kind only)',
+    )
+    .option(
+      OPTION_FLAGS.asyncMaxEvents,
+      `Cap on retained async resource records (async kind only, default ${DEFAULT_ASYNC_MAX_RECORDS})`,
+      parseAsyncMaxEvents,
+    )
+    .option(
+      OPTION_FLAGS.asyncStackDepth,
+      `V8 async call-stack depth (async kind only, default ${DEFAULT_ASYNC_STACK_DEPTH}, max ${MAX_ASYNC_STACK_DEPTH})`,
+      parseAsyncStackDepth,
+    )
+    .option(
+      OPTION_FLAGS.asyncIncludeMicrotasks,
+      'Include TickObject / Microtask resources in the async capture (very noisy, async kind only)',
+    )
+    .option(
+      OPTION_FLAGS.asyncConcurrencyInterval,
+      `Concurrency timeline cadence in ms (async kind only, default ${DEFAULT_ASYNC_CONCURRENCY_INTERVAL_MS})`,
+      parseAsyncConcurrencyInterval,
+    )
+    .option(
+      OPTION_FLAGS.asyncInstrumentation,
+      'Extra async instrumentation mode (async kind only: off, safe, full; default safe)',
+      parseAsyncInstrumentation,
     );
 }
 
@@ -415,6 +478,51 @@ function parseSampleInterval(value: string): number {
       `invalid --sample-interval (min ${MIN_SAMPLE_INTERVAL_MICROS}): ${value}`,
     );
   }
+}
+
+function parseAsyncMaxEvents(value: string): number {
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 100) {
+    throw new CommanderError(
+      1,
+      'lanterna.invalidAsyncMaxEvents',
+      `invalid --async-max-events (min 100): ${value}`,
+    );
+  }
+  return parsed;
+}
+
+function parseAsyncStackDepth(value: string): number {
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 0 || parsed > MAX_ASYNC_STACK_DEPTH) {
+    throw new CommanderError(
+      1,
+      'lanterna.invalidAsyncStackDepth',
+      `invalid --async-stack-depth (range 0..${MAX_ASYNC_STACK_DEPTH}): ${value}`,
+    );
+  }
+  return parsed;
+}
+
+function parseAsyncConcurrencyInterval(value: string): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 10) {
+    throw new CommanderError(
+      1,
+      'lanterna.invalidAsyncConcurrencyInterval',
+      `invalid --async-concurrency-interval (min 10ms): ${value}`,
+    );
+  }
+  return parsed;
+}
+
+function parseAsyncInstrumentation(value: string): 'off' | 'safe' | 'full' {
+  if (value === 'off' || value === 'safe' || value === 'full') return value;
+  throw new CommanderError(
+    1,
+    'lanterna.invalidAsyncInstrumentation',
+    `invalid --async-instrumentation: ${value} (expected off, safe, or full)`,
+  );
 }
 
 function parsePid(value: string): number {

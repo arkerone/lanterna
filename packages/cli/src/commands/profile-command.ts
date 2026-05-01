@@ -8,6 +8,7 @@ import {
   runProfile,
 } from '@lanterna-profiler/core';
 import {
+  createAsyncProfileKindWithBuiltInDetectors,
   createCpuProfileKindWithBuiltInDetectors,
   createMemoryProfileKindWithBuiltInDetectors,
 } from '@lanterna-profiler/detectors';
@@ -31,6 +32,11 @@ type ParsedProfileOptions = {
     enabled: boolean;
     outputDir?: string;
   };
+  asyncMaxRecords: number;
+  asyncStackDepth: number;
+  asyncIncludeMicrotasks: boolean;
+  asyncConcurrencyIntervalMs: number;
+  asyncInstrumentation: 'off' | 'safe' | 'full';
   waitForUrl?: string;
   waitTimeoutMs?: number;
   captureDelayMs?: number;
@@ -69,7 +75,8 @@ export async function executeProfileCommand(command: ExecuteProfileCommandOption
     );
     const cpuKind = buildCpuKind(resolvedCommand);
     const memoryKind = buildMemoryKind(resolvedCommand);
-    const registry = createKindRegistry([cpuKind, memoryKind, ...pluginKinds]);
+    const asyncKind = buildAsyncKind(resolvedCommand);
+    const registry = createKindRegistry([cpuKind, memoryKind, asyncKind, ...pluginKinds]);
     const kinds = registry.resolveMany(options.kinds);
     const result = await runProfileCommand(resolvedCommand, kinds, setupPipeline, (message) => {
       indicator.update(message);
@@ -100,15 +107,54 @@ function formatProfileQualityWarning(report: {
         recommendations?: string[];
       };
     };
+    async?: {
+      quality?: {
+        confidence?: string;
+        reasons?: string[];
+        recommendations?: string[];
+        recordsDropped?: number;
+        attachPartialCapture?: boolean;
+        cpuAmbiguousSamples?: number;
+        cdpAsyncStackCoverageRatio?: number;
+        instrumentationMode?: string;
+      };
+    };
   };
 }): string | undefined {
-  const quality = report.profiles?.cpu?.quality;
-  if (!quality || quality.confidence !== 'low') return undefined;
-  const reasons = quality.reasons?.filter(Boolean) ?? [];
-  const recommendations = quality.recommendations?.filter(Boolean) ?? [];
+  const cpuQuality = report.profiles?.cpu?.quality;
+  const asyncQuality = report.profiles?.async?.quality;
+  const warnings: string[] = [];
+  const recommendations: string[] = [];
+  if (cpuQuality?.confidence === 'low') {
+    warnings.push(...(cpuQuality.reasons?.filter(Boolean) ?? ['CPU capture quality is low']));
+    recommendations.push(...(cpuQuality.recommendations?.filter(Boolean) ?? []));
+  }
+  if (asyncQuality && shouldWarnAsyncQuality(asyncQuality)) {
+    warnings.push(...(asyncQuality.reasons?.filter(Boolean) ?? ['async capture quality is low']));
+    recommendations.push(...(asyncQuality.recommendations?.filter(Boolean) ?? []));
+  }
+  if (warnings.length === 0) return undefined;
+  const reasons = warnings;
   const reasonText = formatQualityReasons(reasons);
   const recommendationText = formatQualityRecommendations(recommendations);
   return `Low confidence profile: ${reasonText}.${recommendationText}`;
+}
+
+function shouldWarnAsyncQuality(quality: {
+  confidence?: string;
+  recordsDropped?: number;
+  attachPartialCapture?: boolean;
+  cpuAmbiguousSamples?: number;
+  cdpAsyncStackCoverageRatio?: number;
+  instrumentationMode?: string;
+}): boolean {
+  return (
+    quality.confidence === 'low' ||
+    (quality.recordsDropped ?? 0) > 0 ||
+    Boolean(quality.attachPartialCapture) ||
+    (quality.cpuAmbiguousSamples ?? 0) > 0 ||
+    (quality.cdpAsyncStackCoverageRatio ?? 1) < 0.2
+  );
 }
 
 function formatQualityReasons(reasons: string[]): string {
@@ -119,6 +165,25 @@ function formatQualityReasons(reasons: string[]): string {
 function formatQualityRecommendations(recommendations: string[]): string {
   if (recommendations.length === 0) return '';
   return ` ${recommendations.join(' ')}`;
+}
+
+function buildAsyncKind(command: ExecuteProfileCommandOptions): ProfileKind {
+  process.stderr.write(
+    'lanterna: --kind async is experimental and opt-in. Attach mode remains partial because resources and already-loaded code from before hook installation cannot be fully observed.\n',
+  );
+  if (command.options.asyncInstrumentation === 'full') {
+    process.stderr.write(
+      'lanterna: --async-instrumentation=full is experimental and adds AST-based `await` source instrumentation. Attach mode remains partial because already-loaded code cannot be rewritten. Prefer `safe` for lowest-risk captures.\n',
+    );
+  }
+  return createAsyncProfileKindWithBuiltInDetectors({
+    maxRecords: command.options.asyncMaxRecords,
+    asyncStackDepth: command.options.asyncStackDepth,
+    includeMicrotasks: command.options.asyncIncludeMicrotasks,
+    concurrencyIntervalMs: command.options.asyncConcurrencyIntervalMs,
+    instrumentationMode: command.options.asyncInstrumentation,
+    attachPartialCapture: command.mode === 'attach',
+  });
 }
 
 function buildMemoryKind(command: ExecuteProfileCommandOptions): ProfileKind {

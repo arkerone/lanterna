@@ -220,6 +220,39 @@ interface ReportWithMemoryProfile {
   };
 }
 
+interface AsyncProfileLike {
+  summary?: {
+    available?: boolean;
+    collectedVia?: string;
+    totalOperations?: number;
+  };
+  quality?: {
+    instrumentationMode?: string;
+  };
+  topOperations?: Array<{ awaitFrame?: unknown }>;
+  chains?: unknown[];
+}
+
+interface ReportWithAsyncProfile {
+  profiles?: {
+    async?: AsyncProfileLike;
+    cpu?: CpuProfileLike;
+  };
+  meta?: {
+    kinds?: {
+      async?: {
+        transformStats?: {
+          transformed?: number;
+          skipped?: number;
+          failed?: number;
+          partial?: boolean;
+          awaitCalls?: number;
+        };
+      };
+    };
+  };
+}
+
 function stripAnsi(value: string): string {
   return stripVTControlCharacters(value);
 }
@@ -238,6 +271,24 @@ function getMemoryProfile(report: ReportWithMemoryProfile): MemoryProfileLike {
   const memoryProfile = report.profiles?.memory;
   assert.ok(memoryProfile, 'expected memory profile in report');
   return memoryProfile;
+}
+
+function getAsyncProfile(report: ReportWithAsyncProfile): AsyncProfileLike {
+  const asyncProfile = report.profiles?.async;
+  assert.ok(asyncProfile, 'expected async profile in report');
+  return asyncProfile;
+}
+
+function assertFullAsyncInstrumentation(report: ReportWithAsyncProfile): void {
+  const asyncProfile = getAsyncProfile(report);
+  assert.equal(asyncProfile.summary?.available, true);
+  assert.equal(asyncProfile.summary?.collectedVia, 'async-hooks');
+  assert.equal(asyncProfile.quality?.instrumentationMode, 'full');
+  assert.ok((asyncProfile.summary?.totalOperations ?? 0) > 0, 'expected async operations');
+  assert.ok(
+    (report.meta?.kinds?.async?.transformStats?.awaitCalls ?? 0) > 0,
+    'expected transformed await calls',
+  );
 }
 
 async function expectLanternaCommandFailure(
@@ -335,7 +386,7 @@ describe('live profiling', () => {
   it('rejects unknown profile kinds for run before capture starts', async () => {
     await expectLanternaCommandFailure(
       ['run', '--kind', 'nope', '--', 'node', '-e', 'setTimeout(() => {}, 10)'],
-      'Lanterna profiling failed: unknown profile kind(s): nope. Available kinds: cpu, memory',
+      'Lanterna profiling failed: unknown profile kind(s): nope. Available kinds: async, cpu, memory',
     );
   });
 
@@ -350,7 +401,7 @@ describe('live profiling', () => {
         '--duration',
         '10ms',
       ],
-      'Lanterna attach capture failed: unknown profile kind(s): nope. Available kinds: cpu, memory',
+      'Lanterna attach capture failed: unknown profile kind(s): nope. Available kinds: async, cpu, memory',
     );
   });
 
@@ -584,6 +635,176 @@ describe('live profiling', () => {
     assert.ok(memoryProfile.memoryUsage.firstSample, 'expected first sample');
     assert.ok(memoryProfile.memoryUsage.lastSample, 'expected last sample');
     assert.ok(stdout.length < 512 * 1024, `expected compact report, got ${stdout.length} bytes`);
+  });
+
+  it('captures async profile when --kind async is set', async () => {
+    const fixture = resolve(fixturesDir, 'async-await-app.mjs');
+    if (!(await inspectorSupported())) {
+      await expectInspectorFailure([
+        'run',
+        '--kind',
+        'async',
+        '--duration',
+        '1000ms',
+        '--',
+        'node',
+        fixture,
+      ]);
+      return;
+    }
+
+    const { stdout } = await execFileAsync(
+      'node',
+      [
+        binPath,
+        'run',
+        '--kind',
+        'async',
+        '--duration',
+        '1000ms',
+        '--pretty',
+        '--',
+        'node',
+        fixture,
+      ],
+      { cwd: repoRoot, timeout: 15_000, maxBuffer: 1024 * 1024 * 4 },
+    );
+
+    const report = JSON.parse(stdout);
+    const asyncProfile = getAsyncProfile(report);
+    assert.ok(asyncProfile.summary, 'expected async summary');
+    assert.equal(asyncProfile.summary?.available, true);
+    assert.equal(asyncProfile.summary?.collectedVia, 'async-hooks');
+    assert.ok(
+      (asyncProfile.summary?.totalOperations ?? 0) > 0,
+      'expected at least one async operation captured',
+    );
+    assert.equal(report.profiles?.cpu, undefined, 'should not include cpu profile when not asked');
+  });
+
+  it('combines --kind cpu,async into a single capture', async () => {
+    const fixture = resolve(fixturesDir, 'async-await-app.mjs');
+    if (!(await inspectorSupported())) {
+      await expectInspectorFailure([
+        'run',
+        '--kind',
+        'cpu,async',
+        '--duration',
+        '1000ms',
+        '--',
+        'node',
+        fixture,
+      ]);
+      return;
+    }
+
+    const { stdout } = await execFileAsync(
+      'node',
+      [
+        binPath,
+        'run',
+        '--kind',
+        'cpu,async',
+        '--duration',
+        '1000ms',
+        '--pretty',
+        '--',
+        'node',
+        fixture,
+      ],
+      { cwd: repoRoot, timeout: 15_000, maxBuffer: 1024 * 1024 * 4 },
+    );
+
+    const report = JSON.parse(stdout);
+    const asyncProfile = getAsyncProfile(report);
+    const cpuProfile = getCpuProfile(report);
+    assert.equal(asyncProfile.summary?.available, true);
+    assert.ok(cpuProfile, 'expected cpu profile when --kind cpu,async');
+  });
+
+  it('captures async data with --kind async --async-instrumentation full', async () => {
+    const fixture = resolve(fixturesDir, 'async-await-app.mjs');
+    if (!(await inspectorSupported())) {
+      await expectInspectorFailure([
+        'run',
+        '--kind',
+        'async',
+        '--async-instrumentation',
+        'full',
+        '--duration',
+        '1600ms',
+        '--',
+        'node',
+        fixture,
+      ]);
+      return;
+    }
+
+    const { stdout } = await execFileAsync(
+      'node',
+      [
+        binPath,
+        'run',
+        '--kind',
+        'async',
+        '--async-instrumentation',
+        'full',
+        '--duration',
+        '1600ms',
+        '--pretty',
+        '--',
+        'node',
+        fixture,
+      ],
+      { cwd: repoRoot, timeout: 15_000, maxBuffer: 1024 * 1024 * 4 },
+    );
+
+    const report = JSON.parse(stdout);
+    assertFullAsyncInstrumentation(report);
+    assert.equal(report.profiles?.cpu, undefined, 'should not include cpu profile when not asked');
+  });
+
+  it('captures async and cpu together with --async-instrumentation full', async () => {
+    const fixture = resolve(fixturesDir, 'async-await-app.mjs');
+    if (!(await inspectorSupported())) {
+      await expectInspectorFailure([
+        'run',
+        '--kind',
+        'cpu,async',
+        '--async-instrumentation',
+        'full',
+        '--duration',
+        '1600ms',
+        '--',
+        'node',
+        fixture,
+      ]);
+      return;
+    }
+
+    const { stdout } = await execFileAsync(
+      'node',
+      [
+        binPath,
+        'run',
+        '--kind',
+        'cpu,async',
+        '--async-instrumentation',
+        'full',
+        '--duration',
+        '1600ms',
+        '--pretty',
+        '--',
+        'node',
+        fixture,
+      ],
+      { cwd: repoRoot, timeout: 15_000, maxBuffer: 1024 * 1024 * 4 },
+    );
+
+    const report = JSON.parse(stdout);
+    const cpuProfile = getCpuProfile(report);
+    assertFullAsyncInstrumentation(report);
+    assert.ok(cpuProfile, 'expected cpu profile when --kind cpu,async');
   });
 
   it('attributes sync crypto findings to the user caller on live runs', async () => {

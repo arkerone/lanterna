@@ -218,12 +218,12 @@ Low confidence does not make the report useless. Use it to choose what to inspec
 **Symptom:** `lanterna run ... --kind <id>` or `lanterna attach ... --kind <id>` exits with:
 
 ```text
-unknown profile kind(s): <ids>. Available kinds: cpu, memory
+unknown profile kind(s): <ids>. Available kinds: cpu, memory, async
 ```
 
 **What it means:**
 
-1. **Built-in kind ids are `cpu` and `memory`.** Both `run` and `attach` default to `--kind cpu` when you omit the flag.
+1. **Built-in kind ids are `cpu`, `memory`, and `async`.** Both `run` and `attach` default to `--kind cpu` when you omit the flag. `async` is experimental and must be selected explicitly.
 
 2. **`--kind` accepts repeated flags and comma-separated shorthand.** These are equivalent:
 
@@ -231,13 +231,16 @@ unknown profile kind(s): <ids>. Available kinds: cpu, memory
    lanterna run --kind cpu -- node app.js
    lanterna run --kind cpu --kind memory -- node app.js
    lanterna run --kind cpu,memory -- node app.js
+   lanterna run --kind async -- node app.js
    ```
 
-3. **An unknown kind is usually a typo or configuration error.** Double-check the id you passed on the CLI or in any wrapper script.
+3. **Attach async capture is intentionally partial.** `lanterna attach --kind async ...` can observe only resources created after hooks are installed; preexisting resources and already-loaded `await` sites are not fully observable.
 
-4. **It can also mean the kind was never registered.** If you expected a non-builtin kind, make sure the plugin or extension that registers it is actually loaded in this process.
+4. **An unknown kind is usually a typo or configuration error.** Double-check the id you passed on the CLI or in any wrapper script.
 
-**Fix:** Use `cpu` today, or load/register the extension that provides the extra kind before requesting it.
+5. **It can also mean the kind was never registered.** If you expected a non-builtin kind, make sure the plugin or extension that registers it is actually loaded in this process.
+
+**Fix:** Use one of `cpu`, `memory`, or experimental `async`, or load/register the extension that provides the extra kind before requesting it.
 
 ---
 

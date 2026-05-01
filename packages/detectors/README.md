@@ -2,9 +2,9 @@
 
 Default detector pack for [Lanterna](https://github.com/arkerone/lanterna), the agent-first Node.js profiler.
 
-This package contains the built-in CPU detectors (as `KindScopedDetector<'cpu'>` instances), thresholds, attribution helpers, and CPU-kind factories that pre-wire those detectors. Capture orchestration and the `KindScopedDetector` seam itself live in [`@lanterna-profiler/core`](../core).
+This package contains the built-in CPU, memory, and experimental async detectors, thresholds, attribution helpers, and kind factories that pre-wire those detectors. Capture orchestration and the `KindScopedDetector` seam itself live in [`@lanterna-profiler/core`](../core).
 
-> Schema v2: CPU data lives under `report.profiles.cpu.*` and CPU-flavoured meta under `report.meta.kinds.cpu.*`. Programmatic runs should use `runProfile` / `attachProfile` from `@lanterna-profiler/core` and pass `kinds: [createCpuProfileKindWithBuiltInDetectors({...})]` (CPU kind pre-wired with this pack).
+> Schema v2: kind data lives under `report.profiles.<kind>.*` and meta under `report.meta.kinds.<kind>.*`. Built-in kinds are `cpu`, `memory`, and experimental `async`. Programmatic runs should use `runProfile` / `attachProfile` from `@lanterna-profiler/core` and pass the `create*ProfileKindWithBuiltInDetectors(...)` factories you need.
 
 ## Install
 
@@ -26,6 +26,9 @@ Install `@lanterna-profiler/core` as well when your application imports orchestr
 | `event-loop-stall` | `p99LagMs >= 100` or `maxLagMs >= 200`. |
 | `deopt-loop:<function>` | Same deoptimised function seen ≥ 5 times (`--deep`) and hot in the profile. |
 | `require-in-hot-path` | Module loading functions sampled on the hot path. |
+| `deep-async-chain` | Long async parent chains in `profiles.async.*` (`--kind async`, experimental). |
+| `long-await` | Await gaps above detector thresholds (`--kind async`, experimental). |
+| `orphan-async-resource` | Async resources that never resolved or destroyed during capture (`--kind async`, experimental). |
 
 Thresholds live in `DETECTOR_THRESHOLDS` (exported from this package, not core).
 

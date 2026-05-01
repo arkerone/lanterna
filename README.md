@@ -5,7 +5,7 @@
 <h1 align="center">Lanterna</h1>
 
 <p align="center">
-  <strong>Agent-first Node.js CPU & memory profiler.</strong><br />
+  <strong>Agent-first Node.js CPU, memory & experimental async profiler.</strong><br />
   Runs your program, captures a V8 profile plus timed runtime signals,<br />
   and emits a structured JSON report that humans <em>and</em> AI agents can act on directly.
 </p>
@@ -24,13 +24,14 @@
 ## Features
 
 - **Two capture modes** - `lanterna run` to spawn & profile a command, `lanterna attach` to connect to a live process via the inspector.
-- **Two profile kinds** - opt-in via `--kind`: `cpu` (V8 sampling profiler, default) and `memory` (V8 sampling heap profiler + `process.memoryUsage()` time series).
+- **Three profile kinds** - opt-in via `--kind`: `cpu` (V8 sampling profiler, default), `memory` (V8 sampling heap profiler + `process.memoryUsage()` time series), and `async` (experimental async-resource profiling).
 - **V8 CPU profile + timed signals** - CPU samples correlated with GC pauses, event-loop lag and stalls, optional deopt traces (`--deep`).
 - **Heap allocation profile** - hot allocators by self/total bytes plus a continuous RSS / heapUsed / external / arrayBuffers series with linear growth slope.
 - **Enriched `LanternaReport`** - categorized hotspots, hot call stacks, ratios, capture-integrity flags.
 - **Built-in findings**
   - _CPU kind_ - sync crypto, blocking I/O, JSON on the hot path, dependency hotspots, excessive GC, event-loop stalls, deopt loops, module loading on the hot path.
   - _Memory kind_ - sustained memory growth, large allocators, off-heap buffer pressure.
+  - _Async kind (experimental)_ - long-await, orphan-async-resource, deep-async-chain, microtask-flood, hot-async-context.
   - _Cross-kind_ - alloc-in-hot-path.
 - **Actionable evidence** - each finding ships with file/line, severity, rationale, and remediation hints.
 - **Agent-ready** - stable JSON schema, `skills/lanterna-profiler/` workflow for Claude Code.
@@ -88,6 +89,9 @@ lanterna run --kind memory --duration 30s --output report.json -- node app.js
 
 # Profile CPU and memory together
 lanterna run --kind cpu --kind memory --duration 30s --output report.json -- node app.js
+
+# Profile async chains experimentally
+lanterna run --kind async --duration 30s --output report.json -- node app.js
 
 # Attach to a running Node process
 lanterna attach --pid 4242 --duration 15s --output report.json
@@ -155,7 +159,7 @@ lanterna attach --inspect-url ws://127.0.0.1:9229/<uuid>
 ```
 
 > [!WARNING]
-> `attach --pid` relies on `SIGUSR1` and is POSIX-only. On Windows, use `--inspect-url`. Attach mode does **not** support `--deep` - deopt tracing cannot be enabled on a process that is already running.
+> `attach --pid` relies on `SIGUSR1` and is POSIX-only. On Windows, use `--inspect-url`. Attach mode does **not** support `--deep` - deopt tracing cannot be enabled on a process that is already running. `--kind async` works in attach mode, but capture is partial because resources and already-loaded code from before hook installation cannot be fully observed.
 
 ### Render an existing report
 
@@ -185,16 +189,23 @@ lanterna report report.json --format json --pretty
 | `--capture-delay <ms\|s\|m>` | Extra delay after readiness and before capture starts. |
 | `--workload <command>` | Shell command to run in parallel during `run` capture. |
 | `--sample-interval <us>` | V8 CPU sampling interval in µs (default `1000`, min `50`). |
-| `--kind <id>` | Profile kind to capture (default `cpu`). Repeatable or comma-separated. Built-in: `cpu`, `memory`. |
+| `--kind <id>` | Profile kind to capture (default `cpu`). Repeatable or comma-separated. Built-in: `cpu`, `memory`, `async` (experimental, opt-in). |
 | `--heap-sample-interval <size>` | V8 heap sampling interval (memory kind). Accepts raw bytes or a KiB/MiB suffix: `524288`, `512KiB`, `1MiB`. Default `512KiB`, min `1KiB`. |
 | `--memory-usage-interval <ms>` | `process.memoryUsage()` cadence in ms (memory kind, default `250`, min `10`). |
 | `--include-memory-samples` | Include raw `process.memoryUsage()` samples in JSON output (memory kind). |
 | `--heap-snapshot-analysis` | Capture start/end V8 heap snapshots and include retained-growth synthesis (memory kind, opt-in and heavy). |
 | `--heap-snapshot-dir <dir>` | Directory for `.heapsnapshot` files when snapshot analysis is enabled. |
+| `--async-max-events <n>` | Cap on retained async resource records (async kind, default `50000`). |
+| `--async-stack-depth <n>` | V8 async call-stack depth (async kind, default `32`, max `64`). |
+| `--async-include-microtasks` | Include TickObject / Microtask resources in the async capture (very noisy). |
+| `--async-concurrency-interval <ms>` | Concurrency timeline cadence in ms (async kind, default `100`). |
+| `--async-instrumentation <off\|safe\|full>` | Extra async instrumentation mode for `--kind async` (experimental; `full` rewrites later-loaded awaits and is higher risk). |
 | `--pid [pid]` | Attach by PID, or open the interactive picker if no value. |
 | `--inspect-url <url>` | Attach to an existing inspector WebSocket URL. |
 | `--detectors <spec>` | Load an additional detector plugin (package name or path). Repeatable. |
 | `-h, --help` | Show help. |
+
+See the [CLI documentation](packages/cli/README.md) for full flag details and command examples.
 
 The `--` separator is required before the target command in `run` mode.
 
@@ -216,10 +227,11 @@ Lanterna emits a `LanternaReport` (schema v2) with per-kind sections nested unde
 | `profiles.memory.hotAllocators` | Frames ranked by `selfBytes` / `totalBytes`, with file/line and frame category. |
 | `profiles.memory.memoryUsage` | Compact `process.memoryUsage()` metadata (`sampleCount`, first/last sample). Raw samples are included only with `--include-memory-samples`. |
 | `profiles.memory.heapSnapshotAnalysis` | Optional start/end retained-growth summary when `--heap-snapshot-analysis` is enabled. Very large snapshots are skipped with a warning instead of being parsed unbounded. |
+| `profiles.async.*` | Experimental async-resource chains, concurrency, long awaits, orphan resources, CDP async-stack support, and quality metadata when `--kind async` is selected. |
 | `findings` | Actionable detector output (cross-kind, each tagged `profileKind`), with `confidence` and `proofLevel` when available. |
 
 > [!NOTE]
-> Schema **v2** (current) nests per-kind data under `profiles.<id>.*`. Built-in kinds are `cpu` (default) and `memory` (opt-in via `--kind memory`). Future kinds (async, ...) will land under their own keys. Select kinds via `--kind <id>` (repeatable).
+> Schema **v2** (current) nests per-kind data under `profiles.<id>.*`. Built-in kinds are `cpu` (default), `memory` (opt-in), and `async` (experimental, opt-in). Select kinds via `--kind <id>` (repeatable).
 
 **Read it in this order:** `profiles.cpu.quality` → `profiles.cpu.summary.topCategory` → `findings[]` → top `profiles.cpu.hotspots` → `eventLoop` & `gc`. Full schema in [docs/reading-a-report.md](docs/reading-a-report.md).
 

@@ -26,6 +26,11 @@ const SCALAR_CONFIG_KEYS = [
   'waitTimeoutMs',
   'captureDelayMs',
   'workload',
+  'asyncMaxRecords',
+  'asyncStackDepth',
+  'asyncIncludeMicrotasks',
+  'asyncConcurrencyIntervalMs',
+  'asyncInstrumentation',
 ] as const;
 
 type ScalarConfigKey = (typeof SCALAR_CONFIG_KEYS)[number];
@@ -43,6 +48,11 @@ const RawConfigSchema = z.object({
   includeMemorySamples: z.boolean().optional(),
   heapSnapshotAnalysis: z.boolean().optional(),
   heapSnapshotDir: z.string().optional(),
+  asyncMaxEvents: z.number().optional(),
+  asyncStackDepth: z.number().optional(),
+  asyncIncludeMicrotasks: z.boolean().optional(),
+  asyncConcurrencyInterval: z.union([z.string(), z.number()]).optional(),
+  asyncInstrumentation: z.enum(['off', 'safe', 'full']).optional(),
   waitForUrl: z.string().optional(),
   waitTimeout: z.union([z.string(), z.number()]).optional(),
   captureDelay: z.union([z.string(), z.number()]).optional(),
@@ -64,6 +74,11 @@ export interface LanternaConfig {
     enabled: boolean;
     outputDir?: string;
   };
+  asyncMaxRecords?: number;
+  asyncStackDepth?: number;
+  asyncIncludeMicrotasks?: boolean;
+  asyncConcurrencyIntervalMs?: number;
+  asyncInstrumentation?: 'off' | 'safe' | 'full';
   waitForUrl?: string;
   waitTimeoutMs?: number;
   captureDelayMs?: number;
@@ -215,6 +230,20 @@ function normalizeConfig(raw: z.infer<typeof RawConfigSchema>): LanternaConfig {
       enabled: Boolean(raw.heapSnapshotAnalysis),
     };
     if (raw.heapSnapshotDir) config.heapSnapshotAnalysis.outputDir = raw.heapSnapshotDir;
+  }
+  if (raw.asyncMaxEvents !== undefined) config.asyncMaxRecords = raw.asyncMaxEvents;
+  if (raw.asyncStackDepth !== undefined) config.asyncStackDepth = raw.asyncStackDepth;
+  if (raw.asyncIncludeMicrotasks !== undefined) {
+    config.asyncIncludeMicrotasks = raw.asyncIncludeMicrotasks;
+  }
+  if (raw.asyncConcurrencyInterval !== undefined) {
+    config.asyncConcurrencyIntervalMs = parseDurationMs(
+      raw.asyncConcurrencyInterval,
+      'asyncConcurrencyInterval',
+    );
+  }
+  if (raw.asyncInstrumentation !== undefined) {
+    config.asyncInstrumentation = raw.asyncInstrumentation;
   }
   if (raw.waitForUrl !== undefined) config.waitForUrl = raw.waitForUrl;
   if (raw.waitTimeout !== undefined) {

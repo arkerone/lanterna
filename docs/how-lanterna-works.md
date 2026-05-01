@@ -17,7 +17,7 @@ flowchart LR
 1. **Capture** — a `ProfileSource` (spawn / attach) hands a live CDP connection to the `runCapture` coordinator. The coordinator runs the installed **profile kinds'** probes against that connection, plus the always-on runtime-signals installer (event-loop + GC). Output: `CaptureBundle` — `{ target, runtimeSignals, kinds, captureIntegrity, … }`.
 2. **Enrichment** — each kind contributes its analysis section (`profiles.<kind>`), detectors emit cross-kind `findings[]`, and `buildLanternaReport` assembles the final `LanternaReport`.
 
-**Profile kinds** are the extensibility seam. The built-in kinds are `cpu` and `memory`; future kinds (async, I/O, custom domain profilers, ...) plug in through the same interface. A kind provides a `CaptureProbe` + `KindAnalysisContributor` and optionally a preload-hook fragment. The CLI selects active kinds with `--kind <id>` (repeatable, default `cpu`); the JSON report lists successfully captured kinds in `meta.profileKinds` and puts their sections under `profiles.<kind>`.
+**Profile kinds** are the extensibility seam. The built-in kinds are `cpu`, `memory`, and `async` (`async` is experimental and opt-in). Future domain profilers plug in through the same interface. A kind provides a `CaptureProbe` + `KindAnalysisContributor` and optionally a preload-hook fragment. The CLI selects active kinds with `--kind <id>` (repeatable, default `cpu`); the JSON report lists successfully captured kinds in `meta.profileKinds` and puts their sections under `profiles.<kind>`.
 
 ### Spawn vs attach
 
@@ -56,6 +56,7 @@ The coordinator builds a single preload script from the active kinds' hook insta
 | `--inspect-brk=0` | Start the Node inspector on a random port, pause before user code runs. |
 | `--require=<composed preload>` | Inject the runtime-signals installer + any kind hook fragments. |
 | `--trace-deopt` | Added only when `--deep` is enabled (CPU kind uses target diagnostics to build `deopts[]`). |
+| async await loader | Added only for `--kind async --async-instrumentation=full`; it is experimental and only affects code loaded after registration. |
 | `LANTERNA_ACTIVE=1` | Marker for the child process. |
 | `LANTERNA_CONTROL_FD=3` | FD the preload writes control-channel events to. |
 
@@ -107,6 +108,7 @@ From that moment, signal families accumulate:
 - CPU samples from the V8 profiler (CPU probe)
 - event-loop heartbeats + histogram (runtime-signals)
 - GC events (runtime-signals)
+- async resource records, concurrency samples, and optional safe/full async stacks when `--kind async` is selected
 
 With `--deep`, V8 deopt traces are also collected from the child's diagnostic output and parsed later into grouped `deopts[]`. V8 may emit those trace lines on stdout or stderr; Lanterna keeps trace diagnostics out of JSON stdout while preserving normal target stdout/stderr.
 
@@ -148,6 +150,7 @@ Attach mode limitations:
 - No paused startup phase, no `Runtime.runIfWaitingForDebugger`.
 - No FD 3 control channel, so `captureIntegrity.controlChannel` is always `false` and control-channel counters are zero.
 - Cannot enable `--trace-deopt`, so `profiles.cpu.deopts` is empty by design.
+- `--kind async` is partial in attach mode: async resources that already existed before hook installation are not observable, and `--async-instrumentation=full` cannot rewrite already-loaded code.
 - `meta.command` is empty — Lanterna did not launch the process.
 
 ---
@@ -183,7 +186,7 @@ Classification feeds `profiles.cpu.summary` ratios and several findings. Frames 
 
 Self-noise detection lives in a single registry exported from `@lanterna-profiler/core` (`packages/core/src/analysis/noise-filters.ts`). The bundled Lanterna filter is auto-registered on import; analyzers consume the registry through `classifyNoiseUrl`, `classifyNoisePackage`, `isNoiseCategory`, `isNoiseRetainerPath`, and `shouldKeepNoiseFrames` instead of hard-coding patterns.
 
-A profile kind that injects its own JavaScript into the target (for example a future `async-hooks` kind) can declare its own self-noise without touching the analyzers:
+A profile kind that injects its own JavaScript into the target (for example the built-in experimental `async` kind or a third-party hook kind) can declare its own self-noise without touching the analyzers:
 
 ```ts
 import { registerNoiseFilter } from '@lanterna-profiler/core';

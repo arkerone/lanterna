@@ -16,6 +16,7 @@ import { openInspectorForPid } from '../src/inspector/discovery.js';
 const EMPTY_PRELOAD: PreloadContribution = {
   preloadScript: '/* empty */\n',
   attachScript: '/* empty */',
+  nodeOptions: [],
   controlFd: 3,
 };
 

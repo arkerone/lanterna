@@ -87,8 +87,6 @@ export async function runCapture<TSourceOptions>(
   const captureIntegrity: CaptureIntegrity = connected.initialIntegrity;
 
   try {
-    await options.beforeCaptureStart?.();
-
     const target = await fetchTargetInfo(cdp, { pid: connected.target.pid });
     await markCaptureStart(cdp);
     const runtimeCaptureStartMs = await readRuntimeClockNow(cdp);
@@ -100,6 +98,9 @@ export async function runCapture<TSourceOptions>(
 
     const probeInstances = await installProbes(options.kinds, cdp, captureIntegrity);
     await startProbes(probeInstances, cdp, options, captureIntegrity);
+    await connected.releaseRuntime?.();
+
+    await options.beforeCaptureStart?.();
 
     await options.onCaptureStarted?.();
 
@@ -157,6 +158,7 @@ function composeCapturePreload(kinds: readonly ProfileKind[]): PreloadContributi
     attachScript: composeAttachScript(installers, {
       resolutionMs: HEARTBEAT_RESOLUTION_MS,
     }),
+    nodeOptions: installers.flatMap((installer) => installer.nodeOptions ?? []),
     controlFd: 3,
   };
 }

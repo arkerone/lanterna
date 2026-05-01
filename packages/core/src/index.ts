@@ -65,6 +65,29 @@ export * as extensionApi from './extension-api.js';
 // Inspector
 export type { InspectorTargetDescriptor } from './inspector/discovery.js';
 export { openInspectorForPid, readInspectableTargetsByPid } from './inspector/discovery.js';
+// Async kind (built-in)
+export type {
+  AsyncAnalysisView,
+  AsyncChainNode,
+  AsyncConcurrencySample,
+  AsyncIntegrityCounters,
+  AsyncKindData,
+  AsyncKindOptions,
+  AsyncOperationKind,
+  AsyncOperationRecord,
+  AsyncProbeOptions,
+  AsyncRunWindow,
+  AsyncStackFrame,
+} from './kinds/async/index.js';
+export {
+  createAsyncAnalysisContributor,
+  createAsyncProbe,
+  createAsyncProfileKind,
+  DEFAULT_ASYNC_CONCURRENCY_INTERVAL_MS,
+  DEFAULT_ASYNC_MAX_RECORDS,
+  DEFAULT_ASYNC_STACK_DEPTH,
+  MAX_ASYNC_STACK_DEPTH,
+} from './kinds/async/index.js';
 // Kinds
 export {
   createKindRegistry,
@@ -136,6 +159,18 @@ export { LANTERNA_REPORT_SCHEMA_VERSION } from './report/meta.js';
 export { buildReportSchema } from './report/schema.js';
 export type {
   AlternativeHotspotEvidence,
+  AsyncChainSummary,
+  AsyncConcurrencyTimelineSample,
+  AsyncCpuAttribution,
+  AsyncCpuAttributionEntry,
+  AsyncHotFile,
+  AsyncOperationKindReport,
+  AsyncOrphan,
+  AsyncProfileQuality,
+  AsyncProfileReport,
+  AsyncStackFrameReport,
+  AsyncSummary,
+  AsyncTopOperation,
   AttributionEvidence,
   BaseFinding,
   BlockingIoEvidenceExtra,

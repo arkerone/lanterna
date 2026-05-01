@@ -15,6 +15,7 @@ import {
   formatUnknownCommandError,
 } from './help.js';
 import {
+  ASYNC_OPTIONS,
   ATTACH_CAPTURE_OPTIONS,
   type CliOptionDescriptor,
   COMMON_CAPTURE_OPTIONS,
@@ -47,6 +48,7 @@ function renderOptionRows(options: readonly CliOptionDescriptor[]): string[] {
 }
 
 const memoryOptionRows = renderOptionRows(MEMORY_OPTIONS);
+const asyncOptionRows = renderOptionRows(ASYNC_OPTIONS);
 const captureRunRows = renderOptionRows([...COMMON_CAPTURE_OPTIONS, ...RUN_CAPTURE_OPTIONS]);
 const captureAttachRows = renderOptionRows([...ATTACH_CAPTURE_OPTIONS, ...COMMON_CAPTURE_OPTIONS]);
 const outputRows = renderOptionRows(OUTPUT_OPTIONS);
@@ -79,6 +81,8 @@ ${formatSection('Run-only options', renderOptionRows(RUN_CAPTURE_OPTIONS))}
 ${formatSection('Attach-only options', renderOptionRows(ATTACH_CAPTURE_OPTIONS))}
 
 ${formatSection('Memory kind options', renderOptionRows(MEMORY_OPTIONS))}
+
+${formatSection('Async kind options', renderOptionRows(ASYNC_OPTIONS))}
 
 ${formatSection('Meta', [
   formatOptionRow('-v, --version', 'Print the Lanterna version'),
@@ -130,6 +134,8 @@ ${formatSection('Capture', captureRunRows)}
 
 ${formatSection('Memory kind', memoryOptionRows)}
 
+${formatSection('Async kind', asyncOptionRows)}
+
 ${formatSection('Output', outputRows)}
 
 ${formatSection('Plugins', pluginRows)}
@@ -170,7 +176,7 @@ ${formatNotes('Notes', [
   `Without ${chalk.cyan('--duration')}, Lanterna profiles until the child exits`,
   `${chalk.cyan('--kind')} works on ${chalk.cyan('run')} and ${chalk.cyan('attach')}; repeat it or use ${chalk.cyan('--kind cpu,memory')}`,
   `Use ${chalk.cyan('--workload "npx -y autocannon ..."')} to generate representative traffic while the capture is running`,
-  `Built-in profile kinds: ${chalk.cyan('cpu')} (default) and ${chalk.cyan('memory')}; unknown ids fail with ${chalk.gray('"unknown profile kind(s): <ids>. Available kinds: cpu, memory"')}`,
+  `Built-in profile kinds: ${chalk.cyan('cpu')} (default), ${chalk.cyan('memory')}, ${chalk.cyan('async')} (experimental, opt-in, non-trivial overhead on async-heavy workloads); unknown ids fail with ${chalk.gray('"unknown profile kind(s): <ids>. Available kinds: cpu, memory, async"')}`,
 ])}
 `;
 
@@ -184,6 +190,8 @@ ${formatSection('Usage', [`  ${chalk.cyan('lanterna attach')} ${chalk.gray('[opt
 ${formatSection('Capture', captureAttachRows)}
 
 ${formatSection('Memory kind', memoryOptionRows)}
+
+${formatSection('Async kind', asyncOptionRows)}
 
 ${formatSection('Output', outputRows)}
 
@@ -210,7 +218,7 @@ ${formatNotes('Notes', [
   `${chalk.cyan('--pid')} with no value opens the interactive picker in a TTY`,
   `${chalk.cyan('--deep')} is not supported in attach mode`,
   `${chalk.cyan('--kind')} works on ${chalk.cyan('run')} and ${chalk.cyan('attach')}; repeat it or use ${chalk.cyan('--kind cpu,memory')}`,
-  `Built-in profile kinds: ${chalk.cyan('cpu')} (default) and ${chalk.cyan('memory')}; unknown ids fail with ${chalk.gray('"unknown profile kind(s): <ids>. Available kinds: cpu, memory"')}`,
+  `Built-in profile kinds: ${chalk.cyan('cpu')} (default), ${chalk.cyan('memory')}, ${chalk.cyan('async')} (experimental, opt-in, non-trivial overhead on async-heavy workloads); unknown ids fail with ${chalk.gray('"unknown profile kind(s): <ids>. Available kinds: cpu, memory, async"')}`,
 ])}
 `;
 

@@ -61,6 +61,7 @@ describe('AttachSource', () => {
       {
         preloadScript: '',
         attachScript: 'installHooks()',
+        nodeOptions: [],
         controlFd: 3,
       },
     );
@@ -91,6 +92,7 @@ describe('AttachSource', () => {
       {
         preloadScript: '',
         attachScript: 'installHooks()',
+        nodeOptions: [],
         controlFd: 3,
       },
     );
