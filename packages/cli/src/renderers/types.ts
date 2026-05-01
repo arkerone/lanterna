@@ -8,7 +8,7 @@ export type RenderableFormat = Exclude<OutputFormat, 'json'>;
  * Optional context passed to a renderer. Reserved for future
  * per-render options (color, max width, locale, ...).
  */
-export type RenderContext = {};
+export type RenderContext = Record<PropertyKey, never>;
 
 /**
  * Contract every renderer must satisfy. Implementations live in their

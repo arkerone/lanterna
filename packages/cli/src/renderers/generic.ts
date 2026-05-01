@@ -37,7 +37,7 @@ function renderObject(obj: Record<string, unknown>): string[] {
       continue;
     }
     if (Array.isArray(child) && child.every((x) => x === null || typeof x !== 'object')) {
-      lines.push(`${key}: [${child.map((x) => (x === null ? 'null' : String(x))).join(', ')}]`);
+      lines.push(`${key}: [${child.map(formatPrimitiveValue).join(', ')}]`);
       continue;
     }
     const sub = renderValue(child);
@@ -46,4 +46,9 @@ function renderObject(obj: Record<string, unknown>): string[] {
     for (const line of sub) lines.push(`  ${line}`);
   }
   return lines;
+}
+
+function formatPrimitiveValue(value: unknown): string {
+  if (value === null) return 'null';
+  return String(value);
 }

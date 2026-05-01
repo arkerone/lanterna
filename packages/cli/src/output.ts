@@ -7,7 +7,7 @@ import {
   serializeReport,
 } from '@lanterna-profiler/core';
 import type { OutputFormat } from './parse.js';
-import { renderReport } from './report-renderer.js';
+import { renderReport } from './renderers/index.js';
 
 export async function writeReportOutput(
   report: LanternaReport,
@@ -16,10 +16,7 @@ export async function writeReportOutput(
   format: OutputFormat,
   kinds: ReadonlyArray<ProfileKind>,
 ): Promise<void> {
-  const rendered =
-    format === 'json'
-      ? serializeReport(report, { pretty, kinds })
-      : renderReport(report, { format });
+  const rendered = renderCapturedReport(report, pretty, format, kinds);
   await writeRenderedOutput(rendered, outputPath);
 }
 
@@ -31,11 +28,36 @@ export async function writeExistingReportOutput(
 ): Promise<void> {
   const raw = await readFile(resolve(reportPath), 'utf8');
   const parsed = JSON.parse(raw) as LanternaReport;
-  const rendered =
-    format === 'json'
-      ? JSON.stringify(parsed, null, pretty ? 2 : 0)
-      : renderReport(parsed, { format });
+  const rendered = renderExistingReport(parsed, pretty, format);
   await writeRenderedOutput(rendered, outputPath);
+}
+
+function renderCapturedReport(
+  report: LanternaReport,
+  pretty: boolean,
+  format: OutputFormat,
+  kinds: ReadonlyArray<ProfileKind>,
+): string {
+  if (format === 'json') {
+    return serializeReport(report, { pretty, kinds });
+  }
+  return renderReport(report, { format });
+}
+
+function renderExistingReport(
+  report: LanternaReport,
+  pretty: boolean,
+  format: OutputFormat,
+): string {
+  if (format === 'json') {
+    return JSON.stringify(report, null, jsonIndent(pretty));
+  }
+  return renderReport(report, { format });
+}
+
+function jsonIndent(pretty: boolean): number {
+  if (pretty) return 2;
+  return 0;
 }
 
 async function writeRenderedOutput(
@@ -51,5 +73,6 @@ async function writeRenderedOutput(
 }
 
 function ensureTrailingNewline(value: string): string {
-  return value.endsWith('\n') ? value : `${value}\n`;
+  if (value.endsWith('\n')) return value;
+  return `${value}\n`;
 }

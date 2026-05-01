@@ -1,7 +1,8 @@
 /** Shared, format-agnostic value formatters used by every renderer. */
 
 export function formatCommand(command: string[] | undefined): string {
-  return command && command.length > 0 ? command.join(' ') : '(unknown)';
+  if (!command || command.length === 0) return '(unknown)';
+  return command.join(' ');
 }
 
 export function formatMs(value: number | undefined): string {
@@ -16,7 +17,12 @@ export function formatRatio(value: number | undefined): string {
 
 export function formatPct(value: number | undefined): string {
   if (typeof value !== 'number' || !Number.isFinite(value)) return 'unknown';
-  return `${value.toFixed(value >= 10 ? 1 : 2)}%`;
+  return `${value.toFixed(fractionDigitsForPct(value))}%`;
+}
+
+function fractionDigitsForPct(value: number): number {
+  if (value >= 10) return 1;
+  return 2;
 }
 
 export function formatBytes(value: number | undefined): string {

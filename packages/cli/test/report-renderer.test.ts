@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { renderReport } from '../src/report-renderer.js';
+import { renderReport } from '../src/renderers/index.js';
 
 const baseMeta = {
   schemaVersion: '2',
