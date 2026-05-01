@@ -141,4 +141,28 @@ describe('loadLanternaConfig', () => {
       workload: 'npm run load',
     });
   });
+
+  it('uses config kinds instead of the parser default when no kind flag was provided', () => {
+    const parsed = applyLanternaConfig(
+      {
+        kinds: ['memory', 'memory'],
+      },
+      {
+        command: ['node', 'app.js'],
+        pretty: false,
+        format: 'json',
+        detectors: [],
+        kinds: ['cpu'],
+        sampleIntervalMicros: 1000,
+        heapSamplingIntervalBytes: 524_288,
+        memoryUsageIntervalMs: 250,
+        includeMemoryUsageSamples: false,
+        heapSnapshotAnalysis: { enabled: false },
+        deep: false,
+      },
+      new Set(),
+    );
+
+    expect(parsed.kinds).toEqual(['memory']);
+  });
 });

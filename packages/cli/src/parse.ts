@@ -105,11 +105,27 @@ export type OutputFormat = 'json' | 'text' | 'markdown';
 
 const PROVIDED_FLAGS = Symbol('lanterna.providedFlags');
 const DEFAULT_WAIT_TIMEOUT_MS = 30_000;
+const PROVIDED_FLAG_ALIASES: Readonly<Record<string, string>> = {
+  'heap-sample-interval': 'heapSamplingIntervalBytes',
+  'memory-usage-interval': 'memoryUsageIntervalMs',
+  'include-memory-samples': 'includeMemoryUsageSamples',
+  'heap-snapshot-analysis': 'heapSnapshotAnalysis',
+  'heap-snapshot-dir': 'heapSnapshotAnalysis',
+  'sample-interval': 'sampleIntervalMicros',
+  'wait-for-url': 'waitForUrl',
+  'wait-timeout': 'waitTimeoutMs',
+  'capture-delay': 'captureDelayMs',
+  detectors: 'detectors',
+  kind: 'kind',
+  duration: 'durationMs',
+  output: 'output',
+  format: 'format',
+  pretty: 'pretty',
+  workload: 'workload',
+};
 
 export function parseRunArgs(args: string[]): RunProfileOptions {
-  const separatorIndex = args.indexOf('--');
-  const optionArgs = separatorIndex >= 0 ? args.slice(0, separatorIndex) : args;
-  const targetCommand = separatorIndex >= 0 ? args.slice(separatorIndex + 1) : [];
+  const { optionArgs, targetCommand } = splitRunArgs(args);
 
   const command = createRunParser();
   parseCommand(command, optionArgs);
@@ -123,13 +139,8 @@ export function parseRunArgs(args: string[]): RunProfileOptions {
     command: targetCommand,
     deep: Boolean(parsed.deep),
     ...normalizeCommonOptions(parsed),
-    ...(parsed.waitForUrl ? { waitForUrl: parsed.waitForUrl } : {}),
-    ...(parsed.waitForUrl || parsed.waitTimeout !== undefined
-      ? { waitTimeoutMs: parsed.waitTimeout ?? DEFAULT_WAIT_TIMEOUT_MS }
-      : {}),
-    ...(parsed.captureDelay !== undefined ? { captureDelayMs: parsed.captureDelay } : {}),
-    ...(parsed.workload ? { workload: parsed.workload } : {}),
   };
+  applyRunOrchestrationOptions(options, parsed);
   return withProvidedFlags(options, collectProvidedFlags(optionArgs));
 }
 
@@ -147,10 +158,10 @@ export function parseAttachArgs(args: string[]): AttachProfileOptions {
 
   const options: AttachProfileOptions = {
     ...normalizeCommonOptions(parsed),
-    ...(parsed.pid !== undefined && parsed.pid !== true ? { pid: parsed.pid } : {}),
-    ...(promptForTarget ? { promptForTarget: true } : {}),
-    ...(parsed.inspectUrl ? { inspectUrl: parsed.inspectUrl } : {}),
   };
+  if (parsed.pid !== undefined && parsed.pid !== true) options.pid = parsed.pid;
+  if (promptForTarget) options.promptForTarget = true;
+  if (parsed.inspectUrl) options.inspectUrl = parsed.inspectUrl;
   return withProvidedFlags(options, collectProvidedFlags(args));
 }
 
@@ -164,10 +175,10 @@ export function parseReportArgs(args: string[]): ReportOptions {
   }
   const options: ReportOptions = {
     file,
-    ...(parsed.output ? { output: parsed.output } : {}),
     format: parsed.format ?? 'text',
     pretty: Boolean(parsed.pretty),
   };
+  if (parsed.output) options.output = parsed.output;
   return withProvidedFlags(options, collectProvidedFlags(args));
 }
 
@@ -175,12 +186,10 @@ function normalizeCommonOptions(parsed: ParsedCommonOptions): NormalizedCommonOp
   const kinds = resolveKinds(parsed.kind);
   const heapSnapshotRequested = Boolean(parsed.heapSnapshotAnalysis || parsed.heapSnapshotDir);
   if (heapSnapshotRequested && !kinds.includes('memory')) {
-    const option = parsed.heapSnapshotAnalysis ? '--heap-snapshot-analysis' : '--heap-snapshot-dir';
+    const option = heapSnapshotOptionName(parsed);
     throw new Error(`${option} requires --kind memory`);
   }
-  return {
-    ...(parsed.duration !== undefined ? { durationMs: parsed.duration } : {}),
-    ...(parsed.output ? { output: parsed.output } : {}),
+  const options: NormalizedCommonOptions = {
     format: parsed.format ?? 'json',
     pretty: Boolean(parsed.pretty),
     sampleIntervalMicros: parsed.sampleInterval ?? DEFAULT_SAMPLE_INTERVAL_MICROS,
@@ -189,11 +198,39 @@ function normalizeCommonOptions(parsed: ParsedCommonOptions): NormalizedCommonOp
     includeMemoryUsageSamples: Boolean(parsed.includeMemorySamples),
     heapSnapshotAnalysis: {
       enabled: Boolean(parsed.heapSnapshotAnalysis),
-      ...(parsed.heapSnapshotDir ? { outputDir: parsed.heapSnapshotDir } : {}),
     },
     detectors: parsed.detectors ?? [],
     kinds,
   };
+  if (parsed.duration !== undefined) options.durationMs = parsed.duration;
+  if (parsed.output) options.output = parsed.output;
+  if (parsed.heapSnapshotDir) options.heapSnapshotAnalysis.outputDir = parsed.heapSnapshotDir;
+  return options;
+}
+
+function splitRunArgs(args: string[]): { optionArgs: string[]; targetCommand: string[] } {
+  const separatorIndex = args.indexOf('--');
+  if (separatorIndex < 0) {
+    return { optionArgs: args, targetCommand: [] };
+  }
+  return {
+    optionArgs: args.slice(0, separatorIndex),
+    targetCommand: args.slice(separatorIndex + 1),
+  };
+}
+
+function heapSnapshotOptionName(parsed: ParsedCommonOptions): string {
+  if (parsed.heapSnapshotAnalysis) return '--heap-snapshot-analysis';
+  return '--heap-snapshot-dir';
+}
+
+function applyRunOrchestrationOptions(options: RunProfileOptions, parsed: ParsedRunOptions): void {
+  if (parsed.waitForUrl) options.waitForUrl = parsed.waitForUrl;
+  if (parsed.waitForUrl || parsed.waitTimeout !== undefined) {
+    options.waitTimeoutMs = parsed.waitTimeout ?? DEFAULT_WAIT_TIMEOUT_MS;
+  }
+  if (parsed.captureDelay !== undefined) options.captureDelayMs = parsed.captureDelay;
+  if (parsed.workload) options.workload = parsed.workload;
 }
 
 function resolveKinds(raw: string[] | undefined): string[] {
@@ -469,23 +506,5 @@ function collectProvidedFlags(args: string[]): Set<string> {
 }
 
 function normalizeFlagName(flag: string): string {
-  const aliases: Record<string, string> = {
-    'heap-sample-interval': 'heapSamplingIntervalBytes',
-    'memory-usage-interval': 'memoryUsageIntervalMs',
-    'include-memory-samples': 'includeMemoryUsageSamples',
-    'heap-snapshot-analysis': 'heapSnapshotAnalysis',
-    'heap-snapshot-dir': 'heapSnapshotAnalysis',
-    'sample-interval': 'sampleIntervalMicros',
-    'wait-for-url': 'waitForUrl',
-    'wait-timeout': 'waitTimeoutMs',
-    'capture-delay': 'captureDelayMs',
-    detectors: 'detectors',
-    kind: 'kind',
-    duration: 'durationMs',
-    output: 'output',
-    format: 'format',
-    pretty: 'pretty',
-    workload: 'workload',
-  };
-  return aliases[flag] ?? flag;
+  return PROVIDED_FLAG_ALIASES[flag] ?? flag;
 }

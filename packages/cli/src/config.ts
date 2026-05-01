@@ -5,6 +5,23 @@ import type { OutputFormat } from './parse.js';
 
 const CONFIG_FILENAMES = ['.lanterna.json', '.lanterna.config.json'] as const;
 const DEFAULT_WAIT_TIMEOUT_MS = 30_000;
+const SCALAR_CONFIG_KEYS = [
+  'durationMs',
+  'output',
+  'format',
+  'pretty',
+  'sampleIntervalMicros',
+  'heapSamplingIntervalBytes',
+  'memoryUsageIntervalMs',
+  'includeMemoryUsageSamples',
+  'heapSnapshotAnalysis',
+  'waitForUrl',
+  'waitTimeoutMs',
+  'captureDelayMs',
+  'workload',
+] as const;
+
+type ScalarConfigKey = (typeof SCALAR_CONFIG_KEYS)[number];
 
 const RawConfigSchema = z.object({
   duration: z.union([z.string(), z.number()]).optional(),
@@ -47,31 +64,12 @@ export interface LanternaConfig {
 }
 
 export async function loadLanternaConfig(cwd: string): Promise<LanternaConfig | undefined> {
-  for (const filename of CONFIG_FILENAMES) {
-    const filepath = resolve(cwd, filename);
-    let raw: string;
-    try {
-      raw = await readFile(filepath, 'utf8');
-    } catch (err) {
-      if ((err as NodeJS.ErrnoException).code === 'ENOENT') continue;
-      throw err;
-    }
+  const configFile = await readLanternaConfigFile(cwd);
+  if (!configFile) return undefined;
 
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(raw);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      throw new Error(`Failed to parse ${filename}: ${message}`);
-    }
-
-    const result = RawConfigSchema.safeParse(parsed);
-    if (!result.success) {
-      throw new Error(`Invalid ${filename}: ${result.error.message}`);
-    }
-    return normalizeConfig(result.data);
-  }
-  return undefined;
+  const parsed = parseConfigJson(configFile);
+  const rawConfig = validateConfig(configFile.filename, parsed);
+  return normalizeConfig(rawConfig);
 }
 
 export function applyLanternaConfig<TOptions extends ConfigurableOptions>(
@@ -80,97 +78,141 @@ export function applyLanternaConfig<TOptions extends ConfigurableOptions>(
   providedFlags: ReadonlySet<string>,
 ): TOptions {
   if (!config) return options;
-  const merged = {
-    ...options,
-    ...mergeField(config, options, providedFlags, 'durationMs'),
-    ...mergeField(config, options, providedFlags, 'output'),
-    ...mergeField(config, options, providedFlags, 'format'),
-    ...mergeField(config, options, providedFlags, 'pretty'),
-    ...mergeField(config, options, providedFlags, 'sampleIntervalMicros'),
-    ...mergeField(config, options, providedFlags, 'heapSamplingIntervalBytes'),
-    ...mergeField(config, options, providedFlags, 'memoryUsageIntervalMs'),
-    ...mergeField(config, options, providedFlags, 'includeMemoryUsageSamples'),
-    ...mergeField(config, options, providedFlags, 'heapSnapshotAnalysis'),
-    ...mergeField(config, options, providedFlags, 'waitForUrl'),
-    ...mergeField(config, options, providedFlags, 'waitTimeoutMs'),
-    ...mergeField(config, options, providedFlags, 'captureDelayMs'),
-    ...mergeField(config, options, providedFlags, 'workload'),
-    detectors: [...(config.detectors ?? []), ...(options.detectors ?? [])],
-    kinds: providedFlags.has('kind')
-      ? dedupe([...(config.kinds ?? []), ...(options.kinds ?? [])])
-      : dedupe(config.kinds ?? options.kinds ?? []),
-  };
-  if (
-    merged.heapSnapshotAnalysis &&
-    (merged.heapSnapshotAnalysis.enabled || merged.heapSnapshotAnalysis.outputDir) &&
-    !merged.kinds.includes('memory')
-  ) {
-    throw new Error('heap snapshot analysis in Lanterna config requires kind "memory"');
-  }
-  return merged;
+  return new ConfigMerger(config, options, providedFlags).merge();
 }
 
-interface ConfigurableOptions {
-  detectors?: string[];
-  kinds?: string[];
+interface ConfigFile {
+  filename: string;
+  raw: string;
+}
+
+async function readLanternaConfigFile(cwd: string): Promise<ConfigFile | undefined> {
+  for (const filename of CONFIG_FILENAMES) {
+    const filepath = resolve(cwd, filename);
+    try {
+      return { filename, raw: await readFile(filepath, 'utf8') };
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') continue;
+      throw err;
+    }
+  }
+  return undefined;
+}
+
+function parseConfigJson(configFile: ConfigFile): unknown {
+  try {
+    return JSON.parse(configFile.raw);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    throw new Error(`Failed to parse ${configFile.filename}: ${message}`);
+  }
+}
+
+function validateConfig(filename: string, parsed: unknown): z.infer<typeof RawConfigSchema> {
+  const result = RawConfigSchema.safeParse(parsed);
+  if (!result.success) {
+    throw new Error(`Invalid ${filename}: ${result.error.message}`);
+  }
+  return result.data;
+}
+
+interface ConfigurableOptions extends Partial<LanternaConfig> {
   [key: string]: unknown;
 }
 
-function mergeField<TOptions extends ConfigurableOptions, TKey extends keyof LanternaConfig>(
-  config: LanternaConfig,
-  options: TOptions,
-  providedFlags: ReadonlySet<string>,
-  key: TKey,
-): Partial<Record<TKey, LanternaConfig[TKey]>> {
-  if (providedFlags.has(String(key)))
-    return { [key]: options[key as string] } as Partial<Record<TKey, LanternaConfig[TKey]>>;
-  if (config[key] !== undefined)
-    return { [key]: config[key] } as Partial<Record<TKey, LanternaConfig[TKey]>>;
-  return {};
+class ConfigMerger<TOptions extends ConfigurableOptions> {
+  private readonly merged: ConfigurableOptions;
+
+  constructor(
+    private readonly config: LanternaConfig,
+    private readonly options: TOptions,
+    private readonly providedFlags: ReadonlySet<string>,
+  ) {
+    this.merged = { ...options };
+  }
+
+  merge(): TOptions {
+    this.applyScalarConfigValues();
+    this.mergeDetectors();
+    this.mergeKinds();
+    this.assertHeapSnapshotKind();
+    return this.merged as TOptions;
+  }
+
+  private applyScalarConfigValues(): void {
+    for (const key of SCALAR_CONFIG_KEYS) {
+      this.applyScalarConfigValue(key);
+    }
+  }
+
+  private applyScalarConfigValue(key: ScalarConfigKey): void {
+    if (this.providedFlags.has(key)) return;
+
+    const value = this.config[key];
+    if (value !== undefined) this.assign(key, value);
+  }
+
+  private mergeDetectors(): void {
+    this.merged.detectors = [...(this.config.detectors ?? []), ...(this.options.detectors ?? [])];
+  }
+
+  private mergeKinds(): void {
+    if (this.providedFlags.has('kind')) {
+      this.merged.kinds = dedupe([...(this.config.kinds ?? []), ...(this.options.kinds ?? [])]);
+      return;
+    }
+    this.merged.kinds = dedupe(this.config.kinds ?? this.options.kinds ?? []);
+  }
+
+  private assertHeapSnapshotKind(): void {
+    const heapSnapshot = this.merged.heapSnapshotAnalysis;
+    if (!heapSnapshot?.enabled && !heapSnapshot?.outputDir) return;
+    if (this.merged.kinds?.includes('memory')) return;
+    throw new Error('heap snapshot analysis in Lanterna config requires kind "memory"');
+  }
+
+  private assign(key: ScalarConfigKey, value: LanternaConfig[ScalarConfigKey]): void {
+    const mutableMerged = this.merged as Record<string, unknown>;
+    mutableMerged[key] = value;
+  }
 }
 
 function normalizeConfig(raw: z.infer<typeof RawConfigSchema>): LanternaConfig {
-  const config: LanternaConfig = {
-    ...(raw.duration !== undefined
-      ? { durationMs: parseDurationConfig(raw.duration, 'duration') }
-      : {}),
-    ...(raw.output !== undefined ? { output: raw.output } : {}),
-    ...(raw.format !== undefined ? { format: raw.format } : {}),
-    ...(raw.pretty !== undefined ? { pretty: raw.pretty } : {}),
-    ...(raw.detectors !== undefined ? { detectors: raw.detectors } : {}),
-    ...(raw.kinds !== undefined ? { kinds: dedupe(expandKinds(raw.kinds)) } : {}),
-    ...(raw.sampleInterval !== undefined ? { sampleIntervalMicros: raw.sampleInterval } : {}),
-    ...(raw.heapSampleInterval !== undefined
-      ? { heapSamplingIntervalBytes: parseHeapSampleIntervalConfig(raw.heapSampleInterval) }
-      : {}),
-    ...(raw.memoryUsageInterval !== undefined
-      ? { memoryUsageIntervalMs: raw.memoryUsageInterval }
-      : {}),
-    ...(raw.includeMemorySamples !== undefined
-      ? { includeMemoryUsageSamples: raw.includeMemorySamples }
-      : {}),
-    ...(raw.heapSnapshotAnalysis !== undefined || raw.heapSnapshotDir !== undefined
-      ? {
-          heapSnapshotAnalysis: {
-            enabled: Boolean(raw.heapSnapshotAnalysis),
-            ...(raw.heapSnapshotDir ? { outputDir: raw.heapSnapshotDir } : {}),
-          },
-        }
-      : {}),
-    ...(raw.waitForUrl !== undefined ? { waitForUrl: raw.waitForUrl } : {}),
-    ...(raw.waitForUrl !== undefined || raw.waitTimeout !== undefined
-      ? {
-          waitTimeoutMs:
-            raw.waitTimeout !== undefined
-              ? parseDurationConfig(raw.waitTimeout, 'waitTimeout')
-              : DEFAULT_WAIT_TIMEOUT_MS,
-        }
-      : {}),
-    ...(raw.captureDelay !== undefined
-      ? { captureDelayMs: parseDurationConfig(raw.captureDelay, 'captureDelay') }
-      : {}),
-    ...(raw.workload !== undefined ? { workload: raw.workload } : {}),
-  };
+  const config: LanternaConfig = {};
+  if (raw.duration !== undefined) {
+    config.durationMs = parseDurationConfig(raw.duration, 'duration');
+  }
+  if (raw.output !== undefined) config.output = raw.output;
+  if (raw.format !== undefined) config.format = raw.format;
+  if (raw.pretty !== undefined) config.pretty = raw.pretty;
+  if (raw.detectors !== undefined) config.detectors = raw.detectors;
+  if (raw.kinds !== undefined) config.kinds = dedupe(expandKinds(raw.kinds));
+  if (raw.sampleInterval !== undefined) config.sampleIntervalMicros = raw.sampleInterval;
+  if (raw.heapSampleInterval !== undefined) {
+    config.heapSamplingIntervalBytes = parseHeapSampleIntervalConfig(raw.heapSampleInterval);
+  }
+  if (raw.memoryUsageInterval !== undefined) {
+    config.memoryUsageIntervalMs = raw.memoryUsageInterval;
+  }
+  if (raw.includeMemorySamples !== undefined) {
+    config.includeMemoryUsageSamples = raw.includeMemorySamples;
+  }
+  if (raw.heapSnapshotAnalysis !== undefined || raw.heapSnapshotDir !== undefined) {
+    config.heapSnapshotAnalysis = {
+      enabled: Boolean(raw.heapSnapshotAnalysis),
+    };
+    if (raw.heapSnapshotDir) config.heapSnapshotAnalysis.outputDir = raw.heapSnapshotDir;
+  }
+  if (raw.waitForUrl !== undefined) config.waitForUrl = raw.waitForUrl;
+  if (raw.waitTimeout !== undefined) {
+    config.waitTimeoutMs = parseDurationConfig(raw.waitTimeout, 'waitTimeout');
+  } else if (raw.waitForUrl !== undefined) {
+    config.waitTimeoutMs = DEFAULT_WAIT_TIMEOUT_MS;
+  }
+  if (raw.captureDelay !== undefined) {
+    config.captureDelayMs = parseDurationConfig(raw.captureDelay, 'captureDelay');
+  }
+  if (raw.workload !== undefined) config.workload = raw.workload;
   return config;
 }
 
