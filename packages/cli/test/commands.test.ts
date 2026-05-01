@@ -19,6 +19,7 @@ vi.mock('@lanterna-profiler/core', () => ({
   createKindRegistry: vi.fn(() => ({ resolveMany: mocks.resolveMany })),
   runProfile: mocks.runProfile,
   attachProfile: mocks.attachProfile,
+  sleep: (ms: number) => new Promise((resolve) => setTimeout(resolve, ms)),
 }));
 
 vi.mock('@lanterna-profiler/detectors', () => ({

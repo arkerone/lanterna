@@ -106,9 +106,19 @@ function formatProfileQualityWarning(report: {
   if (!quality || quality.confidence !== 'low') return undefined;
   const reasons = quality.reasons?.filter(Boolean) ?? [];
   const recommendations = quality.recommendations?.filter(Boolean) ?? [];
-  const reasonText = reasons.length > 0 ? reasons.join('; ') : 'capture quality is low';
-  const recommendationText = recommendations.length > 0 ? ` ${recommendations.join(' ')}` : '';
+  const reasonText = formatQualityReasons(reasons);
+  const recommendationText = formatQualityRecommendations(recommendations);
   return `Low confidence profile: ${reasonText}.${recommendationText}`;
+}
+
+function formatQualityReasons(reasons: string[]): string {
+  if (reasons.length === 0) return 'capture quality is low';
+  return reasons.join('; ');
+}
+
+function formatQualityRecommendations(recommendations: string[]): string {
+  if (recommendations.length === 0) return '';
+  return ` ${recommendations.join(' ')}`;
 }
 
 function buildMemoryKind(command: ExecuteProfileCommandOptions): ProfileKind {
@@ -150,23 +160,22 @@ async function runProfileCommand(
     void _kindIds;
     const orchestration = createRunOrchestration(command.options, onProgressMessage);
     try {
-      const report = await runProfile(
-        {
-          ...profileOptions,
-          kinds,
-          onTargetDiagnosticChunk: command.onTargetDiagnosticChunk,
-          ...(setupPipeline ? { setupPipeline } : {}),
-          ...(orchestration.beforeCaptureStart
-            ? { beforeCaptureStart: orchestration.beforeCaptureStart }
-            : {}),
-          ...(orchestration.onCaptureStarted
-            ? { onCaptureStarted: orchestration.onCaptureStarted }
-            : {}),
-        },
-        (event) => {
-          onProgressMessage(event.message);
-        },
-      );
+      const runOptions: RunProfileOptions = {
+        ...profileOptions,
+        kinds,
+        onTargetDiagnosticChunk: command.onTargetDiagnosticChunk,
+      };
+      if (setupPipeline) runOptions.setupPipeline = setupPipeline;
+      if (orchestration.beforeCaptureStart) {
+        runOptions.beforeCaptureStart = orchestration.beforeCaptureStart;
+      }
+      if (orchestration.onCaptureStarted) {
+        runOptions.onCaptureStarted = orchestration.onCaptureStarted;
+      }
+
+      const report = await runProfile(runOptions, (event) => {
+        onProgressMessage(event.message);
+      });
       return { report, afterReportWritten: orchestration.afterReportWritten };
     } catch (error) {
       await orchestration.cleanup();
@@ -177,16 +186,15 @@ async function runProfileCommand(
   const { detectors: _specs, kinds: _kindIds, ...profileOptions } = command.options;
   void _specs;
   void _kindIds;
-  const report = await attachProfile(
-    {
-      ...profileOptions,
-      kinds,
-      ...(setupPipeline ? { setupPipeline } : {}),
-    },
-    (event) => {
-      onProgressMessage(event.message);
-    },
-  );
+  const attachOptions: AttachProfileOptions = {
+    ...profileOptions,
+    kinds,
+  };
+  if (setupPipeline) attachOptions.setupPipeline = setupPipeline;
+
+  const report = await attachProfile(attachOptions, (event) => {
+    onProgressMessage(event.message);
+  });
   return { report };
 }
 
@@ -194,9 +202,8 @@ async function resolvePluginContributions(
   flagSpecs: string[],
 ): Promise<{ kinds: ProfileKind[]; setupPipeline: ProfilePipelinePlugin | undefined }> {
   const cwd = process.cwd();
-  const specs = flagSpecs;
-  if (specs.length === 0) return { kinds: [], setupPipeline: undefined };
-  const { kinds, setups } = await loadPlugins(specs, cwd);
+  if (flagSpecs.length === 0) return { kinds: [], setupPipeline: undefined };
+  const { kinds, setups } = await loadPlugins(flagSpecs, cwd);
   if (setups.length === 0) return { kinds, setupPipeline: undefined };
   const setupPipeline: ProfilePipelinePlugin = async (pipeline, ctx) => {
     for (const setup of setups) {
