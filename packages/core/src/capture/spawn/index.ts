@@ -197,7 +197,20 @@ export class SpawnSource implements ProfileSource<SpawnStartOptions> {
         initialIntegrity: captureIntegrity,
         waitForExit,
         releaseRuntime: async () => {
+          let resolvePaused = () => {};
+          const pausedPromise = new Promise<void>((resolve) => {
+            resolvePaused = resolve;
+          });
+          const unsubscribePaused = cdp.on('Debugger.paused', resolvePaused);
           await cdp.send('Runtime.runIfWaitingForDebugger');
+          try {
+            await Promise.race([pausedPromise, new Promise((resolve) => setTimeout(resolve, 500))]);
+            await cdp.send('Debugger.resume');
+          } catch {
+            // The target may already be running when no probe enabled Debugger.
+          } finally {
+            unsubscribePaused();
+          }
         },
         drainLiveSignals,
         finalize,

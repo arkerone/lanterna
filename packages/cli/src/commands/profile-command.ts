@@ -170,7 +170,7 @@ function formatQualityRecommendations(recommendations: string[]): string {
 function buildAsyncKind(command: ExecuteProfileCommandOptions): ProfileKind {
   if (command.options.asyncInstrumentation === 'full') {
     process.stderr.write(
-      'lanterna: --async-instrumentation=full is experimental — its `await` source-rewriter is regex-based and can break user code containing template literals or unusual `await` expressions. Falls back to safe instrumentation if the rewriter fails. Prefer `safe` for reliable captures.\n',
+      'lanterna: --async-instrumentation=full is experimental and adds AST-based `await` source instrumentation. Attach mode remains partial because already-loaded code cannot be rewritten. Prefer `safe` for lowest-risk captures.\n',
     );
   }
   return createAsyncProfileKindWithBuiltInDetectors({

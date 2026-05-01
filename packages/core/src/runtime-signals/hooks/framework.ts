@@ -164,7 +164,9 @@ export function installLanternaFramework(
     } else if (typeof require === 'function') {
       builtin = require(`node:${name}`) as unknown;
     }
-    return builtin && typeof builtin === 'object' ? (builtin as T) : null;
+    return builtin && (typeof builtin === 'object' || typeof builtin === 'function')
+      ? (builtin as T)
+      : null;
   };
 
   interface PerfHooksBuiltin {

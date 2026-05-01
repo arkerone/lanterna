@@ -1,4 +1,10 @@
+import { createRequire } from 'node:module';
+import { pathToFileURL } from 'node:url';
 import type { HookInstaller } from '../framework.js';
+import {
+  createAwaitTransformCjsRuntimeSource,
+  createAwaitTransformEsmRuntimeSource,
+} from './await-transform.js';
 
 export interface AsyncOperationsInstallerOptions {
   /** Cap on retained per-resource records. Defaults to 50 000. */
@@ -40,51 +46,60 @@ export function createAsyncOperationsInstaller(
   const maxRunWindows = options.maxRunWindows ?? 8;
   const instrumentationMode = options.instrumentationMode ?? 'safe';
   const attachPartialCapture = Boolean(options.attachPartialCapture);
+  const cjsAwaitTransformRuntimeSource = createAwaitTransformCjsRuntimeSource({
+    oxcParserPath: awaitTransformDependencyPath('oxc-parser'),
+    magicStringPath: awaitTransformDependencyPath('magic-string'),
+  });
   return {
     id: 'async-operations',
     nodeOptions:
       instrumentationMode === 'full'
-        ? [`--experimental-loader=${createAwaitTransformLoaderUrl()}`]
+        ? [`--import=${createAwaitTransformLoaderRegisterUrl()}`]
         : undefined,
-    source: `(${installAsyncOperations.toString()})(__lanterna, ${maxRecords}, ${concurrencyIntervalMs}, ${includeMicrotasks ? 'true' : 'false'}, ${stackDepth}, ${maxRunWindows}, ${JSON.stringify(instrumentationMode)}, ${attachPartialCapture ? 'true' : 'false'});`,
+    source: `(${installAsyncOperations.toString()})(__lanterna, ${maxRecords}, ${concurrencyIntervalMs}, ${includeMicrotasks ? 'true' : 'false'}, ${stackDepth}, ${maxRunWindows}, ${JSON.stringify(instrumentationMode)}, ${attachPartialCapture ? 'true' : 'false'}, ${JSON.stringify(cjsAwaitTransformRuntimeSource)});`,
   };
+}
+
+const requireForAwaitTransform = createRequire(import.meta.url);
+
+function awaitTransformDependencyPath(specifier: string): string {
+  return requireForAwaitTransform.resolve(specifier);
+}
+
+function awaitTransformDependencyUrl(specifier: string): string {
+  return pathToFileURL(awaitTransformDependencyPath(specifier)).href;
+}
+
+function createAwaitTransformLoaderRegisterUrl(): string {
+  const registerSource = `
+import { register } from "node:module";
+import { pathToFileURL } from "node:url";
+register(${JSON.stringify(createAwaitTransformLoaderUrl())}, pathToFileURL("./"));
+`;
+  return `data:text/javascript,${encodeURIComponent(registerSource)}`;
 }
 
 function createAwaitTransformLoaderUrl(): string {
   const loaderSource = `
+${createAwaitTransformEsmRuntimeSource({
+  oxcParserUrl: awaitTransformDependencyUrl('oxc-parser'),
+  magicStringUrl: awaitTransformDependencyUrl('magic-string'),
+})}
 const SHOULD_SKIP_RE = /\\/node_modules\\/|lanterna-preload-/;
-// Lines containing template literals, comments, regex literals, or string
-// concatenation across statements cannot be safely rewritten by a regex pass.
-// Skipping them is intentionally conservative — we trade coverage for never
-// breaking user code. Producers can always fall back to instrumentation safe.
-const UNSAFE_LINE_RE = /[\\\`]|\\/\\/|\\/\\*|\\*\\//;
 function shouldTransform(url) {
-  return url.startsWith('file:') && !SHOULD_SKIP_RE.test(url) && (url.endsWith('.js') || url.endsWith('.mjs') || url.endsWith('.ts'));
+  return url.startsWith('file:') && !SHOULD_SKIP_RE.test(url) && (url.endsWith('.js') || url.endsWith('.mjs') || url.endsWith('.cjs') || url.endsWith('.ts'));
 }
-function transformSource(source, file) {
-  return source
-    .split('\\n')
-    .map((line, index) => {
-      if (UNSAFE_LINE_RE.test(line)) return line;
-      return line.replace(/\\bawait\\s+([^;\\n]+)/g, (match, expression, offset) => {
-        const frame = JSON.stringify({
-          function: '<await>',
-          file,
-          line: index + 1,
-          column: offset + 1,
-        });
-        return 'await globalThis.__LANTERNA_ASYNC_AWAIT__((' + expression.trim() + '), ' + frame + ')';
-      });
-    })
-    .join('\\n');
+function sourceTypeForUrl(url) {
+  if (url.endsWith('.cjs')) return 'commonjs';
+  return 'module';
 }
 export async function load(url, context, nextLoad) {
   const result = await nextLoad(url, context);
   if (!shouldTransform(url) || result.source == null) return result;
   const source = typeof result.source === 'string' ? result.source : Buffer.from(result.source).toString('utf8');
-  const transformed = transformSource(source, url);
-  if (transformed === source) return result;
-  return { ...result, source: transformed };
+  const transformed = transformAwaitExpressions(source, { file: url, sourceType: sourceTypeForUrl(url) });
+  if (transformed.code === source) return result;
+  return { ...result, source: transformed.code };
 }
 `;
   return `data:text/javascript,${encodeURIComponent(loaderSource)}`;
@@ -151,6 +166,7 @@ function installAsyncOperations(
   maxRunWindows: number,
   instrumentationMode: 'off' | 'safe' | 'full',
   attachPartialCapture: boolean,
+  cjsAwaitTransformRuntimeSource: string,
 ): void {
   const asyncHooks = api.getBuiltin<AsyncHooksBuiltin>('async_hooks');
   if (!asyncHooks || typeof asyncHooks.createHook !== 'function') {
@@ -448,10 +464,19 @@ function installAsyncOperations(
       >;
     };
     Promise.prototype.catch = function patchedCatch(onRejected) {
-      return originalCatch.call(this, onRejected);
+      return Promise.prototype.then.call(this, undefined, onRejected);
     };
     Promise.prototype.finally = function patchedFinally(onFinally) {
-      return originalFinally.call(this, onFinally);
+      const registrationStack = captureStack();
+      const wrapped =
+        typeof onFinally === 'function'
+          ? function wrappedFinallyHandler(this: unknown) {
+              assignCurrent('promiseRegistrationStack', registrationStack);
+              assignCurrent('promiseHandlerStack', captureStack());
+              return onFinally.call(this);
+            }
+          : onFinally;
+      return originalFinally.call(this, wrapped);
     };
     restoredApis.push(() => {
       // biome-ignore lint/suspicious/noThenProperty: restore the native Promise implementation.
@@ -575,8 +600,11 @@ function installAsyncOperations(
     }
 
     function installAwaitTransformLoader() {
+      type CjsModuleForTransform = {
+        _compile: (source: string, filename: string) => void;
+      };
       const moduleBuiltin = api.getBuiltin<{
-        _extensions?: Record<string, (mod: { _compile: Function }, filename: string) => void>;
+        _extensions?: Record<string, (mod: CjsModuleForTransform, filename: string) => void>;
       }>('module');
       const fsBuiltin = api.getBuiltin<{
         readFileSync?: (path: string, encoding: string) => string;
@@ -586,8 +614,30 @@ function installAsyncOperations(
         transformStats.skipped += 1;
         return;
       }
-      const originalJs = extensions['.js'];
-      if (typeof originalJs !== 'function') {
+      const transformAwaitExpressions = new Function(
+        'require',
+        `${cjsAwaitTransformRuntimeSource}\nreturn transformAwaitExpressions;`,
+      )(require) as (
+        source: string,
+        options: { file: string; sourceType?: 'script' | 'module' | 'commonjs' | 'unambiguous' },
+      ) => {
+        code: string;
+        stats: {
+          transformed: number;
+          skipped: number;
+          failed: number;
+          partial: boolean;
+          awaitCalls: number;
+        };
+      };
+      const extensionNames = ['.js', '.mjs', '.cjs', '.ts'];
+      const originals = new Map<string, (mod: CjsModuleForTransform, filename: string) => void>();
+      for (const extensionName of extensionNames) {
+        const original = extensions[extensionName];
+        if (typeof original === 'function') originals.set(extensionName, original);
+      }
+      const originalJs = originals.get('.js');
+      if (!originalJs) {
         transformStats.skipped += 1;
         return;
       }
@@ -595,59 +645,65 @@ function installAsyncOperations(
         if (!filename) return false;
         if (filename.includes('/node_modules/')) return false;
         if (filename.includes('lanterna-preload-')) return false;
-        return filename.endsWith('.js') || filename.endsWith('.cjs');
+        return (
+          filename.endsWith('.js') ||
+          filename.endsWith('.mjs') ||
+          filename.endsWith('.cjs') ||
+          filename.endsWith('.ts')
+        );
       };
-      // See createAwaitTransformLoaderUrl: same conservative line filter.
-      const UNSAFE_LINE_RE = /[`]|\/\/|\/\*|\*\//;
-      const transformSource = (source: string, filename: string) =>
-        source
-          .split('\n')
-          .map((line, index) => {
-            if (UNSAFE_LINE_RE.test(line)) return line;
-            return line.replace(
-              /\bawait\s+([^;\n]+)/g,
-              (_match, expression: string, offset: number) => {
-                const frame = JSON.stringify({
-                  function: '<await>',
-                  file: filename,
-                  line: index + 1,
-                  column: offset + 1,
-                });
-                return `await globalThis.__LANTERNA_ASYNC_AWAIT__((${expression.trim()}), ${frame})`;
-              },
-            );
-          })
-          .join('\n');
+      const sourceTypeForFilename = (filename: string) =>
+        filename.endsWith('.cjs') || filename.endsWith('.js') ? 'commonjs' : 'module';
+      const addTransformStats = (stats: {
+        transformed: number;
+        skipped: number;
+        failed: number;
+        partial: boolean;
+      }) => {
+        transformStats.transformed += stats.transformed;
+        transformStats.skipped += stats.skipped;
+        transformStats.failed += stats.failed;
+        transformStats.partial = transformStats.partial || stats.partial;
+      };
       const patchedExtension = function lanternaAwaitTransform(
-        mod: { _compile: Function },
+        mod: CjsModuleForTransform,
         filename: string,
       ): void {
+        const originalExtension =
+          originals.get(filename.slice(filename.lastIndexOf('.'))) ?? originalJs;
         if (!shouldTransform(filename)) {
           transformStats.skipped += 1;
-          originalJs(mod, filename);
+          originalExtension(mod, filename);
           return;
         }
         try {
           const source = fsBuiltin.readFileSync?.(filename, 'utf8');
           if (typeof source !== 'string') {
-            originalJs(mod, filename);
+            originalExtension(mod, filename);
             return;
           }
-          const transformed = transformSource(source, filename);
-          if (transformed === source) transformStats.skipped += 1;
-          else transformStats.transformed += 1;
-          mod._compile(transformed, filename);
+          const transformed = transformAwaitExpressions(source, {
+            file: filename,
+            sourceType: sourceTypeForFilename(filename),
+          });
+          addTransformStats(transformed.stats);
+          mod._compile(transformed.code, filename);
           return;
         } catch {
           transformStats.failed += 1;
           transformStats.partial = true;
-          originalJs(mod, filename);
+          originalExtension(mod, filename);
         }
       };
-      extensions['.js'] = patchedExtension;
-      if (extensions['.cjs']) extensions['.cjs'] = patchedExtension;
+      for (const extensionName of extensionNames) {
+        extensions[extensionName] = patchedExtension;
+      }
       restoredApis.push(() => {
-        extensions['.js'] = originalJs;
+        for (const extensionName of extensionNames) {
+          const original = originals.get(extensionName);
+          if (original) extensions[extensionName] = original;
+          else delete extensions[extensionName];
+        }
       });
     }
   }

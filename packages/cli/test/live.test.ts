@@ -226,7 +226,10 @@ interface AsyncProfileLike {
     collectedVia?: string;
     totalOperations?: number;
   };
-  topOperations?: unknown[];
+  quality?: {
+    instrumentationMode?: string;
+  };
+  topOperations?: Array<{ awaitFrame?: unknown }>;
   chains?: unknown[];
 }
 
@@ -234,6 +237,19 @@ interface ReportWithAsyncProfile {
   profiles?: {
     async?: AsyncProfileLike;
     cpu?: CpuProfileLike;
+  };
+  meta?: {
+    kinds?: {
+      async?: {
+        transformStats?: {
+          transformed?: number;
+          skipped?: number;
+          failed?: number;
+          partial?: boolean;
+          awaitCalls?: number;
+        };
+      };
+    };
   };
 }
 
@@ -261,6 +277,22 @@ function getAsyncProfile(report: ReportWithAsyncProfile): AsyncProfileLike {
   const asyncProfile = report.profiles?.async;
   assert.ok(asyncProfile, 'expected async profile in report');
   return asyncProfile;
+}
+
+function assertFullAsyncInstrumentation(report: ReportWithAsyncProfile): void {
+  const asyncProfile = getAsyncProfile(report);
+  assert.equal(asyncProfile.summary?.available, true);
+  assert.equal(asyncProfile.summary?.collectedVia, 'async-hooks');
+  assert.equal(asyncProfile.quality?.instrumentationMode, 'full');
+  assert.ok((asyncProfile.summary?.totalOperations ?? 0) > 0, 'expected async operations');
+  assert.ok(
+    (report.meta?.kinds?.async?.transformStats?.awaitCalls ?? 0) > 0,
+    'expected transformed await calls',
+  );
+  assert.ok(
+    asyncProfile.topOperations?.some((operation) => operation.awaitFrame),
+    'expected at least one top async operation with an await frame',
+  );
 }
 
 async function expectLanternaCommandFailure(
@@ -691,6 +723,91 @@ describe('live profiling', () => {
     const asyncProfile = getAsyncProfile(report);
     const cpuProfile = getCpuProfile(report);
     assert.equal(asyncProfile.summary?.available, true);
+    assert.ok(cpuProfile, 'expected cpu profile when --kind cpu,async');
+  });
+
+  it('captures async data with --kind async --async-instrumentation full', async () => {
+    const fixture = resolve(fixturesDir, 'async-await-app.cjs');
+    if (!(await inspectorSupported())) {
+      await expectInspectorFailure([
+        'run',
+        '--kind',
+        'async',
+        '--async-instrumentation',
+        'full',
+        '--duration',
+        '1600ms',
+        '--',
+        'node',
+        fixture,
+      ]);
+      return;
+    }
+
+    const { stdout } = await execFileAsync(
+      'node',
+      [
+        binPath,
+        'run',
+        '--kind',
+        'async',
+        '--async-instrumentation',
+        'full',
+        '--duration',
+        '1600ms',
+        '--pretty',
+        '--',
+        'node',
+        fixture,
+      ],
+      { cwd: repoRoot, timeout: 15_000, maxBuffer: 1024 * 1024 * 4 },
+    );
+
+    const report = JSON.parse(stdout);
+    assertFullAsyncInstrumentation(report);
+    assert.equal(report.profiles?.cpu, undefined, 'should not include cpu profile when not asked');
+  });
+
+  it('captures async and cpu together with --async-instrumentation full', async () => {
+    const fixture = resolve(fixturesDir, 'async-await-app.cjs');
+    if (!(await inspectorSupported())) {
+      await expectInspectorFailure([
+        'run',
+        '--kind',
+        'cpu,async',
+        '--async-instrumentation',
+        'full',
+        '--duration',
+        '1600ms',
+        '--',
+        'node',
+        fixture,
+      ]);
+      return;
+    }
+
+    const { stdout } = await execFileAsync(
+      'node',
+      [
+        binPath,
+        'run',
+        '--kind',
+        'cpu,async',
+        '--async-instrumentation',
+        'full',
+        '--duration',
+        '1600ms',
+        '--pretty',
+        '--',
+        'node',
+        fixture,
+      ],
+      { cwd: repoRoot, timeout: 15_000, maxBuffer: 1024 * 1024 * 4 },
+    );
+
+    const report = JSON.parse(stdout);
+    const cpuProfile = getCpuProfile(report);
+    assertFullAsyncInstrumentation(report);
     assert.ok(cpuProfile, 'expected cpu profile when --kind cpu,async');
   });
 

@@ -1,3 +1,4 @@
+import { createRequire } from 'node:module';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createAnalysisPipeline } from '../src/analysis/core/pipeline.js';
 import type { CaptureBundle } from '../src/capture/core/types.js';
@@ -7,6 +8,8 @@ import type { AsyncKindData, AsyncOperationRecord } from '../src/kinds/async/typ
 import { buildLanternaReport, serializeReport } from '../src/report/index.js';
 import { buildReportSchema } from '../src/report/schema.js';
 import { createAsyncOperationsInstaller } from '../src/runtime-signals/hooks/installers/async-operations.js';
+
+const requireForTest = createRequire(import.meta.url);
 
 interface AsyncHookCallbacks {
   init(asyncId: number, type: string, triggerAsyncId: number): void;
@@ -730,6 +733,217 @@ describe('async installer safe-mode patches', () => {
     expect(Promise.prototype.finally).toBe(originalFinally);
     expect(globalThis.setTimeout).toBe(originalSetTimeout);
     if (typeof originalFetch === 'function') expect(globalThis.fetch).toBe(originalFetch);
+  });
+});
+
+describe('async installer instrumentation modes', () => {
+  function installModeHarness(mode: 'off' | 'safe' | 'full') {
+    let now = 0;
+    let currentAsyncId = 0;
+    let globalValue:
+      | {
+          read: () => AsyncKindData & {
+            transformStats?: {
+              transformed: number;
+              skipped: number;
+              failed: number;
+              partial: boolean;
+              awaitCalls: number;
+            };
+          };
+          disable?: () => void;
+        }
+      | undefined;
+    let callbacks: Partial<AsyncHookCallbacks> | undefined;
+    let timerHandler: (() => void) | undefined;
+    let resetHook: (() => void) | undefined;
+
+    vi.stubGlobal('setInterval', () => ({ unref() {} }));
+    vi.stubGlobal('clearInterval', () => {});
+    vi.stubGlobal('setTimeout', (handler: () => void) => {
+      timerHandler = handler;
+      return { unref() {} };
+    });
+    vi.stubGlobal('fetch', () => Promise.resolve({ ok: true }));
+
+    const api = {
+      performance: { now: () => now++ },
+      registerGlobal: (name: string, value: unknown) => {
+        if (name === '__LANTERNA_ASYNC__') {
+          globalValue = value as typeof globalValue;
+        } else {
+          vi.stubGlobal(name, value);
+        }
+      },
+      addResetHook: (fn: () => void) => {
+        resetHook = fn;
+      },
+      getBuiltin: (name: string) =>
+        name === 'async_hooks'
+          ? {
+              createHook: (hookCallbacks: Partial<AsyncHookCallbacks>) => {
+                callbacks = hookCallbacks;
+                return { enable() {}, disable() {} };
+              },
+              executionAsyncId: () => currentAsyncId,
+            }
+          : null,
+    };
+
+    const installer = createAsyncOperationsInstaller({ instrumentationMode: mode });
+    new Function('__lanterna', installer.source)(api);
+    if (!globalValue || !callbacks?.init) throw new Error('mode harness failed to install');
+
+    return {
+      callbacks: callbacks as AsyncHookCallbacks,
+      read: () => {
+        if (!globalValue) throw new Error('global not registered');
+        return globalValue.read();
+      },
+      runTimer: () => timerHandler?.(),
+      resetCapture: () => resetHook?.(),
+      setCurrentAsyncId: (id: number) => {
+        currentAsyncId = id;
+      },
+    };
+  }
+
+  it('off keeps only async_hooks lifecycle data', () => {
+    const harness = installModeHarness('off');
+    harness.callbacks.init(1, 'TIMEOUT', 0);
+    harness.setCurrentAsyncId(1);
+    setTimeout(() => {});
+    harness.runTimer();
+
+    const record = harness.read().records.find((rec) => rec.asyncId === 1);
+    expect(record).toBeDefined();
+    expect(record?.awaitStack).toBeUndefined();
+    expect(record?.safeRegistrationStack).toBeUndefined();
+    expect(record?.safeHandlerStack).toBeUndefined();
+  });
+
+  it('safe captures safe API stacks without await stacks', async () => {
+    const harness = installModeHarness('safe');
+
+    harness.callbacks.init(1, 'TIMEOUT', 0);
+    harness.setCurrentAsyncId(1);
+    setTimeout(() => {});
+    harness.runTimer();
+
+    harness.callbacks.init(2, 'PROMISE', 0);
+    harness.setCurrentAsyncId(2);
+    await fetch('http://127.0.0.1/');
+
+    const records = harness.read().records;
+    expect(records.some((rec) => (rec.safeRegistrationStack?.length ?? 0) > 0)).toBe(true);
+    expect(records.some((rec) => (rec.safeHandlerStack?.length ?? 0) > 0)).toBe(true);
+    expect(records.some((rec) => (rec.awaitStack?.length ?? 0) > 0)).toBe(false);
+  });
+
+  it('full captures await stacks and counts await wrapper calls', async () => {
+    const harness = installModeHarness('full');
+    const awaitFrame = {
+      function: '<await>',
+      file: '/app/full.mjs',
+      line: 3,
+      column: 10,
+    };
+
+    harness.setCurrentAsyncId(7);
+    await (
+      globalThis as typeof globalThis & {
+        __LANTERNA_ASYNC_AWAIT__: (value: unknown, frame: typeof awaitFrame) => Promise<unknown>;
+      }
+    ).__LANTERNA_ASYNC_AWAIT__(Promise.resolve('ok'), awaitFrame);
+    harness.callbacks.init(8, 'PROMISE', 7);
+
+    const read = harness.read();
+    const record = read.records.find((rec) => rec.asyncId === 8);
+    expect(record?.awaitStack?.[0]).toEqual(awaitFrame);
+    expect(read.transformStats?.awaitCalls).toBeGreaterThan(0);
+  });
+
+  it('full keeps await wrapper call stats across capture reset', async () => {
+    const harness = installModeHarness('full');
+    const awaitFrame = {
+      function: '<await>',
+      file: '/app/full.mjs',
+      line: 3,
+      column: 10,
+    };
+
+    await (
+      globalThis as typeof globalThis & {
+        __LANTERNA_ASYNC_AWAIT__: (value: unknown, frame: typeof awaitFrame) => Promise<unknown>;
+      }
+    ).__LANTERNA_ASYNC_AWAIT__(Promise.resolve('ok'), awaitFrame);
+    harness.resetCapture();
+
+    expect(harness.read().transformStats?.awaitCalls).toBeGreaterThan(0);
+  });
+
+  it('full installs a CommonJS extension transform for files loaded after preload', () => {
+    let globalValue:
+      | {
+          read: () => AsyncKindData & {
+            transformStats?: {
+              transformed: number;
+              skipped: number;
+              failed: number;
+              partial: boolean;
+              awaitCalls: number;
+            };
+          };
+        }
+      | undefined;
+    let compiled = '';
+    const extensions: Record<
+      string,
+      (mod: { _compile: (source: string, filename: string) => void }, filename: string) => void
+    > = {
+      '.js': (mod, filename) => {
+        mod._compile(`/* original ${filename} */`, filename);
+      },
+    };
+    const api = {
+      performance: { now: () => 0 },
+      registerGlobal: (name: string, value: unknown) => {
+        if (name === '__LANTERNA_ASYNC__') {
+          globalValue = value as typeof globalValue;
+        } else {
+          vi.stubGlobal(name, value);
+        }
+      },
+      addResetHook: () => {},
+      getBuiltin: (name: string) => {
+        if (name === 'async_hooks') {
+          return {
+            createHook: () => ({ enable() {}, disable() {} }),
+            executionAsyncId: () => 0,
+          };
+        }
+        if (name === 'module') return { _extensions: extensions };
+        if (name === 'fs') {
+          return {
+            readFileSync: () => 'exports.run = async function run() { await work(); };',
+          };
+        }
+        return null;
+      },
+    };
+
+    const installer = createAsyncOperationsInstaller({ instrumentationMode: 'full' });
+    new Function('require', '__lanterna', installer.source)(requireForTest, api);
+    const mod = {
+      _compile: (source: string) => {
+        compiled = source;
+      },
+    };
+
+    extensions['.cjs']?.(mod, '/app/worker.cjs');
+
+    expect(compiled).toContain('__LANTERNA_ASYNC_AWAIT__');
+    expect(globalValue?.read().transformStats?.transformed).toBe(1);
   });
 });
 
