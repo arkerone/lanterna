@@ -1,6 +1,6 @@
 {
   "name": "@lanterna-profiler/core",
-  "version": "1.5.1",
+  "version": "1.6.0",
   "description": "Agent-first Node.js CPU profiler — headless capture + analysis primitives",
   "type": "module",
   "main": "./dist/index.js",
