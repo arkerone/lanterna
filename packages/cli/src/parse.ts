@@ -5,6 +5,21 @@ import {
   MIN_SAMPLE_INTERVAL_MICROS,
 } from '@lanterna-profiler/core';
 import { Command, CommanderError } from 'commander';
+import { OPTION_FLAGS } from './option-descriptors.js';
+import {
+  DEFAULT_WAIT_TIMEOUT_MS,
+  heapSnapshotOptionName,
+  normalizeKinds,
+  type OutputFormat,
+  PROVIDED_FLAG_ALIASES,
+  parseDurationMs,
+  parseHeapSamplingIntervalBytes,
+  parseMemoryUsageIntervalMs,
+  parseOutputFormat as parseOutputFormatValue,
+  parseSampleIntervalMicros,
+} from './options-normalization.js';
+
+export type { OutputFormat } from './options-normalization.js';
 
 interface ParsedCommonOptions {
   duration?: number;
@@ -101,28 +116,7 @@ export interface ReportOptions {
   pretty: boolean;
 }
 
-export type OutputFormat = 'json' | 'text' | 'markdown';
-
 const PROVIDED_FLAGS = Symbol('lanterna.providedFlags');
-const DEFAULT_WAIT_TIMEOUT_MS = 30_000;
-const PROVIDED_FLAG_ALIASES: Readonly<Record<string, string>> = {
-  'heap-sample-interval': 'heapSamplingIntervalBytes',
-  'memory-usage-interval': 'memoryUsageIntervalMs',
-  'include-memory-samples': 'includeMemoryUsageSamples',
-  'heap-snapshot-analysis': 'heapSnapshotAnalysis',
-  'heap-snapshot-dir': 'heapSnapshotAnalysis',
-  'sample-interval': 'sampleIntervalMicros',
-  'wait-for-url': 'waitForUrl',
-  'wait-timeout': 'waitTimeoutMs',
-  'capture-delay': 'captureDelayMs',
-  detectors: 'detectors',
-  kind: 'kind',
-  duration: 'durationMs',
-  output: 'output',
-  format: 'format',
-  pretty: 'pretty',
-  workload: 'workload',
-};
 
 export function parseRunArgs(args: string[]): RunProfileOptions {
   const { optionArgs, targetCommand } = splitRunArgs(args);
@@ -183,7 +177,7 @@ export function parseReportArgs(args: string[]): ReportOptions {
 }
 
 function normalizeCommonOptions(parsed: ParsedCommonOptions): NormalizedCommonOptions {
-  const kinds = resolveKinds(parsed.kind);
+  const kinds = normalizeKinds(parsed.kind, ['cpu']);
   const heapSnapshotRequested = Boolean(parsed.heapSnapshotAnalysis || parsed.heapSnapshotDir);
   if (heapSnapshotRequested && !kinds.includes('memory')) {
     const option = heapSnapshotOptionName(parsed);
@@ -219,11 +213,6 @@ function splitRunArgs(args: string[]): { optionArgs: string[]; targetCommand: st
   };
 }
 
-function heapSnapshotOptionName(parsed: ParsedCommonOptions): string {
-  if (parsed.heapSnapshotAnalysis) return '--heap-snapshot-analysis';
-  return '--heap-snapshot-dir';
-}
-
 function applyRunOrchestrationOptions(options: RunProfileOptions, parsed: ParsedRunOptions): void {
   if (parsed.waitForUrl) options.waitForUrl = parsed.waitForUrl;
   if (parsed.waitForUrl || parsed.waitTimeout !== undefined) {
@@ -233,90 +222,70 @@ function applyRunOrchestrationOptions(options: RunProfileOptions, parsed: Parsed
   if (parsed.workload) options.workload = parsed.workload;
 }
 
-function resolveKinds(raw: string[] | undefined): string[] {
-  if (!raw || raw.length === 0) return ['cpu'];
-  // Allow `--kind cpu,memory` shorthand in addition to repeated flags.
-  const expanded = raw.flatMap((value) =>
-    value
-      .split(',')
-      .map((piece) => piece.trim())
-      .filter(Boolean),
-  );
-  // De-dupe while preserving first-seen order.
-  const seen = new Set<string>();
-  const ordered: string[] = [];
-  for (const kind of expanded) {
-    if (seen.has(kind)) continue;
-    seen.add(kind);
-    ordered.push(kind);
-  }
-  return ordered;
-}
-
 function createRunParser(): Command {
   return addCommonProfilingOptions(createBaseParser('run').allowUnknownOption(false))
-    .option('--deep', 'Enable --trace-deopt')
-    .option('--wait-for-url <url>', 'Wait until the target URL responds before capture')
-    .option('--wait-timeout <value>', 'Readiness timeout', parseDuration)
-    .option('--capture-delay <value>', 'Extra delay after readiness before capture', parseDuration)
-    .option('--workload <command>', 'Shell command to run in parallel during capture');
+    .option(OPTION_FLAGS.deep, 'Enable --trace-deopt')
+    .option(OPTION_FLAGS.waitForUrl, 'Wait until the target URL responds before capture')
+    .option(OPTION_FLAGS.waitTimeout, 'Readiness timeout', parseDuration)
+    .option(OPTION_FLAGS.captureDelay, 'Extra delay after readiness before capture', parseDuration)
+    .option(OPTION_FLAGS.workload, 'Shell command to run in parallel during capture');
 }
 
 function createAttachParser(): Command {
   return addCommonProfilingOptions(createBaseParser('attach').allowUnknownOption(false))
     .option(
-      '--pid [pid]',
+      OPTION_FLAGS.pid,
       'Attach to an existing Node.js pid, or open the interactive picker if no pid is provided',
       parseOptionalPid,
     )
-    .option('--inspect-url <url>', 'Attach to an existing inspector WebSocket URL')
-    .option('--deep', 'Unsupported in attach mode');
+    .option(OPTION_FLAGS.inspectUrl, 'Attach to an existing inspector WebSocket URL')
+    .option(OPTION_FLAGS.deep, 'Unsupported in attach mode');
 }
 
 function addCommonProfilingOptions(command: Command): Command {
   return command
-    .option('--duration <value>', 'Profiling duration', parseDuration)
-    .option('--output, -o <path>', 'Write report to path')
-    .option('--format <format>', 'Output format: json, text, or markdown', parseOutputFormat)
-    .option('--pretty', 'Pretty-print JSON')
+    .option(OPTION_FLAGS.duration, 'Profiling duration', parseDuration)
+    .option(OPTION_FLAGS.output, 'Write report to path')
+    .option(OPTION_FLAGS.format, 'Output format: json, text, or markdown', parseOutputFormat)
+    .option(OPTION_FLAGS.pretty, 'Pretty-print JSON')
     .option(
-      '--sample-interval <us>',
+      OPTION_FLAGS.sampleInterval,
       'V8 sample interval in microseconds',
       parseSampleInterval,
       DEFAULT_SAMPLE_INTERVAL_MICROS,
     )
     .option(
-      '--detectors <spec>',
+      OPTION_FLAGS.detectors,
       'Load an additional detector plugin (package name or path). Repeatable.',
       appendRepeatableValue,
       [] as string[],
     )
     .option(
-      '--kind <id>',
+      OPTION_FLAGS.kind,
       'Profile kind to capture (default: cpu). Repeatable or comma-separated. Built-in: cpu, memory.',
       appendRepeatableValue,
       [] as string[],
     )
     .option(
-      '--heap-sample-interval <size>',
+      OPTION_FLAGS.heapSampleInterval,
       `V8 heap sampling interval, in bytes or with KiB/MiB suffix (memory kind only, default ${DEFAULT_MEMORY_SAMPLING_INTERVAL_BYTES} = 512KiB)`,
       parseHeapSampleInterval,
     )
     .option(
-      '--memory-usage-interval <ms>',
+      OPTION_FLAGS.memoryUsageInterval,
       `process.memoryUsage() sampling cadence in ms (memory kind only, default ${DEFAULT_MEMORY_USAGE_INTERVAL_MS})`,
       parseMemoryUsageInterval,
     )
     .option(
-      '--include-memory-samples',
+      OPTION_FLAGS.includeMemorySamples,
       'Include raw process.memoryUsage() samples in JSON output (memory kind only)',
     )
     .option(
-      '--heap-snapshot-analysis',
+      OPTION_FLAGS.heapSnapshotAnalysis,
       'Capture start/end V8 heap snapshots and include a growth summary (memory kind only, opt-in and heavy)',
     )
     .option(
-      '--heap-snapshot-dir <dir>',
+      OPTION_FLAGS.heapSnapshotDir,
       'Directory for start/end .heapsnapshot files (memory kind only)',
     );
 }
@@ -324,9 +293,9 @@ function addCommonProfilingOptions(command: Command): Command {
 function createReportParser(): Command {
   return createBaseParser('report')
     .argument('[file]')
-    .option('--output, -o <path>', 'Write rendered report to path')
-    .option('--format <format>', 'Output format: json, text, or markdown', parseOutputFormat)
-    .option('--pretty', 'Pretty-print JSON output');
+    .option(OPTION_FLAGS.output, 'Write rendered report to path')
+    .option(OPTION_FLAGS.format, 'Output format: json, text, or markdown', parseOutputFormat)
+    .option(OPTION_FLAGS.pretty, 'Pretty-print JSON output');
 }
 
 function appendRepeatableValue(value: string, previous: string[]): string[] {
@@ -385,15 +354,11 @@ function normalizeCommanderError(
 }
 
 function parseDuration(value: string): number {
-  const match = /^(\d+(?:\.\d+)?)(ms|s|m)?$/i.exec(value);
-  if (!match) {
+  try {
+    return parseDurationMs(value);
+  } catch {
     throw new CommanderError(1, 'lanterna.invalidDuration', `invalid --duration: ${value}`);
   }
-  const amount = Number(match[1]);
-  const unit = (match[2] || 'ms').toLowerCase();
-  if (unit === 's') return amount * 1000;
-  if (unit === 'm') return amount * 60_000;
-  return amount;
 }
 
 /**
@@ -402,62 +367,54 @@ function parseDuration(value: string): number {
  * (1024-based). Returns the value normalized to bytes.
  */
 function parseHeapSampleInterval(value: string): number {
-  const match = /^(\d+(?:\.\d+)?)\s*(b|kib|kb|k|mib|mb|m)?$/i.exec(value.trim());
-  if (!match) {
+  try {
+    return parseHeapSamplingIntervalBytes(value);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
     throw new CommanderError(
       1,
       'lanterna.invalidHeapSampleInterval',
-      `invalid --heap-sample-interval: ${value} (expected e.g. 524288, 512KiB, 1MiB)`,
+      message.includes('min')
+        ? `invalid --heap-sample-interval (min 1024 bytes / 1KiB): ${value}`
+        : `invalid --heap-sample-interval: ${value} (expected e.g. 524288, 512KiB, 1MiB)`,
     );
   }
-  const amount = Number(match[1]);
-  const unit = (match[2] ?? 'b').toLowerCase();
-  let bytes: number;
-  if (unit === 'mib' || unit === 'mb' || unit === 'm') bytes = amount * 1024 * 1024;
-  else if (unit === 'kib' || unit === 'kb' || unit === 'k') bytes = amount * 1024;
-  else bytes = amount;
-  bytes = Math.round(bytes);
-  if (!Number.isFinite(bytes) || bytes < 1024) {
-    throw new CommanderError(
-      1,
-      'lanterna.invalidHeapSampleInterval',
-      `invalid --heap-sample-interval (min 1024 bytes / 1KiB): ${value}`,
-    );
-  }
-  return bytes;
 }
 
 function parseMemoryUsageInterval(value: string): number {
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed) || parsed < 10) {
+  try {
+    return parseMemoryUsageIntervalMs(value);
+  } catch {
     throw new CommanderError(
       1,
       'lanterna.invalidMemoryUsageInterval',
       `invalid --memory-usage-interval (min 10ms): ${value}`,
     );
   }
-  return parsed;
 }
 
 function parseOutputFormat(value: string): OutputFormat {
-  if (value === 'json' || value === 'text' || value === 'markdown') return value;
-  throw new CommanderError(
-    1,
-    'lanterna.invalidFormat',
-    `invalid --format: ${value} (expected json, text, or markdown)`,
-  );
+  try {
+    return parseOutputFormatValue(value);
+  } catch {
+    throw new CommanderError(
+      1,
+      'lanterna.invalidFormat',
+      `invalid --format: ${value} (expected json, text, or markdown)`,
+    );
+  }
 }
 
 function parseSampleInterval(value: string): number {
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed) || parsed < MIN_SAMPLE_INTERVAL_MICROS) {
+  try {
+    return parseSampleIntervalMicros(value);
+  } catch {
     throw new CommanderError(
       1,
       'lanterna.invalidSampleInterval',
       `invalid --sample-interval (min ${MIN_SAMPLE_INTERVAL_MICROS}): ${value}`,
     );
   }
-  return parsed;
 }
 
 function parsePid(value: string): number {

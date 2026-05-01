@@ -1,5 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ATTACH_HELP, GLOBAL_HELP, main, RUN_HELP, VERSION } from '../src/main.js';
+import {
+  ATTACH_CAPTURE_OPTIONS,
+  COMMON_CAPTURE_OPTIONS,
+  MEMORY_OPTIONS,
+  OUTPUT_OPTIONS,
+  PLUGIN_OPTIONS,
+  RUN_CAPTURE_OPTIONS,
+} from '../src/option-descriptors.js';
 
 describe('main help routing', () => {
   let stdoutWrite: ReturnType<typeof vi.spyOn>;
@@ -74,5 +82,34 @@ describe('main help routing', () => {
     expect(stderrWrite).toHaveBeenCalledWith(expect.stringContaining('Unknown command'));
     expect(stderrWrite).toHaveBeenCalledWith(expect.stringContaining('wat'));
     expect(process.exitCode).toBe(2);
+  });
+
+  it('renders help from the declared option descriptors', () => {
+    const runOptions = [
+      ...COMMON_CAPTURE_OPTIONS,
+      ...RUN_CAPTURE_OPTIONS,
+      ...MEMORY_OPTIONS,
+      ...OUTPUT_OPTIONS,
+      ...PLUGIN_OPTIONS,
+    ];
+    const attachOptions = [
+      ...ATTACH_CAPTURE_OPTIONS,
+      ...COMMON_CAPTURE_OPTIONS,
+      ...MEMORY_OPTIONS,
+      ...OUTPUT_OPTIONS,
+      ...PLUGIN_OPTIONS,
+    ];
+    const globalOptions = [
+      ...COMMON_CAPTURE_OPTIONS,
+      ...RUN_CAPTURE_OPTIONS,
+      ...ATTACH_CAPTURE_OPTIONS,
+      ...MEMORY_OPTIONS,
+      ...OUTPUT_OPTIONS,
+      ...PLUGIN_OPTIONS,
+    ];
+
+    for (const option of runOptions) expect(RUN_HELP).toContain(option.flag);
+    for (const option of attachOptions) expect(ATTACH_HELP).toContain(option.flag);
+    for (const option of globalOptions) expect(GLOBAL_HELP).toContain(option.flag);
   });
 });

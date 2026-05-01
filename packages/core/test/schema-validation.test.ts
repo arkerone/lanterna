@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { createCpuProfileKind } from '../src/kinds/cpu/index.js';
 import { LANTERNA_REPORT_SCHEMA_VERSION } from '../src/report/meta.js';
+import {
+  FINDING_SEVERITIES,
+  FRAME_CATEGORIES,
+  MEASUREMENT_BASES,
+} from '../src/report/schema/primitives.js';
 import { buildReportSchema } from '../src/report/schema.js';
 import type { CpuProfileReport, LanternaReport } from '../src/report/types.js';
 
@@ -97,6 +102,12 @@ function makeReport(overrides: Partial<LanternaReport> = {}): unknown {
 describe('lanternaReportSchema', () => {
   it('pins the report schema version constant', () => {
     expect(LANTERNA_REPORT_SCHEMA_VERSION).toBe('2.0.0');
+  });
+
+  it('exports enum value lists used by both report types and schemas', () => {
+    expect(FINDING_SEVERITIES).toEqual(['info', 'warning', 'critical']);
+    expect(FRAME_CATEGORIES).toContain('node_modules');
+    expect(MEASUREMENT_BASES).toEqual(['none', 'heartbeats', 'histogram', 'both']);
   });
 
   describe('valid reports', () => {

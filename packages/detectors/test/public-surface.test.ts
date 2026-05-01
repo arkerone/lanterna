@@ -21,4 +21,14 @@ describe('detectors public surface', () => {
       }),
     );
   });
+
+  it('re-exports extensionApi for detector plugin authors', () => {
+    expect(detectors.extensionApi).toEqual(
+      expect.objectContaining({
+        createFindingAnalyzerFromKindScopedDetector: expect.any(Function),
+        defineFindingAnalyzer: expect.any(Function),
+        defineSectionAnalyzer: expect.any(Function),
+      }),
+    );
+  });
 });

@@ -1,10 +1,17 @@
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { z } from 'zod';
-import type { OutputFormat } from './parse.js';
+import {
+  DEFAULT_WAIT_TIMEOUT_MS,
+  normalizeKinds,
+  type OutputFormat,
+  parseDurationMs,
+  parseHeapSamplingIntervalBytes,
+  parseMemoryUsageIntervalMs,
+  parseSampleIntervalMicros,
+} from './options-normalization.js';
 
 const CONFIG_FILENAMES = ['.lanterna.json', '.lanterna.config.json'] as const;
-const DEFAULT_WAIT_TIMEOUT_MS = 30_000;
 const SCALAR_CONFIG_KEYS = [
   'durationMs',
   'output',
@@ -30,9 +37,9 @@ const RawConfigSchema = z.object({
   pretty: z.boolean().optional(),
   detectors: z.array(z.string()).optional(),
   kinds: z.array(z.string()).optional(),
-  sampleInterval: z.number().optional(),
+  sampleInterval: z.union([z.string(), z.number()]).optional(),
   heapSampleInterval: z.union([z.string(), z.number()]).optional(),
-  memoryUsageInterval: z.number().optional(),
+  memoryUsageInterval: z.union([z.string(), z.number()]).optional(),
   includeMemorySamples: z.boolean().optional(),
   heapSnapshotAnalysis: z.boolean().optional(),
   heapSnapshotDir: z.string().optional(),
@@ -179,20 +186,26 @@ class ConfigMerger<TOptions extends ConfigurableOptions> {
 
 function normalizeConfig(raw: z.infer<typeof RawConfigSchema>): LanternaConfig {
   const config: LanternaConfig = {};
-  if (raw.duration !== undefined) {
-    config.durationMs = parseDurationConfig(raw.duration, 'duration');
-  }
+  if (raw.duration !== undefined) config.durationMs = parseDurationMs(raw.duration, 'duration');
   if (raw.output !== undefined) config.output = raw.output;
   if (raw.format !== undefined) config.format = raw.format;
   if (raw.pretty !== undefined) config.pretty = raw.pretty;
   if (raw.detectors !== undefined) config.detectors = raw.detectors;
-  if (raw.kinds !== undefined) config.kinds = dedupe(expandKinds(raw.kinds));
-  if (raw.sampleInterval !== undefined) config.sampleIntervalMicros = raw.sampleInterval;
+  if (raw.kinds !== undefined) config.kinds = normalizeKinds(raw.kinds);
+  if (raw.sampleInterval !== undefined) {
+    config.sampleIntervalMicros = parseSampleIntervalMicros(raw.sampleInterval, 'sampleInterval');
+  }
   if (raw.heapSampleInterval !== undefined) {
-    config.heapSamplingIntervalBytes = parseHeapSampleIntervalConfig(raw.heapSampleInterval);
+    config.heapSamplingIntervalBytes = parseHeapSamplingIntervalBytes(
+      raw.heapSampleInterval,
+      'heapSampleInterval',
+    );
   }
   if (raw.memoryUsageInterval !== undefined) {
-    config.memoryUsageIntervalMs = raw.memoryUsageInterval;
+    config.memoryUsageIntervalMs = parseMemoryUsageIntervalMs(
+      raw.memoryUsageInterval,
+      'memoryUsageInterval',
+    );
   }
   if (raw.includeMemorySamples !== undefined) {
     config.includeMemoryUsageSamples = raw.includeMemorySamples;
@@ -205,51 +218,15 @@ function normalizeConfig(raw: z.infer<typeof RawConfigSchema>): LanternaConfig {
   }
   if (raw.waitForUrl !== undefined) config.waitForUrl = raw.waitForUrl;
   if (raw.waitTimeout !== undefined) {
-    config.waitTimeoutMs = parseDurationConfig(raw.waitTimeout, 'waitTimeout');
+    config.waitTimeoutMs = parseDurationMs(raw.waitTimeout, 'waitTimeout');
   } else if (raw.waitForUrl !== undefined) {
     config.waitTimeoutMs = DEFAULT_WAIT_TIMEOUT_MS;
   }
   if (raw.captureDelay !== undefined) {
-    config.captureDelayMs = parseDurationConfig(raw.captureDelay, 'captureDelay');
+    config.captureDelayMs = parseDurationMs(raw.captureDelay, 'captureDelay');
   }
   if (raw.workload !== undefined) config.workload = raw.workload;
   return config;
-}
-
-function parseDurationConfig(value: string | number, field: string): number {
-  if (typeof value === 'number') {
-    if (!Number.isFinite(value) || value < 0) throw new Error(`Invalid ${field}: ${value}`);
-    return value;
-  }
-  const match = /^(\d+(?:\.\d+)?)(ms|s|m)?$/i.exec(value);
-  if (!match) throw new Error(`Invalid ${field}: ${value}`);
-  const amount = Number(match[1]);
-  const unit = (match[2] || 'ms').toLowerCase();
-  if (unit === 's') return amount * 1000;
-  if (unit === 'm') return amount * 60_000;
-  return amount;
-}
-
-function parseHeapSampleIntervalConfig(value: string | number): number {
-  const raw = String(value).trim();
-  const match = /^(\d+(?:\.\d+)?)\s*(b|kib|kb|k|mib|mb|m)?$/i.exec(raw);
-  if (!match) throw new Error(`Invalid heapSampleInterval: ${value}`);
-  const amount = Number(match[1]);
-  const unit = (match[2] ?? 'b').toLowerCase();
-  let bytes: number;
-  if (unit === 'mib' || unit === 'mb' || unit === 'm') bytes = amount * 1024 * 1024;
-  else if (unit === 'kib' || unit === 'kb' || unit === 'k') bytes = amount * 1024;
-  else bytes = amount;
-  return Math.round(bytes);
-}
-
-function expandKinds(values: string[]): string[] {
-  return values.flatMap((value) =>
-    value
-      .split(',')
-      .map((piece) => piece.trim())
-      .filter(Boolean),
-  );
 }
 
 function dedupe<T>(values: T[]): T[] {

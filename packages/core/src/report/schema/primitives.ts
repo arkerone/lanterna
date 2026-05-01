@@ -1,17 +1,16 @@
 import { z } from 'zod';
 
-export const findingSeveritySchema = z.enum(['info', 'warning', 'critical']);
-export const profileConfidenceSchema = z.enum(['low', 'medium', 'high']);
-export const findingConfidenceSchema = z.enum(['low', 'medium', 'high']);
-export const findingReportProofLevelSchema = z.enum([
+export const FINDING_SEVERITIES = ['info', 'warning', 'critical'] as const;
+export const CONFIDENCE_LEVELS = ['low', 'medium', 'high'] as const;
+export const FINDING_REPORT_PROOF_LEVELS = [
   'direct-sample',
   'correlated-window',
   'trace-only',
   'heuristic',
-]);
-export const measurementBasisSchema = z.enum(['none', 'heartbeats', 'histogram', 'both']);
-export const measurementConfidenceSchema = z.enum(['none', 'low', 'high']);
-export const frameCategorySchema = z.enum([
+] as const;
+export const MEASUREMENT_BASES = ['none', 'heartbeats', 'histogram', 'both'] as const;
+export const MEASUREMENT_CONFIDENCES = ['none', 'low', 'high'] as const;
+export const FRAME_CATEGORIES = [
   'user',
   'node_modules',
   'node:builtin',
@@ -21,8 +20,17 @@ export const frameCategorySchema = z.enum([
   'idle',
   'lanterna',
   'unknown',
-]);
-export const optimizationStateSchema = z.enum(['optimized', 'interpreted', 'unknown']);
+] as const;
+export const OPTIMIZATION_STATES = ['optimized', 'interpreted', 'unknown'] as const;
+
+export const findingSeveritySchema = z.enum(FINDING_SEVERITIES);
+export const profileConfidenceSchema = z.enum(CONFIDENCE_LEVELS);
+export const findingConfidenceSchema = z.enum(CONFIDENCE_LEVELS);
+export const findingReportProofLevelSchema = z.enum(FINDING_REPORT_PROOF_LEVELS);
+export const measurementBasisSchema = z.enum(MEASUREMENT_BASES);
+export const measurementConfidenceSchema = z.enum(MEASUREMENT_CONFIDENCES);
+export const frameCategorySchema = z.enum(FRAME_CATEGORIES);
+export const optimizationStateSchema = z.enum(OPTIMIZATION_STATES);
 
 export const hotspotAttributionSchema = z.object({
   hotspotId: z.string().min(1),

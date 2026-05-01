@@ -1,29 +1,24 @@
 import type { CaptureDiagnostic } from '../capture/core/types.js';
 import type { ProfileSectionMap } from '../kinds/core/types.js';
+import type {
+  CONFIDENCE_LEVELS,
+  FINDING_REPORT_PROOF_LEVELS,
+  FINDING_SEVERITIES,
+  FRAME_CATEGORIES,
+  MEASUREMENT_BASES,
+  MEASUREMENT_CONFIDENCES,
+  OPTIMIZATION_STATES,
+} from './schema/primitives.js';
 
-export type FrameCategory =
-  | 'user'
-  | 'node_modules'
-  | 'node:builtin'
-  | 'native'
-  | 'gc'
-  | 'program'
-  | 'idle'
-  | 'lanterna'
-  | 'unknown';
+export type FrameCategory = (typeof FRAME_CATEGORIES)[number];
+export type OptimizationState = (typeof OPTIMIZATION_STATES)[number];
 
-export type OptimizationState = 'optimized' | 'interpreted' | 'unknown';
-
-export type FindingSeverity = 'info' | 'warning' | 'critical';
-export type MeasurementBasis = 'none' | 'heartbeats' | 'histogram' | 'both';
-export type MeasurementConfidence = 'none' | 'low' | 'high';
-export type ProfileConfidence = 'low' | 'medium' | 'high';
-export type FindingConfidence = 'low' | 'medium' | 'high';
-export type FindingReportProofLevel =
-  | 'direct-sample'
-  | 'correlated-window'
-  | 'trace-only'
-  | 'heuristic';
+export type FindingSeverity = (typeof FINDING_SEVERITIES)[number];
+export type MeasurementBasis = (typeof MEASUREMENT_BASES)[number];
+export type MeasurementConfidence = (typeof MEASUREMENT_CONFIDENCES)[number];
+export type ProfileConfidence = (typeof CONFIDENCE_LEVELS)[number];
+export type FindingConfidence = (typeof CONFIDENCE_LEVELS)[number];
+export type FindingReportProofLevel = (typeof FINDING_REPORT_PROOF_LEVELS)[number];
 export type FindingProofLevel =
   | 'direct-builtin'
   | 'attributed-caller'

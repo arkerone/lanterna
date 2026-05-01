@@ -33,6 +33,42 @@ export interface ResolvedAttribution {
   caller: HotspotAttribution | undefined;
 }
 
+export const BUILTIN_RUNTIME_CATEGORIES = ['node:builtin', 'native'] as const;
+
+export function isBuiltinRuntimeHotspot(hotspot: Hotspot): boolean {
+  return matchesHotspotCategory(hotspot, BUILTIN_RUNTIME_CATEGORIES);
+}
+
+export function matchesHotspotCategory(
+  hotspot: Hotspot,
+  categories: ReadonlyArray<Hotspot['category']>,
+): boolean {
+  if (isNoiseCategory(hotspot.category)) return false;
+  return categories.includes(hotspot.category);
+}
+
+export function maxHotspotPct(hotspot: Pick<Hotspot, 'selfPct' | 'totalPct'>): number {
+  return Math.max(hotspot.selfPct, hotspot.totalPct);
+}
+
+export function severityForPct(observedPct: number, criticalPct: number): BaseFinding['severity'] {
+  return observedPct > criticalPct ? 'critical' : 'warning';
+}
+
+export function exceedsAnyHotspotThreshold(
+  hotspot: Pick<Hotspot, 'selfPct' | 'totalPct'>,
+  thresholds: { minSelfPct?: number; minTotalPct?: number },
+): boolean {
+  const selfHit = thresholds.minSelfPct !== undefined && hotspot.selfPct >= thresholds.minSelfPct;
+  const totalHit =
+    thresholds.minTotalPct !== undefined && hotspot.totalPct >= thresholds.minTotalPct;
+  return selfHit || totalHit;
+}
+
+export function exceedsCategoryThreshold(categoryTotalPct: number, thresholdPct: number): boolean {
+  return categoryTotalPct >= thresholdPct;
+}
+
 /**
  * Resolves the user-code caller most likely responsible for a non-user hotspot.
  *
@@ -116,11 +152,7 @@ export function aggregateByPatterns<TPattern extends { re: RegExp; api: string }
   let categoryTotalPct = 0;
   let categorySelfPct = 0;
   for (const hotspot of hotspots) {
-    // Defense in depth: noise categories (profiler instrumentation) must never
-    // produce a detector finding, even if a caller passes a permissive
-    // `categories` list.
-    if (isNoiseCategory(hotspot.category)) continue;
-    if (!categories.includes(hotspot.category)) continue;
+    if (!matchesHotspotCategory(hotspot, categories)) continue;
     const normalized = normalize(hotspot.function);
     const match = patterns.find((p) => p.re.test(normalized));
     if (!match) continue;
