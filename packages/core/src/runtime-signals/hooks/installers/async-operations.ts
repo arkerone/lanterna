@@ -722,6 +722,7 @@ function installAsyncOperations(
     completedRecords.clear();
     openRuns.clear();
     concurrency.length = 0;
+    pendingAwaitStacks.length = 0;
     for (const key of Object.keys(filteredCounts)) delete filteredCounts[key];
     recordsDropped = 0;
     initCount = 0;
@@ -766,6 +767,12 @@ function installAsyncOperations(
       hook.disable();
       clearInterval(concurrencyTimer);
       for (const restore of restoredApis) restore();
+      pendingAwaitStacks.length = 0;
+      // ESM module hooks registered via node:module register() cannot be
+      // unregistered, so transformed modules loaded after disable would still
+      // call __LANTERNA_ASYNC_AWAIT__. Replace it with a passthrough so we
+      // don't keep accumulating dead state.
+      (globalThis as Record<string, unknown>).__LANTERNA_ASYNC_AWAIT__ = (value: unknown) => value;
     },
   });
 }
