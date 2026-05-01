@@ -1,5 +1,7 @@
 export interface HookInstaller {
   id: string;
+  /** Extra Node flags needed before user code starts (for example ESM loaders). */
+  nodeOptions?: string[];
   /**
    * Source fragment appended inside the composed preload script body. The
    * fragment runs with the framework helpers bound under `__lanterna.*` and

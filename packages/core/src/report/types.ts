@@ -519,10 +519,214 @@ export interface MemoryProfileReport {
   heapSnapshotAnalysis?: HeapSnapshotAnalysisReport;
 }
 
+export type AsyncOperationKindReport =
+  | 'promise'
+  | 'timer'
+  | 'immediate'
+  | 'tcp'
+  | 'udp'
+  | 'fs'
+  | 'http'
+  | 'http2'
+  | 'tls'
+  | 'dns'
+  | 'pipe'
+  | 'process'
+  | 'tickobject'
+  | 'microtask'
+  | 'other';
+
+export interface AsyncSummary {
+  available: boolean;
+  collectedVia: 'async-hooks' | 'cdp-only' | 'unavailable';
+  totalOperations: number;
+  byKind: Partial<Record<AsyncOperationKindReport, number>>;
+  durationStats?: {
+    p50Ms: number;
+    p95Ms: number;
+    p99Ms: number;
+    maxMs: number;
+    meanMs: number;
+  };
+  concurrency?: {
+    meanInflight: number;
+    maxInflight: number;
+    meanActive: number;
+    maxActive: number;
+  };
+  orphanCount: number;
+  recordsDropped: number;
+  topAsyncHotFile?: {
+    function: string;
+    file: string;
+    line: number;
+    score: number;
+    confidence: ProfileConfidence;
+  };
+}
+
+export interface AsyncStackFrameReport {
+  function: string;
+  file: string;
+  line: number;
+  column: number;
+}
+
+export interface AsyncCdpContextReport {
+  source:
+    | 'Runtime.exceptionThrown'
+    | 'Runtime.consoleAPICalled'
+    | 'Debugger.paused'
+    | 'Runtime.evaluate';
+  proofLevel: 'cdp-debugger-async-stack';
+  capturedAtMs?: number;
+  frames: AsyncStackFrameReport[];
+  asyncStack: Array<{ description?: string; frames: AsyncStackFrameReport[] }>;
+}
+
+export interface AsyncTopOperation {
+  asyncId: number;
+  kind: AsyncOperationKindReport;
+  rawType: string;
+  durationMs: number;
+  runMs: number;
+  runCount: number;
+  initAtMs: number;
+  triggerAsyncId: number;
+  orphan: boolean;
+  /** First user-code frame at init, when available. */
+  initFrame?: AsyncStackFrameReport;
+  primaryFrame?: AsyncStackFrameReport;
+  primaryReason?: 'creation' | 'execution' | 'await' | 'promise-handler' | 'cdp-async-context';
+  creationFrame?: AsyncStackFrameReport;
+  executionFrame?: AsyncStackFrameReport;
+  awaitFrame?: AsyncStackFrameReport;
+  promiseRegistrationFrame?: AsyncStackFrameReport;
+  promiseHandlerFrame?: AsyncStackFrameReport;
+  cdpAsyncContextFrame?: AsyncStackFrameReport;
+  cdpAsyncStack?: AsyncCdpContextReport;
+  creationConfidence?: ProfileConfidence;
+  executionConfidence?: ProfileConfidence;
+  awaitConfidence?: ProfileConfidence;
+  cdpAsyncContextConfidence?: ProfileConfidence;
+  cpuAttributedSamples?: number;
+  cpuAmbiguousSamples?: number;
+  clockSyncUncertaintyMs?: number;
+  overallConfidence?: ProfileConfidence;
+  /** Top frames at init, filtered to user code (capped). */
+  initStack: AsyncStackFrameReport[];
+}
+
+export interface AsyncChainSummary {
+  rootAsyncId: number;
+  rootKind: AsyncOperationKindReport;
+  depth: number;
+  totalOperations: number;
+  totalDurationMs: number;
+  deepestPath: AsyncOperationKindReport[];
+  rootFrame?: AsyncStackFrameReport;
+  deepestFrame?: AsyncStackFrameReport;
+  dominantFile?: string;
+}
+
+export interface AsyncOrphan {
+  asyncId: number;
+  kind: AsyncOperationKindReport;
+  rawType: string;
+  initAtMs: number;
+  ageMs: number;
+  triggerAsyncId: number;
+  initFrame?: AsyncStackFrameReport;
+  initStack: AsyncStackFrameReport[];
+}
+
+export interface AsyncCpuAttributionEntry {
+  rootAsyncId: number;
+  rootKind: AsyncOperationKindReport;
+  /** Frame anchored on the root resource (init site of the chain top). */
+  rootFrame?: AsyncStackFrameReport;
+  /** Best user-code CPU frame observed while this async chain was executing. */
+  executionFrame?: AsyncStackFrameReport;
+  executionConfidence?: ProfileConfidence;
+  /** Estimated % of capture-window CPU spent in this chain's `before/after` runs. */
+  cpuPct: number;
+  /** Estimated CPU time (ms) attributed to this chain. */
+  cpuMs: number;
+  /** Number of resources in the chain that contributed. */
+  contributingOperations: number;
+}
+
+export interface AsyncCpuAttribution {
+  available: boolean;
+  /** Why attribution was unavailable (cpu kind absent, no run windows, ...). */
+  reason?: string;
+  /** Total CPU% covered by attributed run windows. */
+  attributedCpuPct: number;
+  totalCpuMs: number;
+  cpuAttributedSamples: number;
+  cpuAmbiguousSamples: number;
+  clockSyncUncertaintyMs: number;
+  topChains: AsyncCpuAttributionEntry[];
+}
+
+export interface AsyncProfileQuality {
+  confidence: ProfileConfidence;
+  instrumentationMode: 'off' | 'safe' | 'full';
+  attachPartialCapture: boolean;
+  operationCount: number;
+  sampledStackRatio: number;
+  initStackCoverageRatio: number;
+  cdpAsyncStackCoverageRatio: number;
+  recordsDropped: number;
+  maxRecords: number;
+  runWindowCount: number;
+  cpuAttributionCoveragePct: number;
+  cpuAmbiguousSamples: number;
+  clockSyncUncertaintyMs: number;
+  reasons: string[];
+  recommendations: string[];
+}
+
+export interface AsyncHotFile {
+  file: string;
+  score: number;
+  confidence: ProfileConfidence;
+  primaryFrame: AsyncStackFrameReport;
+  operationCount: number;
+  totalDurationMs: number;
+  orphanCount: number;
+  maxOrphanAgeMs: number;
+  maxChainDepth: number;
+  cpuPct: number;
+  runMs: number;
+  kindBreakdown: Partial<Record<AsyncOperationKindReport, number>>;
+  sampleAsyncIds: number[];
+}
+
+export interface AsyncConcurrencyTimelineSample {
+  atMs: number;
+  active: number;
+  inflight: number;
+}
+
+export interface AsyncProfileReport {
+  summary: AsyncSummary;
+  quality: AsyncProfileQuality;
+  hotFiles: AsyncHotFile[];
+  topOperations: AsyncTopOperation[];
+  chains: AsyncChainSummary[];
+  orphans: AsyncOrphan[];
+  concurrencyTimeline: AsyncConcurrencyTimelineSample[];
+  filteredCounts: Record<string, number>;
+  cdpAsyncContexts: AsyncCdpContextReport[];
+  cpuAttribution: AsyncCpuAttribution;
+}
+
 declare module '../kinds/core/types.js' {
   interface ProfileSectionMap {
     cpu: CpuProfileReport;
     memory: MemoryProfileReport;
+    async: AsyncProfileReport;
   }
 }
 

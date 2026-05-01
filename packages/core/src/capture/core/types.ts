@@ -171,6 +171,12 @@ export interface ConnectedSource {
   /** Resolves when the target process exits / inspector disconnects. */
   waitForExit(): Promise<void>;
   /**
+   * Releases a startup breakpoint after the coordinator has installed hooks
+   * and started probes. Spawn sources use this for `--inspect-brk`; attach
+   * sources omit it because the target is already running.
+   */
+  releaseRuntime?(): Promise<void>;
+  /**
    * Returns live-collected signals (control-channel for spawn; empty for
    * attach). The coordinator merges them with CDP-evaluated reads.
    */
@@ -199,6 +205,7 @@ export interface ProfileSource<TOptions> {
 export interface PreloadContribution {
   preloadScript: string;
   attachScript: string;
+  nodeOptions: string[];
   /** fd the child should write control events to (spawn only). */
   controlFd: number;
 }

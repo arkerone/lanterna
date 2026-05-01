@@ -39,7 +39,7 @@ export class SpawnSource implements ProfileSource<SpawnStartOptions> {
     );
     await writeFile(preloadPath, preload.preloadScript, { encoding: 'utf8' });
 
-    const nodeOptions = ['--inspect-brk=0', `--require=${preloadPath}`];
+    const nodeOptions = ['--inspect-brk=0', `--require=${preloadPath}`, ...preload.nodeOptions];
     const env: NodeJS.ProcessEnv = {
       ...process.env,
       NODE_OPTIONS: [process.env.NODE_OPTIONS, ...nodeOptions].filter(Boolean).join(' '),
@@ -183,9 +183,6 @@ export class SpawnSource implements ProfileSource<SpawnStartOptions> {
         }
       };
 
-      // Release the inspector breakpoint so the target begins running.
-      await cdp.send('Runtime.runIfWaitingForDebugger');
-
       return {
         cdp,
         target: {
@@ -199,6 +196,9 @@ export class SpawnSource implements ProfileSource<SpawnStartOptions> {
         startedAtEpoch: Date.now(),
         initialIntegrity: captureIntegrity,
         waitForExit,
+        releaseRuntime: async () => {
+          await cdp.send('Runtime.runIfWaitingForDebugger');
+        },
         drainLiveSignals,
         finalize,
       };
