@@ -14,6 +14,16 @@ import {
   formatSection,
   formatUnknownCommandError,
 } from './help.js';
+import {
+  ATTACH_CAPTURE_OPTIONS,
+  type CliOptionDescriptor,
+  COMMON_CAPTURE_OPTIONS,
+  GENERAL_OPTIONS,
+  MEMORY_OPTIONS,
+  OUTPUT_OPTIONS,
+  PLUGIN_OPTIONS,
+  RUN_CAPTURE_OPTIONS,
+} from './option-descriptors.js';
 import { parseAttachArgs, parseReportArgs, parseRunArgs } from './parse.js';
 import { renderBrandHeader, renderCommandHeader } from './terminal-style.js';
 
@@ -32,86 +42,16 @@ function readPackageVersion(): string {
 
 const VERSION = readPackageVersion();
 
-const memoryOptionRows = [
-  formatOptionRow(
-    '--heap-sample-interval <size>',
-    'V8 heap sampling interval (bytes or KiB/MiB)',
-    'memory kind, default 512KiB',
-  ),
-  formatOptionRow(
-    '--memory-usage-interval <ms>',
-    'process.memoryUsage() cadence in ms',
-    'memory kind, default 250',
-  ),
-  formatOptionRow(
-    '--include-memory-samples',
-    'Include raw process.memoryUsage() samples in JSON output',
-    'memory kind',
-  ),
-  formatOptionRow(
-    '--heap-snapshot-analysis',
-    'Capture start/end heap snapshots and summarize retained growth',
-    'memory kind, heavy',
-  ),
-  formatOptionRow(
-    '--heap-snapshot-dir <dir>',
-    'Directory for .heapsnapshot files',
-    'memory kind, default .lanterna-heapsnapshots',
-  ),
-];
+function renderOptionRows(options: readonly CliOptionDescriptor[]): string[] {
+  return options.map((option) => formatOptionRow(option.flag, option.description, option.hint));
+}
 
-const captureRunRows = [
-  formatOptionRow('--duration <ms|s|m>', 'Stop automatically after the given duration'),
-  formatOptionRow(
-    '--kind <id>',
-    'Profile kind to capture. Repeatable or comma-separated',
-    'default cpu, built-in: cpu, memory',
-  ),
-  formatOptionRow(
-    '--sample-interval <us>',
-    'V8 CPU sample interval in microseconds',
-    'default 1000',
-  ),
-  formatOptionRow('--deep', 'Enable deopt tracing', 'stderr becomes noisier'),
-  formatOptionRow('--wait-for-url <url>', 'Wait for app readiness before capture'),
-  formatOptionRow('--wait-timeout <ms|s|m>', 'Readiness timeout', 'default 30s'),
-  formatOptionRow('--capture-delay <ms|s|m>', 'Extra delay after readiness before capture'),
-  formatOptionRow('--workload <command>', 'Shell command to run in parallel during capture'),
-];
-
-const captureAttachRows = [
-  formatOptionRow(
-    '--pid [pid]',
-    'Attach by PID, or open the interactive picker if no pid is given',
-  ),
-  formatOptionRow('--inspect-url <url>', 'Attach to an existing inspector WebSocket URL'),
-  formatOptionRow('--duration <ms|s|m>', 'Stop automatically after the given duration'),
-  formatOptionRow(
-    '--kind <id>',
-    'Profile kind to capture. Repeatable or comma-separated',
-    'default cpu, built-in: cpu, memory',
-  ),
-  formatOptionRow(
-    '--sample-interval <us>',
-    'V8 CPU sample interval in microseconds',
-    'default 1000',
-  ),
-];
-
-const outputRows = [
-  formatOptionRow('--output, -o <path>', 'Write report output to a file'),
-  formatOptionRow('--format <format>', 'Output format', 'json, text, markdown'),
-  formatOptionRow('--pretty', 'Pretty-print JSON output'),
-];
-
-const pluginRows = [
-  formatOptionRow(
-    '--detectors <spec>',
-    'Load an additional detector plugin (package name or path). Repeatable',
-  ),
-];
-
-const generalRows = [formatOptionRow('-h, --help', 'Show this help')];
+const memoryOptionRows = renderOptionRows(MEMORY_OPTIONS);
+const captureRunRows = renderOptionRows([...COMMON_CAPTURE_OPTIONS, ...RUN_CAPTURE_OPTIONS]);
+const captureAttachRows = renderOptionRows([...ATTACH_CAPTURE_OPTIONS, ...COMMON_CAPTURE_OPTIONS]);
+const outputRows = renderOptionRows(OUTPUT_OPTIONS);
+const pluginRows = renderOptionRows(PLUGIN_OPTIONS);
+const generalRows = renderOptionRows(GENERAL_OPTIONS);
 
 const GLOBAL_HELP = `${renderBrandHeader({
   subtitle: 'Agent-first Node.js profiler',
@@ -131,62 +71,14 @@ ${formatSection('Commands', [
 ])}
 
 ${formatSection('Common options', [
-  formatOptionRow('--duration <ms|s|m>', 'Profiling duration', 'e.g. 15s or 5000ms'),
-  formatOptionRow('--output, -o <path>', 'Write report output to a file instead of stdout'),
-  formatOptionRow('--format <format>', 'Output format', 'json, text, markdown'),
-  formatOptionRow('--pretty', 'Pretty-print JSON output'),
-  formatOptionRow(
-    '--kind <id>',
-    'Profile kind to capture. Repeatable or comma-separated',
-    'default cpu, built-in: cpu, memory',
-  ),
-  formatOptionRow(
-    '--sample-interval <us>',
-    'V8 CPU sample interval in microseconds',
-    'default 1000',
-  ),
-  formatOptionRow('--detectors <spec>', 'Load an additional detector plugin. Repeatable'),
+  ...renderOptionRows([...COMMON_CAPTURE_OPTIONS, ...OUTPUT_OPTIONS, ...PLUGIN_OPTIONS]),
 ])}
 
-${formatSection('Run-only options', [
-  formatOptionRow('--deep', 'Enable deopt tracing', 'stderr becomes noisier'),
-  formatOptionRow('--wait-for-url <url>', 'Wait for app readiness before capture'),
-  formatOptionRow('--wait-timeout <ms|s|m>', 'Readiness timeout', 'default 30s'),
-  formatOptionRow('--capture-delay <ms|s|m>', 'Extra delay after readiness before capture'),
-  formatOptionRow('--workload <command>', 'Shell command to run during capture'),
-])}
+${formatSection('Run-only options', renderOptionRows(RUN_CAPTURE_OPTIONS))}
 
-${formatSection('Attach-only options', [
-  formatOptionRow(
-    '--pid [pid]',
-    'Attach by PID, or open the interactive picker if no pid is given',
-  ),
-  formatOptionRow('--inspect-url <url>', 'Attach to an existing inspector WebSocket URL'),
-])}
+${formatSection('Attach-only options', renderOptionRows(ATTACH_CAPTURE_OPTIONS))}
 
-${formatSection('Memory kind options', [
-  formatOptionRow(
-    '--heap-sample-interval <size>',
-    'V8 heap sampling interval (bytes or KiB/MiB)',
-    'default 512KiB',
-  ),
-  formatOptionRow(
-    '--memory-usage-interval <ms>',
-    'process.memoryUsage() cadence in ms',
-    'default 250',
-  ),
-  formatOptionRow('--include-memory-samples', 'Include raw process.memoryUsage() samples in JSON'),
-  formatOptionRow(
-    '--heap-snapshot-analysis',
-    'Capture start/end heap snapshots and summarize retained growth',
-    'heavy',
-  ),
-  formatOptionRow(
-    '--heap-snapshot-dir <dir>',
-    'Directory for .heapsnapshot files',
-    'default .lanterna-heapsnapshots',
-  ),
-])}
+${formatSection('Memory kind options', renderOptionRows(MEMORY_OPTIONS))}
 
 ${formatSection('Meta', [
   formatOptionRow('-v, --version', 'Print the Lanterna version'),

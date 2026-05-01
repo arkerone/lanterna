@@ -12,4 +12,16 @@ describe('core public profile API', () => {
       }),
     );
   });
+
+  it('keeps extensionApi as the stable plugin author contract', () => {
+    expect(core.extensionApi).toEqual(
+      expect.objectContaining({
+        createAnalysisPipeline: expect.any(Function),
+        createDefaultAnalysisPipeline: expect.any(Function),
+        defineFindingAnalyzer: expect.any(Function),
+        defineProfileKind: expect.any(Function),
+        defineSectionAnalyzer: expect.any(Function),
+      }),
+    );
+  });
 });

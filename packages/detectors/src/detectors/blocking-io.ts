@@ -120,8 +120,13 @@ import {
   aggregateByPatterns,
   buildAttributedFinding,
   buildAttributionEvidence,
+  exceedsAnyHotspotThreshold,
+  exceedsCategoryThreshold,
   findStallCorrelation,
+  isBuiltinRuntimeHotspot,
+  maxHotspotPct,
   resolveAttribution,
+  severityForPct,
 } from './shared.js';
 
 export const blockingIoDetector: KindScopedDetector<'cpu'> = {
@@ -134,17 +139,16 @@ export const blockingIoDetector: KindScopedDetector<'cpu'> = {
     const { categoryTotalPct } = aggregateByPatterns(context.fullHotspots, BLOCKING_IO_PATTERNS, {
       normalize: stripOptPrefix,
     });
-    const familyExceeded = categoryTotalPct >= thresholds.categoryTotalPct;
+    const familyExceeded = exceedsCategoryThreshold(categoryTotalPct, thresholds.categoryTotalPct);
     const findings: Finding[] = [];
     for (const hotspot of context.fullHotspots) {
-      if (hotspot.category !== 'node:builtin' && hotspot.category !== 'native') continue;
+      if (!isBuiltinRuntimeHotspot(hotspot)) continue;
       const normalizedFunctionName = stripOptPrefix(hotspot.function);
       const patternMatch = BLOCKING_IO_PATTERNS.find((pattern) =>
         pattern.re.test(normalizedFunctionName),
       );
       if (!patternMatch) continue;
-      const perFrameHit =
-        hotspot.selfPct >= thresholds.minSelfPct || hotspot.totalPct >= thresholds.minTotalPct;
+      const perFrameHit = exceedsAnyHotspotThreshold(hotspot, thresholds);
       if (!perFrameHit && !familyExceeded) continue;
       findings.push(buildFinding(hotspot, patternMatch.api, categoryTotalPct, report, context));
     }
@@ -173,14 +177,11 @@ function buildFinding(
     buildAttributedFinding({
       id: `blocking-io:${api}`,
       category: 'blocking-io',
-      severity:
-        Math.max(hotspot.selfPct, hotspot.totalPct) > thresholds.criticalPct
-          ? 'critical'
-          : 'warning',
+      severity: severityForPct(maxHotspotPct(hotspot), thresholds.criticalPct),
       title: `Blocking I/O call on hot path (${api})`,
       hotspot,
       caller,
-      selfPct: Math.max(hotspot.selfPct, hotspot.totalPct),
+      selfPct: maxHotspotPct(hotspot),
       extra: evidenceExtra,
       measurements: {
         observed: {

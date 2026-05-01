@@ -59,8 +59,11 @@ import {
   buildAttributedFinding,
   buildAttributionEvidence,
   type CpuHotspotContext,
+  exceedsCategoryThreshold,
   findStallCorrelation,
+  isBuiltinRuntimeHotspot,
   resolveAttribution,
+  severityForPct,
 } from './shared.js';
 
 export const syncCryptoDetector: KindScopedDetector<'cpu'> = {
@@ -73,10 +76,10 @@ export const syncCryptoDetector: KindScopedDetector<'cpu'> = {
     const { categoryTotalPct } = aggregateByPatterns(context.fullHotspots, SYNC_CRYPTO_PATTERNS, {
       normalize: stripOptPrefix,
     });
-    const familyExceeded = categoryTotalPct >= thresholds.categoryTotalPct;
+    const familyExceeded = exceedsCategoryThreshold(categoryTotalPct, thresholds.categoryTotalPct);
     const findings: Finding[] = [];
     for (const hotspot of context.fullHotspots) {
-      if (hotspot.category !== 'node:builtin' && hotspot.category !== 'native') continue;
+      if (!isBuiltinRuntimeHotspot(hotspot)) continue;
       const normalizedFunctionName = stripOptPrefix(hotspot.function);
       if (
         !SYNC_CRYPTO_FNS.some(
@@ -113,7 +116,7 @@ function buildFinding(
     buildAttributedFinding({
       id: 'sync-crypto-on-hot-path',
       category: 'sync-crypto',
-      severity: hotspot.totalPct > thresholds.criticalPct ? 'critical' : 'warning',
+      severity: severityForPct(hotspot.totalPct, thresholds.criticalPct),
       title: `Synchronous crypto on hot path (${hotspot.function})`,
       hotspot,
       caller,
