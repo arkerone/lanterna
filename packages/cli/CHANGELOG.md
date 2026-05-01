@@ -1,5 +1,14 @@
 # @lanterna-profiler/cli
 
+## 1.6.1
+
+### Patch Changes
+
+- b727864: Improve maintainability by sharing CLI/config option normalization, deriving help from option descriptors, splitting capture coordination responsibilities, and tightening public surface/schema tests.
+- Updated dependencies [b727864]
+  - @lanterna-profiler/core@1.6.1
+  - @lanterna-profiler/detectors@1.4.2
+
 ## 1.6.0
 
 ### Minor Changes
