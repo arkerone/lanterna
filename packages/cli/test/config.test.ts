@@ -41,6 +41,11 @@ describe('loadLanternaConfig', () => {
           waitTimeout: '10s',
           captureDelay: '250ms',
           workload: 'npx -y autocannon http://127.0.0.1:3000',
+          asyncMaxEvents: 100,
+          asyncStackDepth: 16,
+          asyncIncludeMicrotasks: true,
+          asyncConcurrencyInterval: '50ms',
+          asyncInstrumentation: 'full',
         }),
       );
       const config = await loadLanternaConfig(dir);
@@ -60,6 +65,11 @@ describe('loadLanternaConfig', () => {
         waitTimeoutMs: 10_000,
         captureDelayMs: 250,
         workload: 'npx -y autocannon http://127.0.0.1:3000',
+        asyncMaxRecords: 100,
+        asyncStackDepth: 16,
+        asyncIncludeMicrotasks: true,
+        asyncConcurrencyIntervalMs: 50,
+        asyncInstrumentation: 'full',
       });
     });
   });

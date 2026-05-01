@@ -90,6 +90,10 @@ lanterna report report.json --format json --pretty
 | `--include-memory-samples` | Include raw `process.memoryUsage()` samples in JSON output (memory kind only). |
 | `--heap-snapshot-analysis` | Capture start/end V8 heap snapshots and include retained-growth synthesis in `profiles.memory.heapSnapshotAnalysis` (memory kind only, opt-in and heavy). |
 | `--heap-snapshot-dir <dir>` | Directory for the `.heapsnapshot` files written by `--heap-snapshot-analysis` (memory kind only, default `.lanterna-heapsnapshots`). |
+| `--async-max-events <n>` | Cap on retained async resource records (async kind only, default `50000`). |
+| `--async-stack-depth <n>` | V8 async call-stack depth (async kind only, default `32`, max `64`). |
+| `--async-include-microtasks` | Include TickObject / Microtask resources in the async capture (very noisy, async kind only). |
+| `--async-concurrency-interval <ms>` | Concurrency timeline cadence in ms (async kind only, default `100`). |
 | `--async-instrumentation <off\|safe\|full>` | Extra async instrumentation for `--kind async` (experimental; `full` rewrites later-loaded awaits and is higher risk). |
 | `--pid [pid]` | Attach by PID, or open the interactive picker if no value. |
 | `--inspect-url <url>` | Attach to an existing inspector WebSocket URL. |
@@ -157,6 +161,11 @@ You can also list detectors in a `.lanterna.json` (or `.lanterna.config.json`) f
   "waitTimeout": "30s",
   "captureDelay": "250ms",
   "workload": "npx -y autocannon http://127.0.0.1:3000",
+  "asyncMaxEvents": 50000,
+  "asyncStackDepth": 32,
+  "asyncIncludeMicrotasks": false,
+  "asyncConcurrencyInterval": "100ms",
+  "asyncInstrumentation": "safe",
   "detectors": [
     "@acme/lanterna-detectors-prisma",
     "./scripts/lanterna-plugin.mjs"
