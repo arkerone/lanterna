@@ -32,6 +32,7 @@ $LANTERNA run --kind memory --duration <duration> --output /tmp/lanterna-report.
 $LANTERNA run --kind memory --heap-snapshot-analysis --heap-snapshot-dir /tmp/lanterna-heaps --duration <duration> --output /tmp/lanterna-report.json -- node server.js
 $LANTERNA run --kind cpu --kind memory --duration <duration> --output /tmp/lanterna-report.json -- node server.js
 $LANTERNA run --kind async --duration <duration> --output /tmp/lanterna-report.json -- node server.js
+$LANTERNA run --kind async --async-instrumentation full --duration <duration> --output /tmp/lanterna-report.json -- node server.js
 $LANTERNA run --duration <duration> --wait-for-url <health-url> --workload "npx -y autocannon <base-url>" --output /tmp/lanterna-report.json -- node server.js
 $LANTERNA report /tmp/lanterna-report.json --format text
 $LANTERNA report /tmp/lanterna-report.json --format markdown --output /tmp/lanterna-report.md
@@ -46,6 +47,7 @@ Use `--wait-for-url` for HTTP servers so Lanterna does not profile only startup.
 - `--kind cpu` (default) — V8 sampling profiler, CPU detectors.
 - `--kind memory` — V8 sampling heap profiler + `process.memoryUsage()` series, memory detectors.
 - `--kind async` — experimental async-resource profiling. Use only for async chains, long awaits, orphan resources, or concurrency questions.
+- `--async-instrumentation off|safe|full` with `--kind async` — default is `safe`; use `full` only when safe mode cannot identify await sites, because it rewrites later-loaded code and remains experimental.
 - `--heap-snapshot-analysis` with `--kind memory` — heavy start/end heap snapshot comparison for retention/leak work.
 - Combine `cpu` and `memory` when the user cares about both latency and allocation cost, or when `alloc-in-hot-path` correlation matters.
 
