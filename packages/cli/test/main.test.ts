@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ATTACH_HELP, GLOBAL_HELP, main, RUN_HELP, VERSION } from '../src/main.js';
 import {
+  ASYNC_OPTIONS,
   ATTACH_CAPTURE_OPTIONS,
   COMMON_CAPTURE_OPTIONS,
   MEMORY_OPTIONS,
@@ -89,6 +90,7 @@ describe('main help routing', () => {
       ...COMMON_CAPTURE_OPTIONS,
       ...RUN_CAPTURE_OPTIONS,
       ...MEMORY_OPTIONS,
+      ...ASYNC_OPTIONS,
       ...OUTPUT_OPTIONS,
       ...PLUGIN_OPTIONS,
     ];
@@ -96,6 +98,7 @@ describe('main help routing', () => {
       ...ATTACH_CAPTURE_OPTIONS,
       ...COMMON_CAPTURE_OPTIONS,
       ...MEMORY_OPTIONS,
+      ...ASYNC_OPTIONS,
       ...OUTPUT_OPTIONS,
       ...PLUGIN_OPTIONS,
     ];
@@ -104,6 +107,7 @@ describe('main help routing', () => {
       ...RUN_CAPTURE_OPTIONS,
       ...ATTACH_CAPTURE_OPTIONS,
       ...MEMORY_OPTIONS,
+      ...ASYNC_OPTIONS,
       ...OUTPUT_OPTIONS,
       ...PLUGIN_OPTIONS,
     ];
@@ -111,5 +115,12 @@ describe('main help routing', () => {
     for (const option of runOptions) expect(RUN_HELP).toContain(option.flag);
     for (const option of attachOptions) expect(ATTACH_HELP).toContain(option.flag);
     for (const option of globalOptions) expect(GLOBAL_HELP).toContain(option.flag);
+  });
+
+  it('documents async as experimental in global, run, and attach help', () => {
+    for (const help of [GLOBAL_HELP, RUN_HELP, ATTACH_HELP]) {
+      expect(help).toContain('async');
+      expect(help).toContain('experimental');
+    }
   });
 });

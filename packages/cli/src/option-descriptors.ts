@@ -11,7 +11,7 @@ export const COMMON_CAPTURE_OPTIONS = [
   },
   {
     flag: '--kind <id>',
-    description: 'Profile kind to capture. Repeatable or comma-separated',
+    description: 'Profile kind to capture. Repeatable or comma-separated; async is experimental',
     hint: 'default cpu, built-in: cpu, memory, async',
   },
   {
@@ -89,7 +89,7 @@ export const ASYNC_OPTIONS = [
   {
     flag: '--async-max-events <n>',
     description: 'Cap on retained async resource records',
-    hint: 'async kind, default 50000',
+    hint: 'async kind, experimental, default 50000',
   },
   {
     flag: '--async-stack-depth <n>',

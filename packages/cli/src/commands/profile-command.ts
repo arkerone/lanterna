@@ -168,6 +168,9 @@ function formatQualityRecommendations(recommendations: string[]): string {
 }
 
 function buildAsyncKind(command: ExecuteProfileCommandOptions): ProfileKind {
+  process.stderr.write(
+    'lanterna: --kind async is experimental and opt-in. Attach mode remains partial because resources and already-loaded code from before hook installation cannot be fully observed.\n',
+  );
   if (command.options.asyncInstrumentation === 'full') {
     process.stderr.write(
       'lanterna: --async-instrumentation=full is experimental and adds AST-based `await` source instrumentation. Attach mode remains partial because already-loaded code cannot be rewritten. Prefer `safe` for lowest-risk captures.\n',
