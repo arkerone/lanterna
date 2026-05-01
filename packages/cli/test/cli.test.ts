@@ -1,4 +1,7 @@
 import {
+  DEFAULT_ASYNC_CONCURRENCY_INTERVAL_MS,
+  DEFAULT_ASYNC_MAX_RECORDS,
+  DEFAULT_ASYNC_STACK_DEPTH,
   DEFAULT_MEMORY_SAMPLING_INTERVAL_BYTES,
   DEFAULT_MEMORY_USAGE_INTERVAL_MS,
 } from '@lanterna-profiler/core';
@@ -10,6 +13,11 @@ const MEMORY_DEFAULTS = {
   memoryUsageIntervalMs: DEFAULT_MEMORY_USAGE_INTERVAL_MS,
   includeMemoryUsageSamples: false,
   heapSnapshotAnalysis: { enabled: false },
+  asyncMaxRecords: DEFAULT_ASYNC_MAX_RECORDS,
+  asyncStackDepth: DEFAULT_ASYNC_STACK_DEPTH,
+  asyncIncludeMicrotasks: false,
+  asyncConcurrencyIntervalMs: DEFAULT_ASYNC_CONCURRENCY_INTERVAL_MS,
+  asyncInstrumentation: 'safe',
 };
 
 afterEach(() => {
@@ -169,6 +177,28 @@ describe('parseRunArgs', () => {
         '--include-memory-samples',
       ]).includeMemoryUsageSamples,
     ).toBe(true);
+  });
+
+  it('parses async instrumentation mode for async captures', () => {
+    expect(
+      parseRunArgs(['--kind', 'async', '--async-instrumentation', 'full', '--', 'node', 'app.js'])
+        .asyncInstrumentation,
+    ).toBe('full');
+
+    expect(() => parseRunArgs(['--async-instrumentation', 'safe', '--', 'node', 'app.js'])).toThrow(
+      '--async-* options require --kind async',
+    );
+    expect(() =>
+      parseRunArgs([
+        '--kind',
+        'async',
+        '--async-instrumentation',
+        'aggressive',
+        '--',
+        'node',
+        'app.js',
+      ]),
+    ).toThrow(/invalid --async-instrumentation/);
   });
 
   it('parses heap snapshot analysis options for memory captures', () => {

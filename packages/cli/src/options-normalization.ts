@@ -23,6 +23,11 @@ export const PROVIDED_FLAG_ALIASES: Readonly<Record<string, string>> = {
   format: 'format',
   pretty: 'pretty',
   workload: 'workload',
+  'async-max-events': 'asyncMaxRecords',
+  'async-stack-depth': 'asyncStackDepth',
+  'async-include-microtasks': 'asyncIncludeMicrotasks',
+  'async-concurrency-interval': 'asyncConcurrencyIntervalMs',
+  'async-instrumentation': 'asyncInstrumentation',
 };
 
 export function parseDurationMs(value: string | number, fieldName = 'duration'): number {

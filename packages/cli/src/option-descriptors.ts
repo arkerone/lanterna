@@ -12,7 +12,7 @@ export const COMMON_CAPTURE_OPTIONS = [
   {
     flag: '--kind <id>',
     description: 'Profile kind to capture. Repeatable or comma-separated',
-    hint: 'default cpu, built-in: cpu, memory',
+    hint: 'default cpu, built-in: cpu, memory, async',
   },
   {
     flag: '--sample-interval <us>',
@@ -85,6 +85,34 @@ export const MEMORY_OPTIONS = [
   },
 ] as const satisfies readonly CliOptionDescriptor[];
 
+export const ASYNC_OPTIONS = [
+  {
+    flag: '--async-max-events <n>',
+    description: 'Cap on retained async resource records',
+    hint: 'async kind, default 50000',
+  },
+  {
+    flag: '--async-stack-depth <n>',
+    description: 'V8 async call-stack depth (max 64)',
+    hint: 'async kind, default 32',
+  },
+  {
+    flag: '--async-include-microtasks',
+    description: 'Include TickObject / Microtask resources (very noisy)',
+    hint: 'async kind',
+  },
+  {
+    flag: '--async-concurrency-interval <ms>',
+    description: 'Cadence for the inflight/active concurrency series',
+    hint: 'async kind, default 100',
+  },
+  {
+    flag: '--async-instrumentation <mode>',
+    description: 'Extra async instrumentation mode',
+    hint: 'async kind, off|safe|full, default safe',
+  },
+] as const satisfies readonly CliOptionDescriptor[];
+
 export const OUTPUT_OPTIONS = [
   {
     flag: '--output, -o <path>',
@@ -131,6 +159,11 @@ export const OPTION_FLAGS = {
   includeMemorySamples: MEMORY_OPTIONS[2].flag,
   heapSnapshotAnalysis: MEMORY_OPTIONS[3].flag,
   heapSnapshotDir: MEMORY_OPTIONS[4].flag,
+  asyncMaxEvents: ASYNC_OPTIONS[0].flag,
+  asyncStackDepth: ASYNC_OPTIONS[1].flag,
+  asyncIncludeMicrotasks: ASYNC_OPTIONS[2].flag,
+  asyncConcurrencyInterval: ASYNC_OPTIONS[3].flag,
+  asyncInstrumentation: ASYNC_OPTIONS[4].flag,
   output: OUTPUT_OPTIONS[0].flag,
   format: OUTPUT_OPTIONS[1].flag,
   pretty: OUTPUT_OPTIONS[2].flag,
