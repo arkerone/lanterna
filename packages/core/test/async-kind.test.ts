@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createAnalysisPipeline } from '../src/analysis/core/pipeline.js';
 import type { CaptureBundle } from '../src/capture/core/types.js';
-import { createAsyncProfileKind } from '../src/kinds/async/index.js';
+import type { CdpClient } from '../src/inspector/client.js';
+import { createAsyncProbe, createAsyncProfileKind } from '../src/kinds/async/index.js';
 import type { AsyncKindData, AsyncOperationRecord } from '../src/kinds/async/types.js';
 import { buildLanternaReport, serializeReport } from '../src/report/index.js';
 import { buildReportSchema } from '../src/report/schema.js';
@@ -527,5 +528,264 @@ describe('async kind round-trip', () => {
     const result = pipeline.run(bundle, { command: ['node', 'app.js'], mode: 'attach' });
     expect(result.profiles.async?.summary.available).toBe(false);
     expect(result.profiles.async?.summary.collectedVia).toBe('cdp-only');
+  });
+});
+
+describe('async installer lifecycle', () => {
+  function instrument(): {
+    globalValue: { read: () => unknown; disable?: () => void };
+    hookDisableCalls: number;
+    intervalsCleared: number[];
+    intervalsCreated: number[];
+  } {
+    let nextTimerId = 1;
+    const intervalsCreated: number[] = [];
+    const intervalsCleared: number[] = [];
+    let hookDisableCalls = 0;
+    let globalValue: { read: () => unknown; disable?: () => void } | undefined;
+
+    vi.stubGlobal('setInterval', () => {
+      const id = nextTimerId++;
+      intervalsCreated.push(id);
+      return { unref() {}, [Symbol.toPrimitive]: () => id, valueOf: () => id };
+    });
+    vi.stubGlobal('clearInterval', (timer: { valueOf?: () => number } | number) => {
+      const id =
+        typeof timer === 'number'
+          ? timer
+          : typeof timer?.valueOf === 'function'
+            ? timer.valueOf()
+            : -1;
+      intervalsCleared.push(id);
+    });
+
+    const api = {
+      performance: { now: () => 0 },
+      registerGlobal: (_name: string, value: unknown) => {
+        globalValue = value as typeof globalValue;
+      },
+      addResetHook: () => {},
+      getBuiltin: (name: string) =>
+        name === 'async_hooks'
+          ? {
+              createHook: () => ({
+                enable() {},
+                disable() {
+                  hookDisableCalls += 1;
+                },
+              }),
+            }
+          : null,
+    };
+
+    const installer = createAsyncOperationsInstaller({ instrumentationMode: 'off' });
+    new Function('__lanterna', installer.source)(api);
+    if (!globalValue) throw new Error('installer did not register global');
+
+    return {
+      globalValue,
+      get hookDisableCalls() {
+        return hookDisableCalls;
+      },
+      intervalsCleared,
+      intervalsCreated,
+    };
+  }
+
+  it('exposes a disable() that clears the concurrency sampler and stops async_hooks', () => {
+    const harness = instrument();
+    expect(harness.intervalsCreated.length).toBe(1);
+
+    expect(typeof harness.globalValue.disable).toBe('function');
+    harness.globalValue.disable?.();
+
+    expect(harness.hookDisableCalls).toBe(1);
+    expect(harness.intervalsCleared).toEqual(harness.intervalsCreated);
+  });
+
+  it('exposes a no-op disable() when async_hooks is unavailable', () => {
+    let globalValue: { read: () => unknown; disable?: () => void } | undefined;
+    vi.stubGlobal('setInterval', () => ({ unref() {} }));
+    vi.stubGlobal('clearInterval', () => {});
+    const api = {
+      performance: { now: () => 0 },
+      registerGlobal: (_name: string, value: unknown) => {
+        globalValue = value as typeof globalValue;
+      },
+      addResetHook: () => {},
+      getBuiltin: () => null,
+    };
+    const installer = createAsyncOperationsInstaller({});
+    new Function('__lanterna', installer.source)(api);
+
+    expect(globalValue).toBeDefined();
+    expect(typeof globalValue?.disable).toBe('function');
+    expect(() => globalValue?.disable?.()).not.toThrow();
+  });
+});
+
+describe('async probe lifecycle', () => {
+  it('disables the in-target installer over CDP at stop()', async () => {
+    const evaluated: string[] = [];
+    const sent: string[] = [];
+    const cdp: CdpClient = {
+      closed: false,
+      send: async (method: string) => {
+        sent.push(method);
+        return {};
+      },
+      evaluate: async (expression: string) => {
+        evaluated.push(expression);
+        if (expression.includes('.read?.()')) {
+          return {
+            available: true,
+            maxRecords: 10,
+            records: [],
+            concurrency: [],
+            integrity: {
+              recordsDropped: 0,
+              initCount: 0,
+              destroyCount: 0,
+              resolveCount: 0,
+              orphanCount: 0,
+            },
+            filteredCounts: {},
+          };
+        }
+        return null;
+      },
+      on: () => () => {},
+      onClose: () => () => {},
+      close: async () => {},
+    };
+
+    const probe = createAsyncProbe({ asyncStackDepth: 32 });
+    await probe.start(cdp);
+    await probe.stop(cdp);
+
+    expect(evaluated.some((e) => e.includes('.read?.()'))).toBe(true);
+    expect(evaluated.some((e) => e.includes('.disable?.()'))).toBe(true);
+    expect(sent).toContain('Debugger.disable');
+  });
+
+  it('does not call disable over CDP when the client is already closed', async () => {
+    const evaluated: string[] = [];
+    const cdp: CdpClient = {
+      closed: true,
+      send: async () => ({}),
+      evaluate: async (expression: string) => {
+        evaluated.push(expression);
+        return null;
+      },
+      on: () => () => {},
+      onClose: () => () => {},
+      close: async () => {},
+    };
+
+    const probe = createAsyncProbe({ asyncStackDepth: 32 });
+    await probe.stop(cdp);
+
+    expect(evaluated).toEqual([]);
+  });
+});
+
+describe('async installer eviction', () => {
+  it('evicts the oldest completed record when records exceed maxRecords', () => {
+    const now = 0;
+    let globalValue: { read: () => { records: Array<{ asyncId: number }> } } | undefined;
+    let callbacks: {
+      init?: (asyncId: number, type: string, triggerAsyncId: number) => void;
+      promiseResolve?: (asyncId: number) => void;
+    } = {};
+
+    vi.stubGlobal('setInterval', () => ({ unref() {} }));
+    vi.stubGlobal('clearInterval', () => {});
+    const api = {
+      performance: { now: () => now },
+      registerGlobal: (_name: string, value: unknown) => {
+        globalValue = value as typeof globalValue;
+      },
+      addResetHook: () => {},
+      getBuiltin: (name: string) =>
+        name === 'async_hooks'
+          ? {
+              createHook: (cbs: typeof callbacks) => {
+                callbacks = cbs;
+                return { enable() {}, disable() {} };
+              },
+            }
+          : null,
+    };
+
+    const installer = createAsyncOperationsInstaller({
+      maxRecords: 3,
+      instrumentationMode: 'off',
+    });
+    new Function('__lanterna', installer.source)(api);
+    if (!globalValue || !callbacks.init || !callbacks.promiseResolve) {
+      throw new Error('installer did not wire async_hooks callbacks');
+    }
+
+    // Fill the cap with 3 records, then complete the first two.
+    callbacks.init(1, 'PROMISE', 0);
+    callbacks.init(2, 'PROMISE', 0);
+    callbacks.init(3, 'PROMISE', 0);
+    callbacks.promiseResolve(1);
+    callbacks.promiseResolve(2);
+
+    // Now add 2 more inits — each should evict an older completed record
+    // (asyncIds 1 and 2 in insertion order), not drop the new ones.
+    callbacks.init(4, 'PROMISE', 0);
+    callbacks.init(5, 'PROMISE', 0);
+
+    const ids = globalValue
+      .read()
+      .records.map((r) => r.asyncId)
+      .sort((a, b) => a - b);
+    expect(ids).toEqual([3, 4, 5]);
+  });
+
+  it('drops new records when the cap is hit and no completed record can be evicted', () => {
+    let globalValue:
+      | { read: () => { records: unknown[]; integrity: { recordsDropped: number } } }
+      | undefined;
+    let callbacks: { init?: (asyncId: number, type: string, triggerAsyncId: number) => void } = {};
+
+    vi.stubGlobal('setInterval', () => ({ unref() {} }));
+    vi.stubGlobal('clearInterval', () => {});
+    const api = {
+      performance: { now: () => 0 },
+      registerGlobal: (_name: string, value: unknown) => {
+        globalValue = value as typeof globalValue;
+      },
+      addResetHook: () => {},
+      getBuiltin: (name: string) =>
+        name === 'async_hooks'
+          ? {
+              createHook: (cbs: typeof callbacks) => {
+                callbacks = cbs;
+                return { enable() {}, disable() {} };
+              },
+            }
+          : null,
+    };
+
+    const installer = createAsyncOperationsInstaller({
+      maxRecords: 2,
+      instrumentationMode: 'off',
+    });
+    new Function('__lanterna', installer.source)(api);
+    if (!globalValue || !callbacks.init) throw new Error('install failed');
+
+    // Fill cap; do not resolve any so nothing is evictable.
+    callbacks.init(1, 'PROMISE', 0);
+    callbacks.init(2, 'PROMISE', 0);
+    // Next two should be dropped.
+    callbacks.init(3, 'PROMISE', 0);
+    callbacks.init(4, 'PROMISE', 0);
+
+    const read = globalValue.read();
+    expect(read.records.length).toBe(2);
+    expect(read.integrity.recordsDropped).toBe(2);
   });
 });
