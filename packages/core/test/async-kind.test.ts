@@ -1072,6 +1072,60 @@ describe('async installer instrumentation modes', () => {
     expect(compiled).toContain('__LANTERNA_ASYNC_AWAIT__');
     expect(globalValue?.read().transformStats?.transformed).toBe(1);
   });
+
+  it('full transforms CommonJS modules through Module._compile when extensions are bypassed', () => {
+    let globalValue:
+      | {
+          read: () => AsyncKindData & {
+            transformStats?: {
+              transformed: number;
+              skipped: number;
+              failed: number;
+              partial: boolean;
+              awaitCalls: number;
+            };
+          };
+        }
+      | undefined;
+    let compiled = '';
+    const modulePrototype = {
+      _compile(source: string) {
+        compiled = source;
+      },
+    };
+    const api = {
+      performance: { now: () => 0 },
+      registerGlobal: (name: string, value: unknown) => {
+        if (name === '__LANTERNA_ASYNC__') {
+          globalValue = value as typeof globalValue;
+        } else {
+          vi.stubGlobal(name, value);
+        }
+      },
+      addResetHook: () => {},
+      getBuiltin: (name: string) => {
+        if (name === 'async_hooks') {
+          return {
+            createHook: () => ({ enable() {}, disable() {} }),
+            executionAsyncId: () => 0,
+          };
+        }
+        if (name === 'module') return { prototype: modulePrototype };
+        return null;
+      },
+    };
+
+    const installer = createAsyncOperationsInstaller({ instrumentationMode: 'full' });
+    new Function('require', '__lanterna', installer.source)(requireForTest, api);
+
+    modulePrototype._compile(
+      'exports.run = async function run() { await work(); };',
+      '/app/worker.cjs',
+    );
+
+    expect(compiled).toContain('__LANTERNA_ASYNC_AWAIT__');
+    expect(globalValue?.read().transformStats?.transformed).toBe(1);
+  });
 });
 
 describe('async installer overhead knobs', () => {

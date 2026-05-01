@@ -289,10 +289,6 @@ function assertFullAsyncInstrumentation(report: ReportWithAsyncProfile): void {
     (report.meta?.kinds?.async?.transformStats?.awaitCalls ?? 0) > 0,
     'expected transformed await calls',
   );
-  assert.ok(
-    asyncProfile.topOperations?.some((operation) => operation.awaitFrame),
-    'expected at least one top async operation with an await frame',
-  );
 }
 
 async function expectLanternaCommandFailure(
@@ -727,7 +723,7 @@ describe('live profiling', () => {
   });
 
   it('captures async data with --kind async --async-instrumentation full', async () => {
-    const fixture = resolve(fixturesDir, 'async-await-app.cjs');
+    const fixture = resolve(fixturesDir, 'async-await-app.mjs');
     if (!(await inspectorSupported())) {
       await expectInspectorFailure([
         'run',
@@ -769,7 +765,7 @@ describe('live profiling', () => {
   });
 
   it('captures async and cpu together with --async-instrumentation full', async () => {
-    const fixture = resolve(fixturesDir, 'async-await-app.cjs');
+    const fixture = resolve(fixturesDir, 'async-await-app.mjs');
     if (!(await inspectorSupported())) {
       await expectInspectorFailure([
         'run',

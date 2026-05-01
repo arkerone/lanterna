@@ -81,6 +81,7 @@ register(${JSON.stringify(createAwaitTransformLoaderUrl())}, pathToFileURL("./")
 
 function createAwaitTransformLoaderUrl(): string {
   const loaderSource = `
+import { readFile } from "node:fs/promises";
 ${createAwaitTransformEsmRuntimeSource({
   oxcParserUrl: awaitTransformDependencyUrl('oxc-parser'),
   magicStringUrl: awaitTransformDependencyUrl('magic-string'),
@@ -95,8 +96,13 @@ function sourceTypeForUrl(url) {
 }
 export async function load(url, context, nextLoad) {
   const result = await nextLoad(url, context);
-  if (!shouldTransform(url) || result.source == null) return result;
-  const source = typeof result.source === 'string' ? result.source : Buffer.from(result.source).toString('utf8');
+  if (!shouldTransform(url)) return result;
+  let source = result.source;
+  if (source == null && result.format === 'commonjs') {
+    source = await readFile(new URL(url), 'utf8');
+  }
+  if (source == null) return result;
+  source = typeof source === 'string' ? source : Buffer.from(source).toString('utf8');
   const transformed = transformAwaitExpressions(source, { file: url, sourceType: sourceTypeForUrl(url) });
   if (transformed.code === source) return result;
   return { ...result, source: transformed.code };
@@ -608,13 +614,26 @@ function installAsyncOperations(
         _compile: (source: string, filename: string) => void;
       };
       const moduleBuiltin = api.getBuiltin<{
+        Module?: {
+          prototype?: {
+            _compile?: (this: CjsModuleForTransform, source: string, filename: string) => void;
+          };
+        };
+        prototype?: {
+          _compile?: (this: CjsModuleForTransform, source: string, filename: string) => void;
+        };
         _extensions?: Record<string, (mod: CjsModuleForTransform, filename: string) => void>;
       }>('module');
       const fsBuiltin = api.getBuiltin<{
         readFileSync?: (path: string, encoding: string) => string;
       }>('fs');
+      const modulePrototype = moduleBuiltin?.Module?.prototype ?? moduleBuiltin?.prototype;
       const extensions = moduleBuiltin?._extensions;
-      if (!extensions || typeof fsBuiltin?.readFileSync !== 'function') {
+      if (!modulePrototype && !extensions) {
+        transformStats.skipped += 1;
+        return;
+      }
+      if (typeof require !== 'function') {
         transformStats.skipped += 1;
         return;
       }
@@ -635,20 +654,11 @@ function installAsyncOperations(
         };
       };
       const extensionNames = ['.js', '.mjs', '.cjs', '.ts'];
-      const originals = new Map<string, (mod: CjsModuleForTransform, filename: string) => void>();
-      for (const extensionName of extensionNames) {
-        const original = extensions[extensionName];
-        if (typeof original === 'function') originals.set(extensionName, original);
-      }
-      const originalJs = originals.get('.js');
-      if (!originalJs) {
-        transformStats.skipped += 1;
-        return;
-      }
       const shouldTransform = (filename: string) => {
         if (!filename) return false;
         if (filename.includes('/node_modules/')) return false;
         if (filename.includes('lanterna-preload-')) return false;
+        if (filename.startsWith('node:')) return false;
         return (
           filename.endsWith('.js') ||
           filename.endsWith('.mjs') ||
@@ -669,6 +679,57 @@ function installAsyncOperations(
         transformStats.failed += stats.failed;
         transformStats.partial = transformStats.partial || stats.partial;
       };
+      const transformCompileSource = (source: string, filename: string) => {
+        if (!shouldTransform(filename)) {
+          transformStats.skipped += 1;
+          return source;
+        }
+        if (source.includes('__LANTERNA_ASYNC_AWAIT__')) {
+          transformStats.skipped += 1;
+          return source;
+        }
+        try {
+          const transformed = transformAwaitExpressions(source, {
+            file: filename,
+            sourceType: sourceTypeForFilename(filename),
+          });
+          addTransformStats(transformed.stats);
+          return transformed.code;
+        } catch {
+          transformStats.failed += 1;
+          transformStats.partial = true;
+          return source;
+        }
+      };
+      if (modulePrototype && typeof modulePrototype._compile === 'function') {
+        const originalCompile = modulePrototype._compile;
+        modulePrototype._compile = function lanternaAwaitCompile(
+          this: CjsModuleForTransform,
+          source: string,
+          filename: string,
+        ): void {
+          originalCompile.call(this, transformCompileSource(source, filename), filename);
+        };
+        restoredApis.push(() => {
+          modulePrototype._compile = originalCompile;
+        });
+        return;
+      }
+
+      if (!extensions || typeof fsBuiltin?.readFileSync !== 'function') {
+        transformStats.skipped += 1;
+        return;
+      }
+      const originals = new Map<string, (mod: CjsModuleForTransform, filename: string) => void>();
+      for (const extensionName of extensionNames) {
+        const original = extensions[extensionName];
+        if (typeof original === 'function') originals.set(extensionName, original);
+      }
+      const originalJs = originals.get('.js');
+      if (!originalJs) {
+        transformStats.skipped += 1;
+        return;
+      }
       const patchedExtension = function lanternaAwaitTransform(
         mod: CjsModuleForTransform,
         filename: string,
@@ -686,12 +747,7 @@ function installAsyncOperations(
             originalExtension(mod, filename);
             return;
           }
-          const transformed = transformAwaitExpressions(source, {
-            file: filename,
-            sourceType: sourceTypeForFilename(filename),
-          });
-          addTransformStats(transformed.stats);
-          mod._compile(transformed.code, filename);
+          mod._compile(transformCompileSource(source, filename), filename);
           return;
         } catch {
           transformStats.failed += 1;
