@@ -108,7 +108,7 @@ export const ASYNC_OPTIONS = [
   },
   {
     flag: '--async-instrumentation <mode>',
-    description: 'Extra async instrumentation mode',
+    description: 'Extra async instrumentation mode (full is experimental)',
     hint: 'async kind, off|safe|full, default safe',
   },
 ] as const satisfies readonly CliOptionDescriptor[];

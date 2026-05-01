@@ -88,6 +88,8 @@ export function createAsyncProfileKind(options: AsyncKindOptions = {}): ProfileK
       instrumentationMode: data.instrumentationMode ?? instrumentationMode,
       attachPartialCapture: Boolean(data.attachPartialCapture),
       cdpAsyncStackCount: data.cdpAsyncContexts?.length ?? 0,
+      cdpAsyncStackSupport: data.cdpAsyncStackSupport ?? 'unknown',
+      cdpAsyncStackDepthRequested: data.cdpAsyncStackDepthRequested ?? asyncStackDepth,
     }),
   });
 }

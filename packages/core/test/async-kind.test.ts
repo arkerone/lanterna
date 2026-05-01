@@ -689,6 +689,92 @@ describe('async probe lifecycle', () => {
   });
 });
 
+describe('async installer safe-mode patches', () => {
+  it('restores Promise.then, setTimeout, and fetch after disable', () => {
+    const originalThen = Promise.prototype.then;
+    const originalCatch = Promise.prototype.catch;
+    const originalFinally = Promise.prototype.finally;
+    const originalSetTimeout = globalThis.setTimeout;
+    const originalFetch = globalThis.fetch;
+
+    let globalValue: { read: () => unknown; disable?: () => void } | undefined;
+    vi.stubGlobal('setInterval', () => ({ unref() {} }));
+    vi.stubGlobal('clearInterval', () => {});
+    const api = {
+      performance: { now: () => 0 },
+      registerGlobal: (_name: string, value: unknown) => {
+        globalValue = value as typeof globalValue;
+      },
+      addResetHook: () => {},
+      getBuiltin: (name: string) =>
+        name === 'async_hooks'
+          ? {
+              createHook: () => ({ enable() {}, disable() {} }),
+              executionAsyncId: () => 0,
+            }
+          : null,
+    };
+
+    const installer = createAsyncOperationsInstaller({ instrumentationMode: 'safe' });
+    new Function('__lanterna', installer.source)(api);
+
+    // Patches are in place.
+    expect(Promise.prototype.then).not.toBe(originalThen);
+    expect(globalThis.setTimeout).not.toBe(originalSetTimeout);
+
+    globalValue?.disable?.();
+
+    // Originals restored.
+    expect(Promise.prototype.then).toBe(originalThen);
+    expect(Promise.prototype.catch).toBe(originalCatch);
+    expect(Promise.prototype.finally).toBe(originalFinally);
+    expect(globalThis.setTimeout).toBe(originalSetTimeout);
+    if (typeof originalFetch === 'function') expect(globalThis.fetch).toBe(originalFetch);
+  });
+});
+
+describe('async installer overhead knobs', () => {
+  it('stackDepth=0 keeps record bookkeeping but skips stack capture', () => {
+    let globalValue:
+      | { read: () => { records: Array<{ initStack: unknown[] }> }; disable?: () => void }
+      | undefined;
+    let callbacks: { init?: (asyncId: number, type: string, triggerAsyncId: number) => void } = {};
+
+    vi.stubGlobal('setInterval', () => ({ unref() {} }));
+    vi.stubGlobal('clearInterval', () => {});
+    const api = {
+      performance: { now: () => 0 },
+      registerGlobal: (_name: string, value: unknown) => {
+        globalValue = value as typeof globalValue;
+      },
+      addResetHook: () => {},
+      getBuiltin: (name: string) =>
+        name === 'async_hooks'
+          ? {
+              createHook: (cbs: typeof callbacks) => {
+                callbacks = cbs;
+                return { enable() {}, disable() {} };
+              },
+            }
+          : null,
+    };
+
+    const installer = createAsyncOperationsInstaller({
+      stackDepth: 0,
+      instrumentationMode: 'off',
+    });
+    new Function('__lanterna', installer.source)(api);
+    if (!globalValue || !callbacks.init) throw new Error('install failed');
+
+    callbacks.init(1, 'PROMISE', 0);
+    callbacks.init(2, 'TCPWRAP', 0);
+
+    const records = globalValue.read().records;
+    expect(records.length).toBe(2);
+    for (const rec of records) expect(rec.initStack).toEqual([]);
+  });
+});
+
 describe('async installer eviction', () => {
   it('evicts the oldest completed record when records exceed maxRecords', () => {
     const now = 0;

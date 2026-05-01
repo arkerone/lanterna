@@ -129,6 +129,14 @@ export interface AsyncKindData {
   instrumentationMode?: AsyncInstrumentationMode;
   attachPartialCapture?: boolean;
   clockSyncUncertaintyMs?: number;
+  /**
+   * Outcome of `Debugger.setAsyncCallStackDepth` at start. `unsupported`
+   * means CDP rejected the call (older Node) — CPU samples will lack their
+   * async parent stacks even though `Debugger.enable` succeeded.
+   */
+  cdpAsyncStackSupport?: 'enabled' | 'unsupported' | 'unknown';
+  /** Async stack depth requested. 0 means async stacks were intentionally off. */
+  cdpAsyncStackDepthRequested?: number;
   cdpAsyncContexts?: AsyncCdpContext[];
   transformStats?: {
     transformed: number;

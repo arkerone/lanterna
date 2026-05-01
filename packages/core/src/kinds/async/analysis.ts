@@ -849,6 +849,11 @@ function buildCpuAttribution(args: BuildAttributionArgs): AsyncCpuAttribution {
 
   // Compute sample timestamps in ms relative to capture start. The CPU
   // profile timestamps are in microseconds; `startTime` anchors them.
+  // NOTE: the CPU sampler and the async-hooks installer use the same V8
+  // monotonic clock but with slightly different zero-points (Profiler.start
+  // vs. captureStartMs in the preload). The skew is typically tens of ms
+  // and is accepted as inherent imprecision; run-window granularity is ms
+  // and the attribution is statistical, not exact.
   const sampleIntervalMs = mean(deltas) / 1000 || 1;
   let cursorUs = 0;
   let windowCursor = 0;

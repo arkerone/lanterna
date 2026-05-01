@@ -176,7 +176,7 @@ ${formatNotes('Notes', [
   `Without ${chalk.cyan('--duration')}, Lanterna profiles until the child exits`,
   `${chalk.cyan('--kind')} works on ${chalk.cyan('run')} and ${chalk.cyan('attach')}; repeat it or use ${chalk.cyan('--kind cpu,memory')}`,
   `Use ${chalk.cyan('--workload "npx -y autocannon ..."')} to generate representative traffic while the capture is running`,
-  `Built-in profile kinds: ${chalk.cyan('cpu')} (default), ${chalk.cyan('memory')}, ${chalk.cyan('async')} (opt-in, ~5–15% overhead); unknown ids fail with ${chalk.gray('"unknown profile kind(s): <ids>. Available kinds: cpu, memory, async"')}`,
+  `Built-in profile kinds: ${chalk.cyan('cpu')} (default), ${chalk.cyan('memory')}, ${chalk.cyan('async')} (opt-in, non-trivial overhead on async-heavy workloads); unknown ids fail with ${chalk.gray('"unknown profile kind(s): <ids>. Available kinds: cpu, memory, async"')}`,
 ])}
 `;
 
@@ -218,7 +218,7 @@ ${formatNotes('Notes', [
   `${chalk.cyan('--pid')} with no value opens the interactive picker in a TTY`,
   `${chalk.cyan('--deep')} is not supported in attach mode`,
   `${chalk.cyan('--kind')} works on ${chalk.cyan('run')} and ${chalk.cyan('attach')}; repeat it or use ${chalk.cyan('--kind cpu,memory')}`,
-  `Built-in profile kinds: ${chalk.cyan('cpu')} (default), ${chalk.cyan('memory')}, ${chalk.cyan('async')} (opt-in, ~5–15% overhead); unknown ids fail with ${chalk.gray('"unknown profile kind(s): <ids>. Available kinds: cpu, memory, async"')}`,
+  `Built-in profile kinds: ${chalk.cyan('cpu')} (default), ${chalk.cyan('memory')}, ${chalk.cyan('async')} (opt-in, non-trivial overhead on async-heavy workloads); unknown ids fail with ${chalk.gray('"unknown profile kind(s): <ids>. Available kinds: cpu, memory, async"')}`,
 ])}
 `;
 

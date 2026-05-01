@@ -53,14 +53,20 @@ export function createAsyncOperationsInstaller(
 function createAwaitTransformLoaderUrl(): string {
   const loaderSource = `
 const SHOULD_SKIP_RE = /\\/node_modules\\/|lanterna-preload-/;
+// Lines containing template literals, comments, regex literals, or string
+// concatenation across statements cannot be safely rewritten by a regex pass.
+// Skipping them is intentionally conservative — we trade coverage for never
+// breaking user code. Producers can always fall back to instrumentation safe.
+const UNSAFE_LINE_RE = /[\\\`]|\\/\\/|\\/\\*|\\*\\//;
 function shouldTransform(url) {
   return url.startsWith('file:') && !SHOULD_SKIP_RE.test(url) && (url.endsWith('.js') || url.endsWith('.mjs') || url.endsWith('.ts'));
 }
 function transformSource(source, file) {
   return source
     .split('\\n')
-    .map((line, index) =>
-      line.replace(/\\bawait\\s+([^;\\n]+)/g, (match, expression, offset) => {
+    .map((line, index) => {
+      if (UNSAFE_LINE_RE.test(line)) return line;
+      return line.replace(/\\bawait\\s+([^;\\n]+)/g, (match, expression, offset) => {
         const frame = JSON.stringify({
           function: '<await>',
           file,
@@ -68,8 +74,8 @@ function transformSource(source, file) {
           column: offset + 1,
         });
         return 'await globalThis.__LANTERNA_ASYNC_AWAIT__((' + expression.trim() + '), ' + frame + ')';
-      }),
-    )
+      });
+    })
     .join('\\n');
 }
 export async function load(url, context, nextLoad) {
@@ -172,11 +178,14 @@ function installAsyncOperations(
     return;
   }
 
-  // Measure performance.now() tick resolution as a floor on the uncertainty
-  // when comparing async-hook timestamps with CPU-profile timestamps. Both
-  // clocks are platform-monotonic but we cannot align them precisely from
-  // inside the target process, so this is a lower bound — never less than
-  // the timer's own resolution.
+  // Measure performance.now() tick resolution. NOTE this is a lower bound
+  // on jitter between consecutive in-target observations — it does NOT
+  // capture the offset between the V8 sampling profiler's zero-point
+  // (Profiler.start) and the async installer's zero-point (captureStartMs
+  // below). Those two events fire at slightly different instants in the
+  // same V8 process; the skew is typically tens of ms. Cross-clock
+  // attribution in `kinds/async/analysis.ts` accepts that imprecision —
+  // run windows are ms-granularity by design.
   const measureClockResolutionMs = (): number => {
     let smallest = Number.POSITIVE_INFINITY;
     for (let i = 0; i < 200; i += 1) {
@@ -208,7 +217,13 @@ function installAsyncOperations(
   let activeCount = 0;
   let inflightCount = 0;
   const restoredApis: Array<() => void> = [];
-  const pendingAwaitStacks: RawFrame[][] = [];
+  // `await` transform pushes the call-site stack here, keyed by the
+  // triggerAsyncId observed at await time (the parent context creating the
+  // resulting promise). The promise's own `init` then finds its entry by
+  // triggerAsyncId, so an unrelated init firing in between cannot steal the
+  // stack (which the previous FIFO-only design allowed).
+  const pendingAwaitStacks: Array<{ stack: RawFrame[]; triggerId: number }> = [];
+  const PENDING_AWAIT_CAP = 256;
   const transformStats = {
     transformed: 0,
     skipped: 0,
@@ -317,8 +332,11 @@ function installAsyncOperations(
       });
       const rec = records.get(asyncId);
       if (kind === 'promise' && rec && pendingAwaitStacks.length > 0) {
-        const stack = pendingAwaitStacks.shift();
-        if (stack && stack.length > 0) rec.awaitStack = stack;
+        const idx = pendingAwaitStacks.findIndex((p) => p.triggerId === triggerAsyncId);
+        if (idx >= 0) {
+          const [entry] = pendingAwaitStacks.splice(idx, 1);
+          if (entry && entry.stack.length > 0) rec.awaitStack = entry.stack;
+        }
       }
       inflightCount += 1;
     },
@@ -538,7 +556,9 @@ function installAsyncOperations(
       const wrapAwait = (value: unknown, frame?: RawFrame) => {
         transformStats.awaitCalls += 1;
         const awaitStack = frame ? [frame] : captureStack();
-        pendingAwaitStacks.push(awaitStack);
+        const triggerId = executionAsyncId?.() ?? 0;
+        if (pendingAwaitStacks.length >= PENDING_AWAIT_CAP) pendingAwaitStacks.shift();
+        pendingAwaitStacks.push({ stack: awaitStack, triggerId });
         return Promise.resolve(value).then(
           (resolved) => {
             assignCurrent('awaitStack', awaitStack);
@@ -577,20 +597,26 @@ function installAsyncOperations(
         if (filename.includes('lanterna-preload-')) return false;
         return filename.endsWith('.js') || filename.endsWith('.cjs');
       };
+      // See createAwaitTransformLoaderUrl: same conservative line filter.
+      const UNSAFE_LINE_RE = /[`]|\/\/|\/\*|\*\//;
       const transformSource = (source: string, filename: string) =>
         source
           .split('\n')
-          .map((line, index) =>
-            line.replace(/\bawait\s+([^;\n]+)/g, (_match, expression: string, offset: number) => {
-              const frame = JSON.stringify({
-                function: '<await>',
-                file: filename,
-                line: index + 1,
-                column: offset + 1,
-              });
-              return `await globalThis.__LANTERNA_ASYNC_AWAIT__((${expression.trim()}), ${frame})`;
-            }),
-          )
+          .map((line, index) => {
+            if (UNSAFE_LINE_RE.test(line)) return line;
+            return line.replace(
+              /\bawait\s+([^;\n]+)/g,
+              (_match, expression: string, offset: number) => {
+                const frame = JSON.stringify({
+                  function: '<await>',
+                  file: filename,
+                  line: index + 1,
+                  column: offset + 1,
+                });
+                return `await globalThis.__LANTERNA_ASYNC_AWAIT__((${expression.trim()}), ${frame})`;
+              },
+            );
+          })
           .join('\n');
       const patchedExtension = function lanternaAwaitTransform(
         mod: { _compile: Function },

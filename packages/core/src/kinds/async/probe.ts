@@ -24,15 +24,21 @@ export interface AsyncProbeOptions {
 export function createAsyncProbe(options: AsyncProbeOptions): CaptureProbe<AsyncKindData> {
   const cdpAsyncContexts: AsyncCdpContext[] = [];
   const unsubscribers: Array<() => void> = [];
+  let asyncStackSupport: 'enabled' | 'unsupported' | 'unknown' = 'unknown';
   return {
     async start(cdp: CdpClient) {
       // Best-effort. Older Node builds may reject either call; the report still
       // makes sense without async stacks.
       try {
         await cdp.send('Debugger.enable');
-        await cdp.send('Debugger.setAsyncCallStackDepth', { maxDepth: options.asyncStackDepth });
+        if (options.asyncStackDepth > 0) {
+          await cdp.send('Debugger.setAsyncCallStackDepth', {
+            maxDepth: options.asyncStackDepth,
+          });
+          asyncStackSupport = 'enabled';
+        }
       } catch {
-        // ignore
+        asyncStackSupport = 'unsupported';
       }
       installCdpStackListeners(cdp, cdpAsyncContexts, unsubscribers);
     },
@@ -68,6 +74,8 @@ export function createAsyncProbe(options: AsyncProbeOptions): CaptureProbe<Async
           instrumentationMode: read?.instrumentationMode ?? 'safe',
           attachPartialCapture: true,
           clockSyncUncertaintyMs: read?.clockSyncUncertaintyMs ?? 0,
+          cdpAsyncStackSupport: asyncStackSupport,
+          cdpAsyncStackDepthRequested: options.asyncStackDepth,
           cdpAsyncContexts,
         };
       }
@@ -82,6 +90,8 @@ export function createAsyncProbe(options: AsyncProbeOptions): CaptureProbe<Async
         instrumentationMode: read.instrumentationMode ?? 'safe',
         attachPartialCapture: Boolean(read.attachPartialCapture),
         clockSyncUncertaintyMs: read.clockSyncUncertaintyMs ?? 0,
+        cdpAsyncStackSupport: asyncStackSupport,
+        cdpAsyncStackDepthRequested: options.asyncStackDepth,
         transformStats: read.transformStats,
         cdpAsyncContexts,
       };
