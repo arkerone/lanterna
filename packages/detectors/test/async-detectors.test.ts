@@ -1,0 +1,490 @@
+import {
+  type AsyncKindData,
+  type AsyncOperationKind,
+  type AsyncOperationRecord,
+  type CaptureBundle,
+  createAnalysisPipeline,
+  createAsyncProfileKind,
+  createCpuProfileKind,
+  createFindingAnalyzerFromKindScopedDetector,
+} from '@lanterna-profiler/core';
+import { describe, expect, it } from 'vitest';
+import { deepAsyncChainDetector } from '../src/detectors/deep-async-chain.js';
+import { hotAsyncContextDetector } from '../src/detectors/hot-async-context.js';
+import { longAwaitDetector } from '../src/detectors/long-await.js';
+import { microtaskFloodDetector } from '../src/detectors/microtask-flood.js';
+import { orphanAsyncResourceDetector } from '../src/detectors/orphan-async-resource.js';
+
+function makeRecord(
+  asyncId: number,
+  triggerAsyncId: number,
+  kind: AsyncOperationKind,
+  durationMs: number | undefined,
+  initAtMs = 0,
+): AsyncOperationRecord {
+  return {
+    asyncId,
+    triggerAsyncId,
+    kind,
+    rawType: kind.toUpperCase(),
+    initAtMs,
+    durationMs,
+    resolvedAtMs: durationMs !== undefined ? initAtMs + durationMs : undefined,
+    destroyedAtMs: undefined,
+    runMs: 0,
+    runCount: 0,
+    orphan: durationMs === undefined,
+    initStack: [],
+    runWindows: [],
+  };
+}
+
+function withFrame(
+  rec: AsyncOperationRecord,
+  frame: { function: string; file: string; line: number; column?: number },
+): AsyncOperationRecord {
+  rec.initStack = [{ ...frame, column: frame.column ?? 1 }];
+  return rec;
+}
+
+function makeBundle(args: {
+  records: AsyncOperationRecord[];
+  concurrency?: AsyncKindData['concurrency'];
+  durationMs?: number;
+}): CaptureBundle {
+  const orphans = args.records.filter((r) => r.orphan).length;
+  const data: AsyncKindData = {
+    available: true,
+    collectedVia: 'async-hooks',
+    maxRecords: 50_000,
+    records: args.records,
+    concurrency: args.concurrency ?? [],
+    integrity: {
+      recordsDropped: 0,
+      initCount: args.records.length,
+      destroyCount: 0,
+      resolveCount: 0,
+      orphanCount: orphans,
+    },
+    filteredCounts: {},
+  };
+  return {
+    target: {
+      pid: 4242,
+      nodeVersion: 'v24.0.0',
+      v8Version: '12.0.0',
+      platform: 'linux',
+      arch: 'x64',
+      cwd: '/app',
+    },
+    startedAtEpoch: Date.parse('2024-01-01T00:00:00.000Z'),
+    durationMs: args.durationMs ?? 5000,
+    captureIntegrity: {
+      controlChannel: true,
+      controlChannelExpected: true,
+      eventLoopTimed: false,
+      gcTimed: false,
+      gcObserverAvailable: false,
+      controlChannelWriteErrors: 0,
+      gcObserverSetupFailed: 0,
+      heartbeatDropped: 0,
+      kinds: {},
+    },
+    runtimeSignals: {
+      gcEvents: [],
+      eventLoopSamples: [],
+      eventLoopAvailable: false,
+    },
+    kinds: { async: data },
+  };
+}
+
+describe('long-await detector', () => {
+  it('fires `critical` for an async op longer than the critical threshold', () => {
+    const records: AsyncOperationRecord[] = [];
+    for (let i = 0; i < 8; i++) records.push(makeRecord(100 + i, 1, 'promise', 10));
+    records.push(makeRecord(999, 1, 'promise', 1500));
+    const bundle = makeBundle({ records });
+    const pipeline = createAnalysisPipeline({
+      kinds: [createAsyncProfileKind()],
+      findingAnalyzers: [createFindingAnalyzerFromKindScopedDetector(longAwaitDetector)],
+    });
+    const result = pipeline.run(bundle, { command: ['node', 'app.js'], mode: 'spawn' });
+    const finding = result.findings.find((f) => f.id.startsWith('long-await:'));
+    expect(finding).toBeDefined();
+    expect(finding?.severity).toBe('critical');
+    expect(finding?.profileKind).toBe('async');
+  });
+
+  it('does not fire for short async ops', () => {
+    const records = Array.from({ length: 10 }, (_, i) => makeRecord(i + 1, 1, 'promise', 10));
+    const bundle = makeBundle({ records });
+    const pipeline = createAnalysisPipeline({
+      kinds: [createAsyncProfileKind()],
+      findingAnalyzers: [createFindingAnalyzerFromKindScopedDetector(longAwaitDetector)],
+    });
+    const result = pipeline.run(bundle, { command: ['node', 'app.js'], mode: 'spawn' });
+    expect(result.findings).toEqual([]);
+  });
+});
+
+describe('orphan-async-resource detector', () => {
+  it('fires when many resources never resolved or destroyed', () => {
+    // 60 orphans aged > 1000 ms
+    const records: AsyncOperationRecord[] = [];
+    for (let i = 0; i < 60; i++) records.push(makeRecord(100 + i, 1, 'tcp', undefined, 1000));
+    const bundle = makeBundle({ records, durationMs: 5000 });
+    const pipeline = createAnalysisPipeline({
+      kinds: [createAsyncProfileKind()],
+      findingAnalyzers: [createFindingAnalyzerFromKindScopedDetector(orphanAsyncResourceDetector)],
+    });
+    const result = pipeline.run(bundle, { command: ['node', 'app.js'], mode: 'spawn' });
+    const finding = result.findings.find((f) => f.id === 'orphan-async-resource');
+    expect(finding).toBeDefined();
+    expect(finding?.severity).toBe('warning');
+  });
+
+  it('does not fire for a handful of orphans', () => {
+    const records = Array.from({ length: 5 }, (_, i) =>
+      makeRecord(100 + i, 1, 'tcp', undefined, 1000),
+    );
+    const bundle = makeBundle({ records, durationMs: 5000 });
+    const pipeline = createAnalysisPipeline({
+      kinds: [createAsyncProfileKind()],
+      findingAnalyzers: [createFindingAnalyzerFromKindScopedDetector(orphanAsyncResourceDetector)],
+    });
+    const result = pipeline.run(bundle, { command: ['node', 'app.js'], mode: 'spawn' });
+    expect(result.findings).toEqual([]);
+  });
+});
+
+describe('deep-async-chain detector', () => {
+  it('fires on a chain deeper than the threshold', () => {
+    const records: AsyncOperationRecord[] = [];
+    // chain of 35 promises each triggering the next.
+    for (let i = 0; i < 35; i++) {
+      const trigger = i === 0 ? 0 : i;
+      records.push(makeRecord(i + 1, trigger, 'promise', 5, i));
+    }
+    const bundle = makeBundle({ records });
+    const pipeline = createAnalysisPipeline({
+      kinds: [createAsyncProfileKind()],
+      findingAnalyzers: [createFindingAnalyzerFromKindScopedDetector(deepAsyncChainDetector)],
+    });
+    const result = pipeline.run(bundle, { command: ['node', 'app.js'], mode: 'spawn' });
+    const finding = result.findings.find((f) => f.id.startsWith('deep-async-chain:'));
+    expect(finding).toBeDefined();
+    expect(finding?.profileKind).toBe('async');
+  });
+
+  it('does not fire on a flat tree', () => {
+    const records = Array.from({ length: 30 }, (_, i) => makeRecord(i + 1, 0, 'promise', 5));
+    const bundle = makeBundle({ records });
+    const pipeline = createAnalysisPipeline({
+      kinds: [createAsyncProfileKind()],
+      findingAnalyzers: [createFindingAnalyzerFromKindScopedDetector(deepAsyncChainDetector)],
+    });
+    const result = pipeline.run(bundle, { command: ['node', 'app.js'], mode: 'spawn' });
+    expect(result.findings).toEqual([]);
+  });
+});
+
+describe('microtask-flood detector', () => {
+  it('fires when sustained inflight count is high', () => {
+    const concurrency = Array.from({ length: 50 }, (_, i) => ({
+      atMs: i * 100,
+      active: 10,
+      inflight: 300,
+    }));
+    const records = Array.from({ length: 20 }, (_, i) => makeRecord(i + 1, 0, 'promise', 5));
+    const bundle = makeBundle({ records, concurrency });
+    const pipeline = createAnalysisPipeline({
+      kinds: [createAsyncProfileKind()],
+      findingAnalyzers: [createFindingAnalyzerFromKindScopedDetector(microtaskFloodDetector)],
+    });
+    const result = pipeline.run(bundle, { command: ['node', 'app.js'], mode: 'spawn' });
+    const finding = result.findings.find((f) => f.id === 'microtask-flood');
+    expect(finding).toBeDefined();
+    expect(finding?.severity).toBe('warning');
+  });
+
+  it('anchors microtask-flood on the top async hot file when stacks are available', () => {
+    const concurrency = Array.from({ length: 50 }, (_, i) => ({
+      atMs: i * 100,
+      active: 10,
+      inflight: 300,
+    }));
+    const records = Array.from({ length: 20 }, (_, i) =>
+      withFrame(makeRecord(i + 1, 0, 'promise', 5), {
+        function: 'scheduleFanout',
+        file: 'file:///app/src/fanout.js',
+        line: 31,
+      }),
+    );
+    const bundle = makeBundle({ records, concurrency });
+    const pipeline = createAnalysisPipeline({
+      kinds: [createAsyncProfileKind()],
+      findingAnalyzers: [createFindingAnalyzerFromKindScopedDetector(microtaskFloodDetector)],
+    });
+    const result = pipeline.run(bundle, { command: ['node', 'app.js'], mode: 'spawn' });
+    const finding = result.findings.find((f) => f.id === 'microtask-flood');
+
+    expect(finding?.evidence.file).toBe('file:///app/src/fanout.js');
+    expect(finding?.evidence.function).toBe('scheduleFanout');
+    expect(finding?.evidence.extra).toMatchObject({
+      asyncQuality: 'high',
+      hotFileRank: 1,
+      recordsDropped: 0,
+      sampledStackRatio: 1,
+    });
+  });
+
+  it('long-await uses initFrame when present', () => {
+    const records: AsyncOperationRecord[] = [];
+    for (let i = 0; i < 8; i++) records.push(makeRecord(100 + i, 1, 'promise', 10));
+    const slow = makeRecord(999, 1, 'promise', 1500);
+    slow.initStack = [
+      { function: 'fetchUser', file: 'file:///app/src/users.js', line: 42, column: 4 },
+    ];
+    records.push(slow);
+    const bundle = makeBundle({ records });
+    const pipeline = createAnalysisPipeline({
+      kinds: [createAsyncProfileKind()],
+      findingAnalyzers: [createFindingAnalyzerFromKindScopedDetector(longAwaitDetector)],
+    });
+    const result = pipeline.run(bundle, { command: ['node', 'app.js'], mode: 'spawn' });
+    const finding = result.findings.find((f) => f.id === 'long-await:999');
+    expect(finding?.evidence.function).toBe('fetchUser');
+    expect(finding?.evidence.file).toBe('file:///app/src/users.js');
+    expect(finding?.evidence.line).toBe(42);
+  });
+
+  it('downgrades confidence when recordsDropped > 0', () => {
+    const slow = makeRecord(999, 1, 'promise', 1500);
+    const records = [
+      ...Array.from({ length: 10 }, (_, i) => makeRecord(i + 1, 0, 'promise', 10)),
+      slow,
+    ];
+    const data: AsyncKindData = {
+      available: true,
+      collectedVia: 'async-hooks',
+      maxRecords: 50,
+      records,
+      concurrency: [],
+      integrity: {
+        recordsDropped: 12,
+        initCount: records.length + 12,
+        destroyCount: 0,
+        resolveCount: 0,
+        orphanCount: 0,
+      },
+      filteredCounts: {},
+    };
+    const bundle: CaptureBundle = { ...makeBundle({ records: [] }), kinds: { async: data } };
+    const pipeline = createAnalysisPipeline({
+      kinds: [createAsyncProfileKind()],
+      findingAnalyzers: [createFindingAnalyzerFromKindScopedDetector(longAwaitDetector)],
+    });
+    const result = pipeline.run(bundle, { command: ['node', 'app.js'], mode: 'spawn' });
+    const finding = result.findings.find((f) => f.id === 'long-await:999');
+    expect(finding?.confidence).toBe('low');
+  });
+
+  it('uses a reliable matching hot file and quality evidence when an async operation has no stack', () => {
+    const slow = makeRecord(999, 1, 'promise', 1500);
+    const records = [
+      ...Array.from({ length: 10 }, (_, i) =>
+        withFrame(makeRecord(i + 1, 0, 'promise', 10), {
+          function: 'queueWork',
+          file: 'file:///app/src/queue.js',
+          line: 17,
+        }),
+      ),
+      slow,
+    ];
+    const bundle = makeBundle({ records });
+    const pipeline = createAnalysisPipeline({
+      kinds: [createAsyncProfileKind()],
+      findingAnalyzers: [createFindingAnalyzerFromKindScopedDetector(longAwaitDetector)],
+    });
+    const result = pipeline.run(bundle, { command: ['node', 'app.js'], mode: 'spawn' });
+    const finding = result.findings.find((f) => f.id === 'long-await:999');
+
+    expect(finding?.evidence.file).toBe('file:///app/src/queue.js');
+    expect(finding?.evidence.function).toBe('queueWork');
+    expect(finding?.confidence).toBe('medium');
+    expect(finding?.evidence.extra).toMatchObject({
+      asyncQuality: 'medium',
+      hotFileRank: 1,
+      recordsDropped: 0,
+      sampledStackRatio: 10 / 11,
+    });
+  });
+
+  it('skips silently when async kind is absent from the capture', () => {
+    // Bundle without `async` kind data — detector should skip.
+    const bundle: CaptureBundle = {
+      ...makeBundle({ records: [] }),
+      kinds: {},
+    };
+    const pipeline = createAnalysisPipeline({
+      kinds: [createAsyncProfileKind()],
+      findingAnalyzers: [createFindingAnalyzerFromKindScopedDetector(microtaskFloodDetector)],
+    });
+    const result = pipeline.run(bundle, { command: ['node', 'app.js'], mode: 'spawn' });
+    expect(result.findings).toEqual([]);
+  });
+});
+
+describe('hot-async-context detector', () => {
+  it('fires when one chain root accumulates a meaningful share of CPU', () => {
+    const root = makeRecord(1, 0, 'promise', 200, 0);
+    root.runWindows = [{ startMs: 0, endMs: 200 }];
+    root.initStack = [
+      { function: 'requestHandler', file: 'file:///app/src/server.js', line: 88, column: 2 },
+    ];
+    const records = [root];
+    const bundle = makeBundle({ records });
+    bundle.kinds.cpu = {
+      cpuProfile: {
+        nodes: [
+          {
+            id: 1,
+            callFrame: {
+              functionName: '(root)',
+              scriptId: '0',
+              url: '',
+              lineNumber: -1,
+              columnNumber: -1,
+            },
+            hitCount: 0,
+            children: [],
+          },
+        ],
+        startTime: 0,
+        endTime: 200_000,
+        samples: Array.from({ length: 200 }, () => 1),
+        timeDeltas: Array.from({ length: 200 }, () => 1000),
+      },
+      deopts: [],
+      samplesTimed: true,
+    };
+    const pipeline = createAnalysisPipeline({
+      kinds: [
+        createCpuProfileKind({ readStderrSoFar: () => '', sampleIntervalMicros: 1000 }),
+        createAsyncProfileKind(),
+      ],
+      findingAnalyzers: [createFindingAnalyzerFromKindScopedDetector(hotAsyncContextDetector)],
+    });
+    const result = pipeline.run(bundle, { command: ['node', 'app.js'], mode: 'spawn' });
+    const finding = result.findings.find((f) => f.id.startsWith('hot-async-context:'));
+    expect(finding).toBeDefined();
+    expect(finding?.evidence.function).toBe('requestHandler');
+    expect(finding?.evidence.file).toBe('file:///app/src/server.js');
+    expect(finding?.severity).toBe('critical');
+  });
+
+  it('skips silently when CPU kind is absent', () => {
+    const records = [makeRecord(1, 0, 'promise', 100, 0)];
+    records[0].runWindows = [{ startMs: 0, endMs: 100 }];
+    const bundle = makeBundle({ records });
+    const pipeline = createAnalysisPipeline({
+      kinds: [createAsyncProfileKind()],
+      findingAnalyzers: [createFindingAnalyzerFromKindScopedDetector(hotAsyncContextDetector)],
+    });
+    const result = pipeline.run(bundle, { command: ['node', 'app.js'], mode: 'spawn' });
+    expect(result.findings).toEqual([]);
+  });
+});
+
+describe('deep async chain anchoring', () => {
+  it('uses the precomputed dominant chain file instead of rediscovering the root from operations', () => {
+    const records: AsyncOperationRecord[] = [];
+    records.push(
+      withFrame(makeRecord(1, 0, 'promise', 5, 0), {
+        function: 'rootStep',
+        file: 'file:///app/src/root.js',
+        line: 2,
+      }),
+    );
+    for (let i = 2; i <= 35; i++) {
+      records.push(
+        withFrame(makeRecord(i, i - 1, 'promise', 5, i), {
+          function: `step${i}`,
+          file: 'file:///app/src/deep.js',
+          line: i,
+        }),
+      );
+    }
+    const bundle = makeBundle({ records });
+    const pipeline = createAnalysisPipeline({
+      kinds: [createAsyncProfileKind()],
+      findingAnalyzers: [createFindingAnalyzerFromKindScopedDetector(deepAsyncChainDetector)],
+    });
+    const result = pipeline.run(bundle, { command: ['node', 'app.js'], mode: 'spawn' });
+    const finding = result.findings.find((f) => f.id.startsWith('deep-async-chain:'));
+
+    expect(finding?.evidence.file).toBe('file:///app/src/deep.js');
+    expect(finding?.evidence.extra).toMatchObject({
+      dominantFile: 'file:///app/src/deep.js',
+      rootFrame: expect.objectContaining({ file: 'file:///app/src/root.js' }),
+      deepestFrame: expect.objectContaining({ file: 'file:///app/src/deep.js' }),
+      asyncQuality: 'high',
+    });
+  });
+});
+
+describe('async detector edge cases', () => {
+  it('escalates orphan-async-resource to critical above the critical threshold', () => {
+    const records: AsyncOperationRecord[] = [];
+    for (let i = 0; i < 600; i++) records.push(makeRecord(100 + i, 1, 'tcp', undefined, 1000));
+    const bundle = makeBundle({ records, durationMs: 5000 });
+    const pipeline = createAnalysisPipeline({
+      kinds: [createAsyncProfileKind()],
+      findingAnalyzers: [createFindingAnalyzerFromKindScopedDetector(orphanAsyncResourceDetector)],
+    });
+    const result = pipeline.run(bundle, { command: ['node', 'app.js'], mode: 'spawn' });
+    const finding = result.findings.find((f) => f.id === 'orphan-async-resource');
+    expect(finding?.severity).toBe('critical');
+  });
+
+  it('skips orphans younger than minOrphanAgeMs', () => {
+    const records: AsyncOperationRecord[] = [];
+    // 200 fresh orphans (initAt close to capture end → ageMs < 1s).
+    for (let i = 0; i < 200; i++) records.push(makeRecord(100 + i, 1, 'tcp', undefined, 4900));
+    const bundle = makeBundle({ records, durationMs: 5000 });
+    const pipeline = createAnalysisPipeline({
+      kinds: [createAsyncProfileKind()],
+      findingAnalyzers: [createFindingAnalyzerFromKindScopedDetector(orphanAsyncResourceDetector)],
+    });
+    const result = pipeline.run(bundle, { command: ['node', 'app.js'], mode: 'spawn' });
+    expect(result.findings).toEqual([]);
+  });
+
+  it('caps long-await findings at maxFindings', () => {
+    const records: AsyncOperationRecord[] = [];
+    for (let i = 0; i < 5; i++) records.push(makeRecord(i + 1, 0, 'promise', 10));
+    // 12 distinct slow ops — only the top 5 should produce findings.
+    for (let i = 0; i < 12; i++) records.push(makeRecord(1000 + i, 0, 'promise', 200 + i * 10));
+    const bundle = makeBundle({ records });
+    const pipeline = createAnalysisPipeline({
+      kinds: [createAsyncProfileKind()],
+      findingAnalyzers: [createFindingAnalyzerFromKindScopedDetector(longAwaitDetector)],
+    });
+    const result = pipeline.run(bundle, { command: ['node', 'app.js'], mode: 'spawn' });
+    const longAwaitFindings = result.findings.filter((f) => f.id.startsWith('long-await:'));
+    expect(longAwaitFindings.length).toBeLessThanOrEqual(5);
+    expect(longAwaitFindings.length).toBeGreaterThan(0);
+  });
+
+  it('does not fire long-await when fewer than minOperations were captured', () => {
+    const records = [makeRecord(1, 0, 'promise', 1500)];
+    const bundle = makeBundle({ records, durationMs: 200 });
+    const pipeline = createAnalysisPipeline({
+      kinds: [createAsyncProfileKind()],
+      findingAnalyzers: [createFindingAnalyzerFromKindScopedDetector(longAwaitDetector)],
+    });
+    const result = pipeline.run(bundle, { command: ['node', 'app.js'], mode: 'spawn' });
+    expect(result.findings).toEqual([]);
+  });
+});
