@@ -134,7 +134,7 @@ Important global integrity flags:
 }
 ```
 
-Each section is only present when its kind appears in `meta.profileKinds`. CPU is the default; memory is opt-in via `--kind memory`. `profiles.memory.heapSnapshotAnalysis` is further opt-in via `--heap-snapshot-analysis`; when present, it may be `available: false` with explanatory `warnings[]` while the rest of the memory report remains valid. See [cpu-profiling.md](cpu-profiling.md) and [memory-profiling.md](memory-profiling.md) for per-kind interpretation.
+Each section is only present when its kind appears in `meta.profileKinds`. CPU is the default; memory is opt-in via `--kind memory`; async is experimental and opt-in via `--kind async`. `profiles.memory.heapSnapshotAnalysis` is further opt-in via `--heap-snapshot-analysis`; when present, it may be `available: false` with explanatory `warnings[]` while the rest of the memory report remains valid. See [cpu-profiling.md](cpu-profiling.md), [memory-profiling.md](memory-profiling.md), and [async-profiling.md](async-profiling.md) for per-kind interpretation.
 
 Do not treat unknown profile sections as invalid; third-party kinds may add new report sections.
 

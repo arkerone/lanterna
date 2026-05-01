@@ -15,7 +15,7 @@ npm install @lanterna-profiler/core
 - **Capture coordinator** — `runCapture({ source, kinds, ... })` orchestrates one or more probes against a live target and returns a `CaptureBundle`. Each kind closes over its own probe options at construction time — there is no global `probeOptions`.
 - **Profile orchestration** — `runProfile(...)` and `attachProfile(...)` run capture, analysis, and report construction without CLI UI. Both accept `extraAnalyzers` and `setupPipeline` for extensibility.
 - **Sources** — `SpawnSource` / `AttachSource` obtain a CDP connection (`ProfileSource.connect()`); the coordinator drives everything else.
-- **Profile kinds** — `ProfileKind` (with optional `contributeMeta` / `contributeIntegrity` / `builtInAnalyzers` / `reportSchema`), `CaptureProbe`, `KindAnalysisContributor`, plus the built-in `createCpuProfileKind()` factory.
+- **Profile kinds** — `ProfileKind` (with optional `contributeMeta` / `contributeIntegrity` / `builtInAnalyzers` / `reportSchema`), `CaptureProbe`, `KindAnalysisContributor`, plus built-in `createCpuProfileKind()`, `createMemoryProfileKind()`, and experimental `createAsyncProfileKind()` factories.
 - **Kind registry** — `createKindRegistry([...])` resolves CLI `--kind <id>` strings.
 - **Kind-scoped detectors** — `KindScopedDetector<K>` + `createFindingAnalyzerFromKindScopedDetector(detector)` for typed multi-kind detectors.
 - **Analysis pipeline** — `createAnalysisPipeline({ kinds, ... })` with `defineFindingAnalyzer` / `defineSectionAnalyzer` to register custom rules.
@@ -84,7 +84,7 @@ process.stdout.write(serializeReport(report, { pretty: true, kinds: [cpuKind] })
 
 ## Adding a new profile kind
 
-Out of the box `core` ships the CPU and memory kinds. Future async or domain-specific kinds can be added without touching existing files. See the built-in `kinds/cpu/` and `kinds/memory/` implementations for reference and [../../docs/how-lanterna-works.md](../../docs/how-lanterna-works.md) for the architectural overview.
+Out of the box `core` ships the CPU, memory, and experimental async kinds. `async` is opt-in and attach captures are partial because preexisting resources cannot be observed after the fact. Domain-specific kinds can be added without touching existing files. See the built-in `kinds/cpu/`, `kinds/memory/`, and `kinds/async/` implementations for reference and [../../docs/how-lanterna-works.md](../../docs/how-lanterna-works.md) for the architectural overview.
 
 ## Related packages
 

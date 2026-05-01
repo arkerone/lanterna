@@ -4,7 +4,7 @@ The `lanterna` command-line binary for [Lanterna](https://github.com/arkerone/la
 
 Profile a Node process (spawn or attach), capture one or more profile kinds, run the built-in detectors, and emit a structured `LanternaReport` as JSON, text, or Markdown to stdout or a file.
 
-> Schema v2: analysis output is grouped under `report.profiles.<kind>.*`. Built-in kinds are `cpu` and `memory`; the CLI defaults to `--kind cpu` on both `run` and `attach`.
+> Schema v2: analysis output is grouped under `report.profiles.<kind>.*`. Built-in kinds are `cpu`, `memory`, and experimental `async`; the CLI defaults to `--kind cpu` on both `run` and `attach`.
 
 ## Install
 
@@ -33,6 +33,7 @@ lanterna run --duration 30s --format markdown --output report.md -- node app.js
 lanterna run --duration 30s --wait-for-url http://127.0.0.1:3000/health --workload "npx -y autocannon http://127.0.0.1:3000" -- node server.js
 lanterna run --deep --duration 15s -- node server.js
 lanterna run --kind cpu --pretty -- node script.js
+lanterna run --kind async --duration 30s -- node server.js
 lanterna run --pretty -- node script.js
 ```
 
@@ -53,7 +54,7 @@ lanterna attach --pid                # interactive picker (TTY required)
 lanterna attach --inspect-url ws://127.0.0.1:9229/<uuid> --kind cpu
 ```
 
-> `attach --pid` relies on `SIGUSR1` and is POSIX-only. On Windows, use `--inspect-url`. Attach mode does **not** support `--deep`.
+> `attach --pid` relies on `SIGUSR1` and is POSIX-only. On Windows, use `--inspect-url`. Attach mode does **not** support `--deep`. `--kind async` works in attach mode, but capture is partial because resources and already-loaded code from before hook installation cannot be fully observed.
 
 ### `lanterna report`
 
@@ -83,12 +84,13 @@ lanterna report report.json --format json --pretty
 | `--capture-delay <ms\|s\|m>` | Extra delay after readiness before capture starts. |
 | `--workload <command>` | Shell command to run in parallel during `run` capture. |
 | `--sample-interval <us>` | V8 CPU sampling interval in µs (default `1000`, min `50`). |
-| `--kind <id>` | Profile kind to capture. Repeatable or comma-separated (default `cpu`). Built-in: `cpu`, `memory`. |
+| `--kind <id>` | Profile kind to capture. Repeatable or comma-separated (default `cpu`). Built-in: `cpu`, `memory`, `async` (experimental, opt-in). |
 | `--heap-sample-interval <size>` | V8 heap sampling interval (memory kind). Accepts raw bytes or a KiB/MiB suffix: `524288`, `512KiB`, `1MiB`. Default `512KiB`, min `1KiB`. |
 | `--memory-usage-interval <ms>` | `process.memoryUsage()` cadence in ms (memory kind only, default `250`, min `10`). |
 | `--include-memory-samples` | Include raw `process.memoryUsage()` samples in JSON output (memory kind only). |
 | `--heap-snapshot-analysis` | Capture start/end V8 heap snapshots and include retained-growth synthesis in `profiles.memory.heapSnapshotAnalysis` (memory kind only, opt-in and heavy). |
 | `--heap-snapshot-dir <dir>` | Directory for the `.heapsnapshot` files written by `--heap-snapshot-analysis` (memory kind only, default `.lanterna-heapsnapshots`). |
+| `--async-instrumentation <off\|safe\|full>` | Extra async instrumentation for `--kind async` (experimental; `full` rewrites later-loaded awaits and is higher risk). |
 | `--pid [pid]` | Attach by PID, or open the interactive picker if no value. |
 | `--inspect-url <url>` | Attach to an existing inspector WebSocket URL. |
 | `--detectors <spec>` | Load an additional detector plugin (package name or path). Repeatable. |
@@ -104,13 +106,14 @@ Built-in kinds:
 
 - `cpu` (default): V8 sampling profiler. Produces `profiles.cpu.{summary,quality,hotspots,hotStacks,gc,eventLoop,deopts}` and CPU detectors.
 - `memory` (opt-in): V8 sampling heap profiler plus `process.memoryUsage()` time series. Produces `profiles.memory.{summary,hotAllocators,memoryUsage}` and memory detectors (`memory-growth`, `large-allocator`, `external-buffer-pressure`, `alloc-in-hot-path`).
+- `async` (experimental, opt-in): async resource lifecycle and concurrency profiling. Produces `profiles.async.*`, `meta.kinds.async.*`, and `meta.captureIntegrity.kinds.async.*`; attach mode is partial for resources created before hooks were installed.
 
 When CPU confidence is low, the CLI prints a warning based on `profiles.cpu.quality.reasons[]` and still writes the JSON report. Treat that report as an investigation lead and rerun with a longer or more representative workload when possible.
 
 Unknown kind ids fail before capture starts with:
 
 ```text
-unknown profile kind(s): <ids>. Available kinds: cpu, memory
+unknown profile kind(s): <ids>. Available kinds: cpu, memory, async
 ```
 
 Plugin packages can register additional kinds via a named `kinds: ProfileKind[]` export.

@@ -2,7 +2,7 @@
 
 Lanterna emits a structured `LanternaReport` (schema v2). This guide walks through each section — **in reading order** — and how to interpret it.
 
-> **Schema v2 convention.** Per-kind analysis output lives under `report.profiles.<kind>.*`. Built-in kinds are `cpu` and `memory`; every CPU field named below without an explicit path is short-hand for `report.profiles.cpu.<field>`. `findings[]` is cross-kind at the root; each finding carries a required `profileKind` tag. `meta.profileKinds` lists the kinds that successfully produced capture data in this report.
+> **Schema v2 convention.** Per-kind analysis output lives under `report.profiles.<kind>.*`. Built-in kinds are `cpu`, `memory`, and experimental `async`; every CPU field named below without an explicit path is short-hand for `report.profiles.cpu.<field>`. `findings[]` is cross-kind at the root; each finding carries a required `profileKind` tag. `meta.profileKinds` lists the kinds that successfully produced capture data in this report.
 
 ## At a glance
 
@@ -26,6 +26,7 @@ Use `jq` after that when you need exact fields, automation, or deeper schema ins
 | 7 | `profiles.cpu.gc` | Pause counts, duration, correlated hotspots. | Very short runs with no `gcTimed`. |
 | 8 | `profiles.cpu.hotStacks` | Complete sampled call paths, weighted. | Not always needed — use when a single hotspot is ambiguous. |
 | 9 | `profiles.cpu.deopts` | V8 deoptimisation clusters. | Empty unless `meta.kinds.cpu.deep === true`. |
+| 10 | `profiles.async.*` | Experimental async chains, long awaits, orphan resources, and concurrency when `--kind async` was selected. | `quality.attachPartialCapture = true`, high dropped records, or low CDP stack coverage. |
 
 ---
 
@@ -54,6 +55,7 @@ Sanity-check pattern:
 - `captureIntegrity.controlChannel = false` in `spawn` mode → event-loop and GC timing likely degraded.
 - In `attach` mode, `controlChannel = false` is **expected** (no FD 3 channel).
 - `meta.kinds.cpu.deep === false` → ignore `deopts[]` entirely.
+- `meta.kinds.async.*` and `captureIntegrity.kinds.async.*` exist only for `--kind async`; in attach mode expect async quality to report partial capture for preexisting resources.
 
 ---
 

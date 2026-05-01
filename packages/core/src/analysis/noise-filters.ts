@@ -7,8 +7,8 @@ import type { FrameCategory } from '../report/types.js';
  * are consumed by the analyzers that build the CPU and memory sections.
  *
  * Adding a new filter is the recommended way to teach Lanterna about a new
- * source of self-noise (for example, a future async-hooks profile kind that
- * runs JS inside the target). Implementations should be pure and cheap —
+ * source of self-noise (for example, a hook-based profile kind that runs JS
+ * inside the target). Implementations should be pure and cheap —
  * they run on every classified frame.
  */
 export interface NoiseFilter {
