@@ -1,5 +1,8 @@
 import type { CdpClient } from '../../inspector/client.js';
-import { readAsyncOperations } from '../../runtime-signals/readers/async-operations.js';
+import {
+  disableAsyncOperations,
+  readAsyncOperations,
+} from '../../runtime-signals/readers/async-operations.js';
 import type { CaptureProbe } from '../core/types.js';
 import { normalizeCdpAsyncStackTrace } from './cdp-stack.js';
 import type { AsyncCdpContext, AsyncKindData } from './types.js';
@@ -36,8 +39,11 @@ export function createAsyncProbe(options: AsyncProbeOptions): CaptureProbe<Async
     async stop(cdp: CdpClient): Promise<AsyncKindData> {
       const read = cdp.closed ? null : await readAsyncOperations(cdp);
       for (const unsubscribe of unsubscribers.splice(0)) unsubscribe();
-      // Disable the debugger we enabled so we don't keep it on for unrelated tooling.
+      // Tear down the in-target async_hooks installer (frees the sampler
+      // timer, removes hooks, restores patched APIs). Critical in attach
+      // mode where the target keeps running after capture ends.
       if (!cdp.closed) {
+        await disableAsyncOperations(cdp);
         try {
           await cdp.send('Debugger.disable');
         } catch {

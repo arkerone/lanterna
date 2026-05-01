@@ -97,6 +97,12 @@ const READ_EXPRESSION = `(() => {
   return globalThis.__LANTERNA_ASYNC__.read?.() ?? null;
 })()`;
 
+const DISABLE_EXPRESSION = `(() => {
+  if (!globalThis.__LANTERNA_ASYNC__) return null;
+  globalThis.__LANTERNA_ASYNC__.disable?.();
+  return true;
+})()`;
+
 export async function readAsyncOperations(cdp: CdpClient): Promise<AsyncOperationsRead | null> {
   try {
     const value = await cdp.evaluate(READ_EXPRESSION);
@@ -105,5 +111,19 @@ export async function readAsyncOperations(cdp: CdpClient): Promise<AsyncOperatio
     return parsed.data;
   } catch {
     return null;
+  }
+}
+
+/**
+ * Tear down the in-target async-hooks installer: cancels the concurrency
+ * sampler, removes the `async_hooks` callbacks, and restores any patched
+ * Promise/timer/fetch APIs. Critical for attach mode, where the target
+ * process keeps running after the capture ends.
+ */
+export async function disableAsyncOperations(cdp: CdpClient): Promise<void> {
+  try {
+    await cdp.evaluate(DISABLE_EXPRESSION);
+  } catch {
+    // best-effort
   }
 }
