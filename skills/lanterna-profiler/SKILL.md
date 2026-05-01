@@ -21,7 +21,7 @@ command -v lanterna >/dev/null 2>&1 && echo installed || echo use-npx
 
 Use `lanterna` when installed; otherwise use `npx -y @lanterna-profiler/cli`. Examples use `$LANTERNA` as notation only. Replace it with the concrete prefix in every command.
 
-Ask the user for the profiling duration before starting any new capture, unless they already provided one. Do not choose a default silently.
+Ask the user for the profiling duration and representative workload before starting any new server capture, unless they already provided them. Do not choose a duration, route, port, credentials, or load scenario silently.
 
 ```bash
 $LANTERNA run --duration <duration> --output /tmp/lanterna-report.json -- node server.js
@@ -31,9 +31,14 @@ $LANTERNA attach --pid
 $LANTERNA run --kind memory --duration <duration> --output /tmp/lanterna-report.json -- node server.js
 $LANTERNA run --kind memory --heap-snapshot-analysis --heap-snapshot-dir /tmp/lanterna-heaps --duration <duration> --output /tmp/lanterna-report.json -- node server.js
 $LANTERNA run --kind cpu --kind memory --duration <duration> --output /tmp/lanterna-report.json -- node server.js
+$LANTERNA run --duration <duration> --wait-for-url <health-url> --workload "npx -y autocannon <base-url>" --output /tmp/lanterna-report.json -- node server.js
+$LANTERNA report /tmp/lanterna-report.json --format text
+$LANTERNA report /tmp/lanterna-report.json --format markdown --output /tmp/lanterna-report.md
 ```
 
 `run` requires `--` before the target command. `attach` takes `--pid`, `--pid` with no value for the interactive picker, or `--inspect-url`; it never takes `-- <command>`. `--deep` is spawn-only and is rejected by `attach`.
+
+Use `--wait-for-url` for HTTP servers so Lanterna does not profile only startup. Use `--workload` to generate activity during the capture. The workload is a shell string executed from the same cwd and environment as Lanterna; examples include `npx -y autocannon ...`, `npx -y artillery run load.yml`, `npm run load`, `pnpm load`, `bunx ...`, and `node scripts/load.mjs`. Prefer `npx -y` for npx tools to avoid interactive install prompts.
 
 ## Capture Selection
 
@@ -44,16 +49,17 @@ $LANTERNA run --kind cpu --kind memory --duration <duration> --output /tmp/lante
 
 ## Workflow
 
-1. If the user already provided a report, skip capture. Read the report and go straight to analysis.
+1. If the user already provided a report, skip capture. Run `$LANTERNA report <file> --format text` for a first pass, then read the JSON for exact fields and go straight to analysis.
 2. If no report exists, confirm the target command or ask whether the process is already running, and ask how long to profile.
 3. For running processes, prefer `$LANTERNA attach --pid` in a TTY; otherwise list plausible Node processes and ask which PID matters.
-4. For HTTP services, profile under representative load. Do not assume `autocannon`, `hey`, routes, ports, credentials, or startup sequencing.
+4. For HTTP services, identify readiness and traffic before capture. Prefer `run --wait-for-url <health-url> --workload "npx -y autocannon <base-url>"` for simple local load, or `--workload "npx -y artillery run load.yml"` for scenario-based load.
 5. Read the report in two passes: `meta` + quality first, then `findings[]`, hotspots, event loop, GC, memory, and deopts as needed.
 6. Before patching, open `evidence.file`, read the cited function, and trace callers when evidence points at `node_modules` or a Node builtin.
 
 Useful first-pass report query:
 
 ```bash
+$LANTERNA report /tmp/lanterna-report.json --format text
 jq '{meta, profiles, findingsCount: (.findings | length)}' /tmp/lanterna-report.json
 ```
 
@@ -72,7 +78,7 @@ If confidence is low, say what is still useful, what is only a hypothesis, and w
 Stop and collect missing input when:
 
 - there is no runnable command, running PID, inspector URL, or existing report;
-- a new capture is needed and the user has not chosen a duration;
+- a new capture is needed and the user has not chosen a duration plus representative traffic;
 - the target is not Node.js;
 - an HTTP workload is unclear;
 - a report is mostly idle or has degraded integrity for the signal the user cares about;

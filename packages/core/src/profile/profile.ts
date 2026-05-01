@@ -55,6 +55,8 @@ export async function runProfile(
       durationMs: options.durationMs,
       stopSignal: manualStop.promise,
       abortSignal: manualStop.abortSignal,
+      beforeCaptureStart: options.beforeCaptureStart,
+      onCaptureStarted: options.onCaptureStarted,
     });
 
     return await analyzeAndBuild(bundle, options, kinds, 'spawn');

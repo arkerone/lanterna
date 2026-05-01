@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   attachProfile: vi.fn(),
   resolveMany: vi.fn((ids: string[]) => ids.map((id) => ({ id }))),
   writeReportOutput: vi.fn(),
+  writeExistingReportOutput: vi.fn(),
   loadLanternaConfig: vi.fn(),
   loadPlugins: vi.fn(),
   indicator: {
@@ -18,6 +19,7 @@ vi.mock('@lanterna-profiler/core', () => ({
   createKindRegistry: vi.fn(() => ({ resolveMany: mocks.resolveMany })),
   runProfile: mocks.runProfile,
   attachProfile: mocks.attachProfile,
+  sleep: (ms: number) => new Promise((resolve) => setTimeout(resolve, ms)),
 }));
 
 vi.mock('@lanterna-profiler/detectors', () => ({
@@ -35,10 +37,15 @@ vi.mock('../src/activity-indicator.js', () => ({
 
 vi.mock('../src/output.js', () => ({
   writeReportOutput: mocks.writeReportOutput,
+  writeExistingReportOutput: mocks.writeExistingReportOutput,
 }));
 
 vi.mock('../src/config.js', () => ({
   loadLanternaConfig: mocks.loadLanternaConfig,
+  applyLanternaConfig: (config, options) => ({
+    ...options,
+    detectors: [...(config?.detectors ?? []), ...(options.detectors ?? [])],
+  }),
 }));
 
 vi.mock('../src/plugins.js', () => ({
@@ -47,6 +54,7 @@ vi.mock('../src/plugins.js', () => ({
 
 const { runCommand } = await import('../src/commands/run.js');
 const { attachCommand } = await import('../src/commands/attach.js');
+const { reportCommand } = await import('../src/commands/report.js');
 
 describe('profile commands', () => {
   beforeEach(() => {
@@ -62,6 +70,7 @@ describe('profile commands', () => {
     mocks.attachProfile.mockReset();
     mocks.resolveMany.mockClear();
     mocks.writeReportOutput.mockClear();
+    mocks.writeExistingReportOutput.mockClear();
     mocks.loadLanternaConfig.mockReset();
     mocks.loadPlugins.mockReset();
     mocks.indicator.update.mockClear();
@@ -77,6 +86,7 @@ describe('profile commands', () => {
     await runCommand({
       command: ['node', 'app.js'],
       pretty: true,
+      format: 'json',
       deep: false,
       sampleIntervalMicros: 1000,
       detectors: [],
@@ -88,6 +98,7 @@ describe('profile commands', () => {
       report,
       undefined,
       true,
+      'json',
       expect.any(Array),
     );
     expect(mocks.indicator.succeed).toHaveBeenCalledWith('Lanterna profile complete');
@@ -117,6 +128,7 @@ describe('profile commands', () => {
     await runCommand({
       command: ['node', 'app.js'],
       pretty: true,
+      format: 'json',
       deep: false,
       sampleIntervalMicros: 1000,
       detectors: [],
@@ -136,6 +148,7 @@ describe('profile commands', () => {
     await attachCommand({
       pid: 1234,
       pretty: false,
+      format: 'json',
       sampleIntervalMicros: 1000,
       detectors: [],
       kinds: ['cpu'],
@@ -146,6 +159,7 @@ describe('profile commands', () => {
       report,
       undefined,
       false,
+      'json',
       expect.any(Array),
     );
     expect(mocks.indicator.succeed).toHaveBeenCalledWith('Lanterna attach capture complete');
@@ -161,6 +175,7 @@ describe('profile commands', () => {
     await runCommand({
       command: ['node', 'app.js'],
       pretty: false,
+      format: 'json',
       deep: false,
       sampleIntervalMicros: 1000,
       detectors: ['./flag-plugin.mjs'],
@@ -181,6 +196,7 @@ describe('profile commands', () => {
     await attachCommand({
       pid: 1234,
       pretty: false,
+      format: 'json',
       sampleIntervalMicros: 1000,
       detectors: ['./flag-plugin.mjs'],
       kinds: ['cpu'],
@@ -193,5 +209,55 @@ describe('profile commands', () => {
       process.cwd(),
     );
     expect(calls).toEqual(['config', 'flag']);
+  });
+
+  it('runCommand wires readiness and workload hooks into the capture', async () => {
+    const report = { meta: {}, profiles: {}, findings: [] };
+    mocks.runProfile.mockImplementation(async (options) => {
+      await options.beforeCaptureStart?.();
+      await options.onCaptureStarted?.();
+      return report;
+    });
+    const fetchMock = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue({ ok: true } as unknown as Response);
+
+    await runCommand({
+      command: ['node', 'server.js'],
+      pretty: false,
+      format: 'text',
+      deep: false,
+      sampleIntervalMicros: 1000,
+      detectors: [],
+      kinds: ['cpu'],
+      waitForUrl: 'http://127.0.0.1:3000/health',
+      waitTimeoutMs: 1000,
+      workload: 'node -e "process.exit(0)"',
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith('http://127.0.0.1:3000/health', expect.any(Object));
+    expect(mocks.writeReportOutput).toHaveBeenCalledWith(
+      report,
+      undefined,
+      false,
+      'text',
+      expect.any(Array),
+    );
+  });
+
+  it('reportCommand reads an existing report and writes the selected rendering', async () => {
+    await reportCommand({
+      file: 'report.json',
+      pretty: false,
+      format: 'markdown',
+      output: 'report.md',
+    });
+
+    expect(mocks.writeExistingReportOutput).toHaveBeenCalledWith(
+      'report.json',
+      'report.md',
+      false,
+      'markdown',
+    );
   });
 });

@@ -2,7 +2,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { loadLanternaConfig } from '../src/config.js';
+import { applyLanternaConfig, loadLanternaConfig } from '../src/config.js';
 
 async function withTempDir<T>(fn: (dir: string) => Promise<T>): Promise<T> {
   const dir = await mkdtemp(join(tmpdir(), 'lanterna-cfg-'));
@@ -24,10 +24,43 @@ describe('loadLanternaConfig', () => {
     await withTempDir(async (dir) => {
       await writeFile(
         join(dir, '.lanterna.json'),
-        JSON.stringify({ detectors: ['@scope/plugin', './local.js'] }),
+        JSON.stringify({
+          duration: '15s',
+          output: 'report.md',
+          format: 'markdown',
+          pretty: true,
+          detectors: ['@scope/plugin', './local.js'],
+          kinds: ['cpu', 'memory'],
+          sampleInterval: 2000,
+          heapSampleInterval: '1MiB',
+          memoryUsageInterval: 500,
+          includeMemorySamples: true,
+          heapSnapshotAnalysis: true,
+          heapSnapshotDir: '.lanterna-heaps',
+          waitForUrl: 'http://127.0.0.1:3000/health',
+          waitTimeout: '10s',
+          captureDelay: '250ms',
+          workload: 'npx -y autocannon http://127.0.0.1:3000',
+        }),
       );
       const config = await loadLanternaConfig(dir);
-      expect(config).toEqual({ detectors: ['@scope/plugin', './local.js'] });
+      expect(config).toEqual({
+        durationMs: 15_000,
+        output: 'report.md',
+        format: 'markdown',
+        pretty: true,
+        detectors: ['@scope/plugin', './local.js'],
+        kinds: ['cpu', 'memory'],
+        sampleIntervalMicros: 2000,
+        heapSamplingIntervalBytes: 1024 * 1024,
+        memoryUsageIntervalMs: 500,
+        includeMemoryUsageSamples: true,
+        heapSnapshotAnalysis: { enabled: true, outputDir: '.lanterna-heaps' },
+        waitForUrl: 'http://127.0.0.1:3000/health',
+        waitTimeoutMs: 10_000,
+        captureDelayMs: 250,
+        workload: 'npx -y autocannon http://127.0.0.1:3000',
+      });
     });
   });
 
@@ -54,5 +87,82 @@ describe('loadLanternaConfig', () => {
       await writeFile(join(dir, '.lanterna.json'), JSON.stringify({ detectors: [1, 2, 3] }));
       await expect(loadLanternaConfig(dir)).rejects.toThrow(/Invalid .lanterna.json/);
     });
+  });
+
+  it('merges config first and lets explicit flags win', () => {
+    const parsed = applyLanternaConfig(
+      {
+        durationMs: 10_000,
+        format: 'text',
+        pretty: true,
+        detectors: ['config-detector'],
+        kinds: ['memory'],
+        sampleIntervalMicros: 2000,
+        heapSamplingIntervalBytes: 1024 * 1024,
+        memoryUsageIntervalMs: 500,
+        includeMemoryUsageSamples: true,
+        heapSnapshotAnalysis: { enabled: true, outputDir: 'heaps' },
+        waitForUrl: 'http://127.0.0.1:3000/ready',
+        waitTimeoutMs: 10_000,
+        captureDelayMs: 250,
+        workload: 'npm run load',
+      },
+      {
+        command: ['node', 'app.js'],
+        pretty: false,
+        format: 'markdown',
+        detectors: ['flag-detector'],
+        kinds: ['cpu', 'memory'],
+        sampleIntervalMicros: 1000,
+        heapSamplingIntervalBytes: 524_288,
+        memoryUsageIntervalMs: 250,
+        includeMemoryUsageSamples: false,
+        heapSnapshotAnalysis: { enabled: false },
+        deep: false,
+      },
+      new Set(['format', 'detectors', 'kind']),
+    );
+
+    expect(parsed).toMatchObject({
+      command: ['node', 'app.js'],
+      durationMs: 10_000,
+      format: 'markdown',
+      pretty: true,
+      detectors: ['config-detector', 'flag-detector'],
+      kinds: ['memory', 'cpu'],
+      sampleIntervalMicros: 2000,
+      heapSamplingIntervalBytes: 1024 * 1024,
+      memoryUsageIntervalMs: 500,
+      includeMemoryUsageSamples: true,
+      heapSnapshotAnalysis: { enabled: true, outputDir: 'heaps' },
+      waitForUrl: 'http://127.0.0.1:3000/ready',
+      waitTimeoutMs: 10_000,
+      captureDelayMs: 250,
+      workload: 'npm run load',
+    });
+  });
+
+  it('uses config kinds instead of the parser default when no kind flag was provided', () => {
+    const parsed = applyLanternaConfig(
+      {
+        kinds: ['memory', 'memory'],
+      },
+      {
+        command: ['node', 'app.js'],
+        pretty: false,
+        format: 'json',
+        detectors: [],
+        kinds: ['cpu'],
+        sampleIntervalMicros: 1000,
+        heapSamplingIntervalBytes: 524_288,
+        memoryUsageIntervalMs: 250,
+        includeMemoryUsageSamples: false,
+        heapSnapshotAnalysis: { enabled: false },
+        deep: false,
+      },
+      new Set(),
+    );
+
+    expect(parsed.kinds).toEqual(['memory']);
   });
 });

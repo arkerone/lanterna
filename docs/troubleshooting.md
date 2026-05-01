@@ -9,6 +9,8 @@ Common problems and how to resolve them.
 | Symptom | Jump to |
 | --- | --- |
 | `timed out waiting for inspector URL` on `run` | [Inspector timeout](#inspector-timeout) |
+| `timed out waiting ... for http://...` | [Readiness timeout](#readiness-timeout) |
+| `workload failed with exit code ...` | [Workload failed](#workload-failed) |
 | `timed out waiting for inspector on pid ...` | [Attach by pid times out](#attach-by-pid-times-out) |
 | `findings` / `profiles.cpu.hotspots` is `[]` | [Empty report](#empty-report) |
 | `profiles.cpu.quality.confidence` is `"low"` | [Low-confidence CPU profile](#low-confidence-cpu-profile) |
@@ -70,15 +72,63 @@ Common problems and how to resolve them.
 
 ---
 
+## Readiness timeout
+
+**Symptom:** `lanterna run --wait-for-url ...` exits with a message like `timed out waiting 30000ms for http://127.0.0.1:3000/health`.
+
+**Causes and fixes:**
+
+1. **The URL is wrong or bound to a different host/port.** Confirm it responds outside Lanterna:
+
+   ```bash
+   curl -i http://127.0.0.1:3000/health
+   ```
+
+2. **The app needs more time to start.** Increase the timeout:
+
+   ```bash
+   lanterna run --wait-for-url http://127.0.0.1:3000/health --wait-timeout 60s -- node server.js
+   ```
+
+3. **The health endpoint requires state not present locally.** Use a simpler readiness endpoint or omit `--wait-for-url` and use `--capture-delay` only.
+
+4. **The app starts but returns an error status.** Lanterna treats non-2xx responses as not ready. Fix the endpoint or point at a route that returns success when the app is usable.
+
+---
+
+## Workload failed
+
+**Symptom:** Lanterna writes the report and then exits with `workload failed with exit code ...` or a signal.
+
+**What it means:** The profiled app may have captured useful evidence, but the external command passed to `--workload` failed. Inspect the report and the workload's own terminal output.
+
+Common fixes:
+
+1. **`npx` is waiting for an install confirmation.** Use `npx -y`:
+
+   ```bash
+   lanterna run --workload "npx -y autocannon http://127.0.0.1:3000" -- node server.js
+   ```
+
+2. **The workload starts before the server is ready.** Add `--wait-for-url`:
+
+   ```bash
+   lanterna run --wait-for-url http://127.0.0.1:3000/health --workload "npx -y autocannon http://127.0.0.1:3000" -- node server.js
+   ```
+
+3. **The scenario itself failed.** Run the workload command directly from the same directory and fix its configuration, credentials, base URL, or fixture data.
+
+---
+
 ## Empty report
 
 **Symptom:** The report has no findings, or `hotspots` is an empty array.
 
 **Causes and fixes:**
 
-1. **Profiling window too short, or the process was idle.** Check `profiles.cpu.quality`. Its `reasons[]` should say whether the capture was too short, under-sampled, or mostly idle. Either increase `--duration` or generate load against the process before running.
+1. **Profiling window too short, or the process was idle.** Check `profiles.cpu.quality`. Its `reasons[]` should say whether the capture was too short, under-sampled, or mostly idle. Either increase `--duration` or generate load against the process with `--workload`.
 
-2. **The profiling window missed the hot code.** If your app has a startup phase that loads modules and then settles, the default window may land on idle steady state. Time the window to cover the actual load.
+2. **The profiling window missed the hot code.** If your app has a startup phase that loads modules and then settles, the default window may land on idle steady state. Use `--wait-for-url` to avoid profiling only startup, then generate traffic during the capture.
 
 3. **Deopts not detected - missing `--deep`.** The `deopt-loop` detector only fires when `--deep` is passed, and only for functions also hot in the CPU profile. Without `--deep`, `deopts[]` is empty by design:
 

@@ -6,6 +6,15 @@ Lanterna emits a structured `LanternaReport` (schema v2). This guide walks throu
 
 ## At a glance
 
+For a first pass, render the report before reaching for raw JSON:
+
+```bash
+lanterna report report.json --format text
+lanterna report report.json --format markdown --output report.md
+```
+
+Use `jq` after that when you need exact fields, automation, or deeper schema inspection.
+
 | # | Section | What it tells you | When to distrust it |
 | --- | --- | --- | --- |
 | 1 | `meta` | What was captured (mode, duration, `profileKinds`, integrity flags). | `durationMs` very short, or `captureIntegrity.*` flags `false`. |

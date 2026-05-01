@@ -12,13 +12,16 @@ import {
   createMemoryProfileKindWithBuiltInDetectors,
 } from '@lanterna-profiler/detectors';
 import { startActivityIndicator } from '../activity-indicator.js';
-import { loadLanternaConfig } from '../config.js';
+import { applyLanternaConfig, loadLanternaConfig } from '../config.js';
 import { writeReportOutput } from '../output.js';
+import { getProvidedFlags } from '../parse.js';
 import { loadPlugins } from '../plugins.js';
+import { createRunOrchestration } from '../run-orchestration.js';
 
 type ParsedProfileOptions = {
   detectors: string[];
   kinds: string[];
+  format: 'json' | 'text' | 'markdown';
   output?: string;
   pretty: boolean;
   heapSamplingIntervalBytes: number;
@@ -28,6 +31,10 @@ type ParsedProfileOptions = {
     enabled: boolean;
     outputDir?: string;
   };
+  waitForUrl?: string;
+  waitTimeoutMs?: number;
+  captureDelayMs?: number;
+  workload?: string;
 };
 
 type ExecuteProfileCommandOptions =
@@ -54,21 +61,25 @@ export async function executeProfileCommand(command: ExecuteProfileCommandOption
   });
 
   try {
+    const config = await loadLanternaConfig(process.cwd());
+    const options = applyLanternaConfig(config, command.options, getProvidedFlags(command.options));
+    const resolvedCommand = { ...command, options } as ExecuteProfileCommandOptions;
     const { kinds: pluginKinds, setupPipeline } = await resolvePluginContributions(
-      command.options.detectors,
+      options.detectors,
     );
-    const cpuKind = buildCpuKind(command);
-    const memoryKind = buildMemoryKind(command);
+    const cpuKind = buildCpuKind(resolvedCommand);
+    const memoryKind = buildMemoryKind(resolvedCommand);
     const registry = createKindRegistry([cpuKind, memoryKind, ...pluginKinds]);
-    const kinds = registry.resolveMany(command.options.kinds);
-    const report = await runProfileCommand(command, kinds, setupPipeline, (message) => {
+    const kinds = registry.resolveMany(options.kinds);
+    const result = await runProfileCommand(resolvedCommand, kinds, setupPipeline, (message) => {
       indicator.update(message);
     });
 
-    const qualityWarning = formatProfileQualityWarning(report);
+    const qualityWarning = formatProfileQualityWarning(result.report);
     if (qualityWarning) indicator.update(qualityWarning);
     indicator.update('Writing the Lanterna report output...');
-    await writeReportOutput(report, command.options.output, command.options.pretty, kinds);
+    await writeReportOutput(result.report, options.output, options.pretty, options.format, kinds);
+    await result.afterReportWritten?.();
     indicator.succeed(command.successMessage);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -95,9 +106,19 @@ function formatProfileQualityWarning(report: {
   if (!quality || quality.confidence !== 'low') return undefined;
   const reasons = quality.reasons?.filter(Boolean) ?? [];
   const recommendations = quality.recommendations?.filter(Boolean) ?? [];
-  const reasonText = reasons.length > 0 ? reasons.join('; ') : 'capture quality is low';
-  const recommendationText = recommendations.length > 0 ? ` ${recommendations.join(' ')}` : '';
+  const reasonText = formatQualityReasons(reasons);
+  const recommendationText = formatQualityRecommendations(recommendations);
   return `Low confidence profile: ${reasonText}.${recommendationText}`;
+}
+
+function formatQualityReasons(reasons: string[]): string {
+  if (reasons.length === 0) return 'capture quality is low';
+  return reasons.join('; ');
+}
+
+function formatQualityRecommendations(recommendations: string[]): string {
+  if (recommendations.length === 0) return '';
+  return ` ${recommendations.join(' ')}`;
 }
 
 function buildMemoryKind(command: ExecuteProfileCommandOptions): ProfileKind {
@@ -129,47 +150,60 @@ async function runProfileCommand(
   kinds: RunProfileOptions['kinds'],
   setupPipeline: ProfilePipelinePlugin | undefined,
   onProgressMessage: (message: string) => void,
-) {
+): Promise<{
+  report: Awaited<ReturnType<typeof runProfile>>;
+  afterReportWritten?: () => Promise<void>;
+}> {
   if (command.mode === 'run') {
     const { detectors: _specs, kinds: _kindIds, ...profileOptions } = command.options;
     void _specs;
     void _kindIds;
-    return runProfile(
-      {
+    const orchestration = createRunOrchestration(command.options, onProgressMessage);
+    try {
+      const runOptions: RunProfileOptions = {
         ...profileOptions,
         kinds,
         onTargetDiagnosticChunk: command.onTargetDiagnosticChunk,
-        ...(setupPipeline ? { setupPipeline } : {}),
-      },
-      (event) => {
+      };
+      if (setupPipeline) runOptions.setupPipeline = setupPipeline;
+      if (orchestration.beforeCaptureStart) {
+        runOptions.beforeCaptureStart = orchestration.beforeCaptureStart;
+      }
+      if (orchestration.onCaptureStarted) {
+        runOptions.onCaptureStarted = orchestration.onCaptureStarted;
+      }
+
+      const report = await runProfile(runOptions, (event) => {
         onProgressMessage(event.message);
-      },
-    );
+      });
+      return { report, afterReportWritten: orchestration.afterReportWritten };
+    } catch (error) {
+      await orchestration.cleanup();
+      throw error;
+    }
   }
 
   const { detectors: _specs, kinds: _kindIds, ...profileOptions } = command.options;
   void _specs;
   void _kindIds;
-  return attachProfile(
-    {
-      ...profileOptions,
-      kinds,
-      ...(setupPipeline ? { setupPipeline } : {}),
-    },
-    (event) => {
-      onProgressMessage(event.message);
-    },
-  );
+  const attachOptions: AttachProfileOptions = {
+    ...profileOptions,
+    kinds,
+  };
+  if (setupPipeline) attachOptions.setupPipeline = setupPipeline;
+
+  const report = await attachProfile(attachOptions, (event) => {
+    onProgressMessage(event.message);
+  });
+  return { report };
 }
 
 async function resolvePluginContributions(
   flagSpecs: string[],
 ): Promise<{ kinds: ProfileKind[]; setupPipeline: ProfilePipelinePlugin | undefined }> {
   const cwd = process.cwd();
-  const config = await loadLanternaConfig(cwd);
-  const specs = [...(config?.detectors ?? []), ...flagSpecs];
-  if (specs.length === 0) return { kinds: [], setupPipeline: undefined };
-  const { kinds, setups } = await loadPlugins(specs, cwd);
+  if (flagSpecs.length === 0) return { kinds: [], setupPipeline: undefined };
+  const { kinds, setups } = await loadPlugins(flagSpecs, cwd);
   if (setups.length === 0) return { kinds, setupPipeline: undefined };
   const setupPipeline: ProfilePipelinePlugin = async (pipeline, ctx) => {
     for (const setup of setups) {

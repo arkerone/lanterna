@@ -2,6 +2,8 @@
 
 Use this when answering from a Lanterna report. Keep the answer source-backed and only include sections supported by `meta.profileKinds`.
 
+When creating an issue or PR summary from a report, start with `lanterna report <file> --format markdown` and then edit for source-backed conclusions after reading the implicated files.
+
 ## Recommended Shape
 
 ```md

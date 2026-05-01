@@ -3,7 +3,7 @@ import {
   DEFAULT_MEMORY_USAGE_INTERVAL_MS,
 } from '@lanterna-profiler/core';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { parseAttachArgs, parseRunArgs } from '../src/parse.js';
+import { parseAttachArgs, parseReportArgs, parseRunArgs } from '../src/parse.js';
 
 const MEMORY_DEFAULTS = {
   heapSamplingIntervalBytes: DEFAULT_MEMORY_SAMPLING_INTERVAL_BYTES,
@@ -40,6 +40,7 @@ describe('parseRunArgs', () => {
       command: ['node', 'server.mjs', '--port', '3000'],
       durationMs: 1500,
       pretty: true,
+      format: 'json',
       deep: true,
       sampleIntervalMicros: 2500,
       detectors: [],
@@ -67,6 +68,39 @@ describe('parseRunArgs', () => {
   it('rejects missing target commands', () => {
     expect(() => parseRunArgs(['--duration', '1s'])).toThrow(
       'no command provided. Use: lanterna run [options] -- <command> [args...]',
+    );
+  });
+
+  it('parses output format and run orchestration options', () => {
+    expect(
+      parseRunArgs([
+        '--format',
+        'markdown',
+        '--wait-for-url',
+        'http://127.0.0.1:3000/health',
+        '--wait-timeout',
+        '5s',
+        '--capture-delay',
+        '250ms',
+        '--workload',
+        'npx -y autocannon http://127.0.0.1:3000',
+        '--',
+        'node',
+        'server.js',
+      ]),
+    ).toMatchObject({
+      command: ['node', 'server.js'],
+      format: 'markdown',
+      waitForUrl: 'http://127.0.0.1:3000/health',
+      waitTimeoutMs: 5000,
+      captureDelayMs: 250,
+      workload: 'npx -y autocannon http://127.0.0.1:3000',
+    });
+  });
+
+  it('rejects unknown output formats', () => {
+    expect(() => parseRunArgs(['--format', 'html', '--', 'node', 'app.js'])).toThrow(
+      /invalid --format/,
     );
   });
 
@@ -181,6 +215,7 @@ describe('parseAttachArgs', () => {
       pid: 42,
       durationMs: 1500,
       pretty: true,
+      format: 'json',
       sampleIntervalMicros: 1000,
       detectors: [],
       kinds: ['cpu'],
@@ -203,6 +238,7 @@ describe('parseAttachArgs', () => {
       durationMs: 120_000,
       output: '/tmp/report.json',
       pretty: false,
+      format: 'json',
       sampleIntervalMicros: 1000,
       detectors: [],
       kinds: ['cpu'],
@@ -227,6 +263,7 @@ describe('parseAttachArgs', () => {
     expect(parseAttachArgs(['--pid', '--pretty'])).toEqual({
       promptForTarget: true,
       pretty: true,
+      format: 'json',
       sampleIntervalMicros: 1000,
       detectors: [],
       kinds: ['cpu'],
@@ -238,6 +275,7 @@ describe('parseAttachArgs', () => {
     expect(parseAttachArgs(['--pid', '42'])).toEqual({
       pid: 42,
       pretty: false,
+      format: 'json',
       sampleIntervalMicros: 1000,
       detectors: [],
       kinds: ['cpu'],
@@ -260,6 +298,7 @@ describe('parseAttachArgs', () => {
     expect(parsed).toMatchObject({
       pid: 42,
       pretty: false,
+      format: 'json',
       sampleIntervalMicros: 1000,
       detectors: [],
     });
@@ -269,6 +308,7 @@ describe('parseAttachArgs', () => {
   it('does not prompt interactively for bare attach anymore', () => {
     expect(parseAttachArgs([])).toEqual({
       pretty: false,
+      format: 'json',
       sampleIntervalMicros: 1000,
       detectors: [],
       kinds: ['cpu'],
@@ -280,6 +320,33 @@ describe('parseAttachArgs', () => {
     expect(() => parseAttachArgs(['--pid', '0', '--duration', '1s'])).toThrow(/invalid --pid/);
     expect(() => parseAttachArgs(['--pid', '42', '--duration', '1s', '--deep'])).toThrow(
       '`lanterna attach` does not support --deep; attach mode cannot enable deopt tracing on an existing process',
+    );
+  });
+});
+
+describe('parseReportArgs', () => {
+  it('parses a report file and output options', () => {
+    expect(
+      parseReportArgs(['report.json', '--format', 'text', '--output', 'report.txt', '--pretty']),
+    ).toEqual({
+      file: 'report.json',
+      format: 'text',
+      output: 'report.txt',
+      pretty: true,
+    });
+  });
+
+  it('defaults existing report rendering to text', () => {
+    expect(parseReportArgs(['report.json'])).toEqual({
+      file: 'report.json',
+      format: 'text',
+      pretty: false,
+    });
+  });
+
+  it('requires a report file', () => {
+    expect(() => parseReportArgs([])).toThrow(
+      'no report file provided. Use: lanterna report <file> [options]',
     );
   });
 });
