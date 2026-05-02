@@ -1,5 +1,11 @@
 # @lanterna-profiler/core
 
+## 1.8.0
+
+### Minor Changes
+
+- 7d2c18c: Normalize profile probe lifecycle cleanup with a `dispose` hook, runtime dispose hooks, and cleanup diagnostics for attach-safe repeated captures.
+
 ## 1.7.1
 
 ### Patch Changes
