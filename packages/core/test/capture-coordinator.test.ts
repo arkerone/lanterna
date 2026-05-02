@@ -213,9 +213,47 @@ function stopReasonKind(id: string, seen: Array<string | undefined>): ProfileKin
     createProbe() {
       return {
         start: async () => {},
-        stop: async (_cdp, options) => {
-          seen.push(options?.stopReason);
+        stop: async (ctx) => {
+          seen.push(ctx.stopReason);
           return { ok: true };
+        },
+      };
+    },
+    createAnalysisContributor() {
+      return {
+        analyze() {},
+      };
+    },
+  });
+}
+
+function lifecycleKind(
+  id: string,
+  calls: string[],
+  options: {
+    failStart?: boolean;
+    failStop?: boolean;
+    failDispose?: boolean;
+  } = {},
+): ProfileKind {
+  return defineProfileKind({
+    id,
+    reportSectionKey: id,
+    reportSchema: z.unknown(),
+    createProbe() {
+      return {
+        start: async () => {
+          calls.push(`${id}:start`);
+          if (options.failStart) throw new Error(`${id} start failed`);
+        },
+        stop: async () => {
+          calls.push(`${id}:stop`);
+          if (options.failStop) throw new Error(`${id} stop failed`);
+          return { ok: true };
+        },
+        dispose: async (_ctx) => {
+          calls.push(`${id}:dispose:${String(_ctx.stopSucceeded)}`);
+          if (options.failDispose) throw new Error(`${id} dispose failed`);
         },
       };
     },
@@ -234,9 +272,9 @@ function abortableStartKind(id: string, state: { aborted: boolean }): ProfileKin
     reportSchema: z.unknown(),
     createProbe() {
       return {
-        start: (_cdp, options) =>
+        start: (ctx) =>
           new Promise<void>((resolve) => {
-            options?.abortSignal?.addEventListener(
+            ctx.abortSignal?.addEventListener(
               'abort',
               () => {
                 state.aborted = true;
@@ -479,6 +517,50 @@ describe('runCapture lifecycle', () => {
     await capturePromise;
 
     expect(seen).toEqual(['signal']);
+  });
+
+  it('disposes a probe after a successful stop', async () => {
+    const source = new FakeSource();
+    const calls: string[] = [];
+
+    const bundle = await runCapture({
+      source,
+      sourceOptions: undefined,
+      kinds: [lifecycleKind('ok', calls)],
+    });
+
+    expect(calls).toEqual(['ok:start', 'ok:stop', 'ok:dispose:true']);
+    expect(bundle.kinds).toEqual({ ok: { ok: true } });
+    expect(diagnosticStages(bundle)).toEqual([]);
+  });
+
+  it('disposes a probe after start fails', async () => {
+    const source = new FakeSource();
+    const calls: string[] = [];
+
+    const bundle = await runCapture({
+      source,
+      sourceOptions: undefined,
+      kinds: [lifecycleKind('start-fails', calls, { failStart: true })],
+    });
+
+    expect(calls).toEqual(['start-fails:start', 'start-fails:stop', 'start-fails:dispose:true']);
+    expect(diagnosticStages(bundle)).toEqual(['probe-start']);
+  });
+
+  it('disposes a probe after stop fails and records dispose failures separately', async () => {
+    const source = new FakeSource();
+    const calls: string[] = [];
+
+    const bundle = await runCapture({
+      source,
+      sourceOptions: undefined,
+      kinds: [lifecycleKind('stop-fails', calls, { failStop: true, failDispose: true })],
+    });
+
+    expect(calls).toEqual(['stop-fails:start', 'stop-fails:stop', 'stop-fails:dispose:false']);
+    expect(diagnosticStages(bundle)).toEqual(['probe-stop', 'probe-dispose']);
+    expect(bundle.kinds).toEqual({});
   });
 
   it('turns manual stop triggers into an abort signal immediately', async () => {

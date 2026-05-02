@@ -698,7 +698,7 @@ describe('async installer lifecycle', () => {
 });
 
 describe('async probe lifecycle', () => {
-  it('disables the in-target installer over CDP at stop()', async () => {
+  it('disables the in-target installer over CDP at dispose()', async () => {
     const evaluated: string[] = [];
     const sent: string[] = [];
     const cdp: CdpClient = {
@@ -733,15 +733,24 @@ describe('async probe lifecycle', () => {
     };
 
     const probe = createAsyncProbe({ asyncStackDepth: 32 });
-    await probe.start(cdp);
-    await probe.stop(cdp);
+    await probe.start({ cdp, mode: 'attach', kindId: 'async' });
+    await probe.stop({ cdp, mode: 'attach', kindId: 'async' });
 
     expect(evaluated.some((e) => e.includes('.read?.()'))).toBe(true);
+    expect(evaluated.some((e) => e.includes('.disable?.()'))).toBe(false);
+
+    await probe.dispose?.({
+      cdp,
+      mode: 'attach',
+      kindId: 'async',
+      stopSucceeded: true,
+    });
+
     expect(evaluated.some((e) => e.includes('.disable?.()'))).toBe(true);
     expect(sent).toContain('Debugger.disable');
   });
 
-  it('does not call disable over CDP when the client is already closed', async () => {
+  it('does not call disable over CDP during dispose when the client is already closed', async () => {
     const evaluated: string[] = [];
     const cdp: CdpClient = {
       closed: true,
@@ -756,7 +765,12 @@ describe('async probe lifecycle', () => {
     };
 
     const probe = createAsyncProbe({ asyncStackDepth: 32 });
-    await probe.stop(cdp);
+    await probe.dispose?.({
+      cdp,
+      mode: 'attach',
+      kindId: 'async',
+      stopSucceeded: false,
+    });
 
     expect(evaluated).toEqual([]);
   });

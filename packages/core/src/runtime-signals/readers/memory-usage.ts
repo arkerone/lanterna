@@ -27,6 +27,12 @@ const READ_MEMORY_USAGE_EXPRESSION = `(() => {
   return globalThis.__LANTERNA_MEMORY__.read?.() ?? null;
 })()`;
 
+const DISABLE_MEMORY_USAGE_EXPRESSION = `(() => {
+  if (!globalThis.__LANTERNA_MEMORY__) return null;
+  globalThis.__LANTERNA_MEMORY__.disable?.();
+  return true;
+})()`;
+
 export async function readMemoryUsageSeries(cdp: CdpClient): Promise<MemoryUsageReadResult> {
   try {
     const value = await cdp.evaluate(READ_MEMORY_USAGE_EXPRESSION);
@@ -39,5 +45,13 @@ export async function readMemoryUsageSeries(cdp: CdpClient): Promise<MemoryUsage
     };
   } catch {
     return { samples: [], available: false, sampleIntervalMs: 0 };
+  }
+}
+
+export async function disableMemoryUsageSeries(cdp: CdpClient): Promise<void> {
+  try {
+    await cdp.evaluate(DISABLE_MEMORY_USAGE_EXPRESSION);
+  } catch {
+    // best-effort
   }
 }

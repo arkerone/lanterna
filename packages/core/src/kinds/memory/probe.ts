@@ -3,10 +3,12 @@ import {
   startHeapSampling,
   stopHeapSampling,
 } from '../../capture/core/heap.js';
-import type { CdpClient } from '../../inspector/client.js';
 import type { MemoryUsageSample } from '../../report/types.js';
-import { readMemoryUsageSeries } from '../../runtime-signals/readers/memory-usage.js';
-import type { CaptureProbe } from '../core/types.js';
+import {
+  disableMemoryUsageSeries,
+  readMemoryUsageSeries,
+} from '../../runtime-signals/readers/memory-usage.js';
+import type { CaptureProbe, ProbeLifecycleContext, ProbeStopReason } from '../core/types.js';
 import {
   type CapturedHeapSnapshots,
   type HeapSnapshotAnalysisReport,
@@ -50,7 +52,7 @@ export function createMemoryProbe(options: MemoryProbeOptions): CaptureProbe<Mem
           },
         }
       : {}),
-    async start(cdp: CdpClient, startOptions: { abortSignal?: AbortSignal } = {}) {
+    async start(ctx: ProbeLifecycleContext & { abortSignal?: AbortSignal }) {
       if (options.heapSnapshotAnalysis?.enabled) {
         const outputDir = options.heapSnapshotAnalysis.outputDir ?? '.lanterna-heapsnapshots';
         const startPath = resolveHeapSnapshotPath(outputDir, 'start');
@@ -63,8 +65,8 @@ export function createMemoryProbe(options: MemoryProbeOptions): CaptureProbe<Mem
           warnings: [],
         };
         try {
-          await takeHeapSnapshotToFile(cdp, startPath, {
-            abortSignal: startOptions.abortSignal,
+          await takeHeapSnapshotToFile(ctx.cdp, startPath, {
+            abortSignal: ctx.abortSignal,
           });
         } catch (error) {
           capturedHeapSnapshots.available = false;
@@ -75,23 +77,22 @@ export function createMemoryProbe(options: MemoryProbeOptions): CaptureProbe<Mem
           );
         }
       }
-      await startHeapSampling(cdp, options.samplingIntervalBytes);
+      await startHeapSampling(ctx.cdp, options.samplingIntervalBytes);
     },
     async stop(
-      cdp: CdpClient,
-      stopOptions: { abortSignal?: AbortSignal; stopReason?: 'exit' | 'timeout' | 'signal' } = {},
+      ctx: ProbeLifecycleContext & { abortSignal?: AbortSignal; stopReason?: ProbeStopReason },
     ): Promise<MemoryKindData> {
-      const samplingProfile = await stopHeapSampling(cdp);
+      const samplingProfile = await stopHeapSampling(ctx.cdp);
       if (options.heapSnapshotAnalysis?.enabled && capturedHeapSnapshots) {
-        if (stopOptions.stopReason === 'signal') {
+        if (ctx.stopReason === 'signal') {
           capturedHeapSnapshots.available = false;
           capturedHeapSnapshots.warnings.push(
             'skipped end heap snapshot because capture was stopped manually',
           );
         } else {
           try {
-            await takeHeapSnapshotToFile(cdp, capturedHeapSnapshots.end.path, {
-              abortSignal: stopOptions.abortSignal,
+            await takeHeapSnapshotToFile(ctx.cdp, capturedHeapSnapshots.end.path, {
+              abortSignal: ctx.abortSignal,
             });
           } catch (error) {
             capturedHeapSnapshots.available = false;
@@ -103,9 +104,9 @@ export function createMemoryProbe(options: MemoryProbeOptions): CaptureProbe<Mem
           }
         }
       }
-      const memoryUsage = cdp.closed
+      const memoryUsage = ctx.cdp.closed
         ? { samples: [], available: false, sampleIntervalMs: options.memoryUsageIntervalMs }
-        : await readMemoryUsageSeries(cdp);
+        : await readMemoryUsageSeries(ctx.cdp);
       return {
         samplingProfile,
         samplingIntervalBytes: options.samplingIntervalBytes,
@@ -115,6 +116,11 @@ export function createMemoryProbe(options: MemoryProbeOptions): CaptureProbe<Mem
         },
         ...(capturedHeapSnapshots ? { heapSnapshotAnalysis: capturedHeapSnapshots } : {}),
       };
+    },
+    async dispose(ctx: ProbeLifecycleContext) {
+      if (ctx.cdp.closed) return;
+      await disableMemoryUsageSeries(ctx.cdp);
+      await ctx.cdp.send('HeapProfiler.disable');
     },
   };
 }

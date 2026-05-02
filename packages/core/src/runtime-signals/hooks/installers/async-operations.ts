@@ -115,6 +115,7 @@ interface AsyncInstallerApi {
   performance: typeof globalThis.performance;
   registerGlobal(name: string, value: unknown): void;
   addResetHook(fn: () => void): void;
+  addDisposeHook?(fn: () => void): void;
   releaseInstaller?(id: string): void;
   getBuiltin<T extends object>(name: string): T | null;
 }
@@ -177,6 +178,10 @@ function installAsyncOperations(
 ): void {
   const asyncHooks = api.getBuiltin<AsyncHooksBuiltin>('async_hooks');
   if (!asyncHooks || typeof asyncHooks.createHook !== 'function') {
+    const disable = () => {
+      api.releaseInstaller?.('async-operations');
+    };
+    api.addDisposeHook?.(disable);
     api.registerGlobal('__LANTERNA_ASYNC__', {
       read: () => ({
         available: false,
@@ -196,9 +201,7 @@ function installAsyncOperations(
         attachPartialCapture,
         clockSyncUncertaintyMs: 0,
       }),
-      disable: () => {
-        api.releaseInstaller?.('async-operations');
-      },
+      disable,
     });
     return;
   }
@@ -807,6 +810,24 @@ function installAsyncOperations(
     inflightCount = 0;
   };
 
+  const disable = () => {
+    if (disabled) return;
+    disabled = true;
+    hook.disable();
+    clearInterval(concurrencyTimer);
+    for (const restore of restoredApis) restore();
+    restoredApis.length = 0;
+    clearRetainedState();
+    // ESM module hooks registered via node:module register() cannot be
+    // unregistered, so transformed modules loaded after disable would still
+    // call __LANTERNA_ASYNC_AWAIT__. Replace it with a passthrough so we
+    // don't keep accumulating dead state.
+    (globalThis as Record<string, unknown>).__LANTERNA_ASYNC_AWAIT__ = (value: unknown) => value;
+    api.releaseInstaller?.('async-operations');
+  };
+
+  api.addDisposeHook?.(disable);
+
   api.registerGlobal('__LANTERNA_ASYNC__', {
     read: () => {
       let orphanCount = 0;
@@ -840,20 +861,6 @@ function installAsyncOperations(
       clearRetainedState();
       return snapshot;
     },
-    disable: () => {
-      if (disabled) return;
-      disabled = true;
-      hook.disable();
-      clearInterval(concurrencyTimer);
-      for (const restore of restoredApis) restore();
-      restoredApis.length = 0;
-      clearRetainedState();
-      // ESM module hooks registered via node:module register() cannot be
-      // unregistered, so transformed modules loaded after disable would still
-      // call __LANTERNA_ASYNC_AWAIT__. Replace it with a passthrough so we
-      // don't keep accumulating dead state.
-      (globalThis as Record<string, unknown>).__LANTERNA_ASYNC_AWAIT__ = (value: unknown) => value;
-      api.releaseInstaller?.('async-operations');
-    },
+    disable,
   });
 }

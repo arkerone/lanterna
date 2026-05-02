@@ -97,7 +97,7 @@ If the workload exits non-zero, Lanterna still writes the report when possible a
 Once the inspector is connected, the coordinator:
 
 1. marks the start of the capture in the target runtime (via the preload global),
-2. calls each kind probe's `start(cdp)` (CPU: `Profiler.start`).
+2. calls each kind probe's `start(ctx)` (CPU: `Profiler.start`).
 
 From that moment, signal families accumulate:
 
@@ -112,7 +112,8 @@ With `--deep`, V8 deopt traces are also collected from the child's diagnostic ou
 
 Lanterna stops when the requested duration elapses, the target finishes first, or a signal (`SIGINT`/`SIGTERM`) is received. During shutdown it:
 
-- calls each probe's `stop(cdp)` — the CPU probe retrieves the raw CPU profile and (if deep) parses deopts from the diagnostics buffer,
+- calls each probe's `stop(ctx)` — the CPU probe retrieves the raw CPU profile and (if deep) parses deopts from the diagnostics buffer,
+- calls each installed probe's `dispose(ctx)` for best-effort cleanup; failures are isolated into `captureIntegrity.diagnostics[]` as `probe-dispose`,
 - reads the final event-loop + GC summaries from the target,
 - normalizes timed samples to the capture window,
 - merges capture-integrity counters from the control channel + CDP,

@@ -1,5 +1,10 @@
-import { fetchTargetInfo, markCaptureStart, readRuntimeClockNow } from '../inspector/runtime.js';
-import type { ProfileKind } from '../kinds/core/types.js';
+import {
+  disposeRuntime,
+  fetchTargetInfo,
+  markCaptureStart,
+  readRuntimeClockNow,
+} from '../inspector/runtime.js';
+import type { ProbeLifecycleContext, ProfileKind } from '../kinds/core/types.js';
 import { composeAttachScript, composePreloadScript } from '../runtime-signals/hooks/framework.js';
 import { runtimeSignalsInstaller } from '../runtime-signals/hooks/installers/runtime-signals.js';
 import {
@@ -96,8 +101,9 @@ export async function runCapture<TSourceOptions>(
       message: 'Runtime capture clock started. Starting profile probes...',
     });
 
-    const probeInstances = await installProbes(options.kinds, cdp, captureIntegrity);
-    await startProbes(probeInstances, cdp, options, captureIntegrity);
+    const mode = connected.releaseRuntime ? 'spawn' : 'attach';
+    const probeInstances = await installProbes(options.kinds, cdp, mode, captureIntegrity);
+    await startProbes(probeInstances, cdp, mode, options, captureIntegrity);
     await connected.releaseRuntime?.();
 
     await options.beforeCaptureStart?.();
@@ -115,7 +121,14 @@ export async function runCapture<TSourceOptions>(
       message: 'Stopping the profiler and collecting the final samples...',
     });
 
-    const kindsData = await stopProbes(probeInstances, cdp, options, captureIntegrity, stopReason);
+    const kindsData = await stopProbes(
+      probeInstances,
+      cdp,
+      mode,
+      options,
+      captureIntegrity,
+      stopReason,
+    );
     const durationMs = performance.now() - startedAtHr;
 
     const runtimeSignals = await collectRuntimeSignals({
@@ -126,6 +139,7 @@ export async function runCapture<TSourceOptions>(
       runtimeCaptureStartMs,
       durationMs,
     });
+    await disposeRuntimeBestEffort(cdp, captureIntegrity);
 
     await session.closeCdp();
 
@@ -166,13 +180,15 @@ function composeCapturePreload(kinds: readonly ProfileKind[]): PreloadContributi
 async function installProbes(
   kinds: readonly ProfileKind[],
   cdp: RunCaptureConnectedSession['cdp'],
+  mode: ProbeLifecycleContext['mode'],
   captureIntegrity: CaptureIntegrity,
 ): Promise<ProbeInstance[]> {
   const probeInstances: ProbeInstance[] = [];
   for (const kind of kinds) {
     const probe = kind.createProbe();
     try {
-      await probe.install?.(cdp);
+      const ctx = createProbeLifecycleContext(cdp, mode, kind.id);
+      await probe.install?.(ctx);
       probeInstances.push({ kind, probe });
     } catch (error) {
       logger.warn({ kindId: kind.id, err: error }, 'kind probe install failed');
@@ -189,13 +205,17 @@ async function installProbes(
 async function startProbes<TSourceOptions>(
   probeInstances: readonly ProbeInstance[],
   cdp: RunCaptureConnectedSession['cdp'],
+  mode: ProbeLifecycleContext['mode'],
   options: RunCaptureOptions<TSourceOptions>,
   captureIntegrity: CaptureIntegrity,
 ): Promise<void> {
   for (const { kind, probe } of probeInstances) {
     try {
       emitProbeStartProgress(options.sourceOptions, probe);
-      await probe.start(cdp, { abortSignal: options.abortSignal });
+      const ctx = createProbeLifecycleContext(cdp, mode, kind.id, {
+        abortSignal: options.abortSignal,
+      });
+      await probe.start(ctx);
     } catch (error) {
       logger.warn({ kindId: kind.id, err: error }, 'kind probe failed to start');
       recordCaptureDiagnostic(captureIntegrity, {
@@ -221,13 +241,14 @@ function emitProbeStartProgress<TSourceOptions>(
 async function stopProbes<TSourceOptions>(
   probeInstances: readonly ProbeInstance[],
   cdp: RunCaptureConnectedSession['cdp'],
+  mode: ProbeLifecycleContext['mode'],
   options: RunCaptureOptions<TSourceOptions>,
   captureIntegrity: CaptureIntegrity,
   stopReason: StopReason,
 ): Promise<Record<string, unknown>> {
   const kindsData: Record<string, unknown> = {};
   for (const probeInstance of probeInstances) {
-    const result = await stopProbe(probeInstance, cdp, options, captureIntegrity, stopReason);
+    const result = await stopProbe(probeInstance, cdp, mode, options, captureIntegrity, stopReason);
     if (!result.ok) continue;
     kindsData[probeInstance.kind.id] = result.value;
   }
@@ -237,25 +258,31 @@ async function stopProbes<TSourceOptions>(
 async function stopProbe<TSourceOptions>(
   { kind, probe }: ProbeInstance,
   cdp: RunCaptureConnectedSession['cdp'],
+  mode: ProbeLifecycleContext['mode'],
   options: RunCaptureOptions<TSourceOptions>,
   captureIntegrity: CaptureIntegrity,
   stopReason: StopReason,
 ): Promise<{ ok: true; value: unknown } | { ok: false }> {
+  let stopSucceeded = false;
   try {
     const stopTimeoutMs = probe.stopTimeoutMs ?? PROBE_STOP_TIMEOUT_MS;
     emitProbeStopProgress(options.sourceOptions, probe, stopReason);
+    const ctx = createProbeLifecycleContext(cdp, mode, kind.id, {
+      abortSignal: options.abortSignal,
+      stopReason,
+    });
     const result =
       stopTimeoutMs === false
         ? {
             ok: true as const,
-            value: await probe.stop(cdp, { abortSignal: options.abortSignal, stopReason }),
+            value: await probe.stop(ctx),
           }
-        : await withTimeoutResult(
-            probe.stop(cdp, { abortSignal: options.abortSignal, stopReason }),
-            stopTimeoutMs,
-          );
+        : await withTimeoutResult(probe.stop(ctx), stopTimeoutMs);
 
-    if (result.ok) return result;
+    if (result.ok) {
+      stopSucceeded = true;
+      return result;
+    }
 
     recordCaptureDiagnostic(captureIntegrity, {
       stage: 'probe-stop',
@@ -269,6 +296,17 @@ async function stopProbe<TSourceOptions>(
       kindId: kind.id,
       message: captureDiagnosticMessage(error),
     });
+    return { ok: false };
+  } finally {
+    await disposeProbe(
+      { kind, probe },
+      cdp,
+      mode,
+      options,
+      captureIntegrity,
+      stopReason,
+      stopSucceeded,
+    );
   }
   return { ok: false };
 }
@@ -283,6 +321,86 @@ function emitProbeStopProgress<TSourceOptions>(
     stage: 'finalize-capture',
     message: probe.progressMessages.stop,
   });
+}
+
+async function disposeProbe<TSourceOptions>(
+  { kind, probe }: ProbeInstance,
+  cdp: RunCaptureConnectedSession['cdp'],
+  mode: ProbeLifecycleContext['mode'],
+  options: RunCaptureOptions<TSourceOptions>,
+  captureIntegrity: CaptureIntegrity,
+  stopReason: StopReason,
+  stopSucceeded: boolean,
+): Promise<void> {
+  if (!probe.dispose) return;
+  try {
+    emitProbeDisposeProgress(options.sourceOptions, probe);
+    const disposeTimeoutMs = probe.disposeTimeoutMs ?? PROBE_STOP_TIMEOUT_MS;
+    const ctx = createProbeLifecycleContext(cdp, mode, kind.id, {
+      abortSignal: options.abortSignal,
+      stopReason,
+      stopSucceeded,
+    });
+    const result =
+      disposeTimeoutMs === false
+        ? { ok: true as const, value: await probe.dispose(ctx) }
+        : await withTimeoutResult(probe.dispose(ctx), disposeTimeoutMs);
+    if (result.ok) return;
+    recordCaptureDiagnostic(captureIntegrity, {
+      stage: 'probe-dispose',
+      kindId: kind.id,
+      message: `timed out disposing ${kind.id} probe after ${disposeTimeoutMs}ms`,
+    });
+  } catch (error) {
+    logger.warn({ kindId: kind.id, err: error }, 'kind probe failed to dispose');
+    recordCaptureDiagnostic(captureIntegrity, {
+      stage: 'probe-dispose',
+      kindId: kind.id,
+      message: captureDiagnosticMessage(error),
+    });
+  }
+}
+
+function emitProbeDisposeProgress<TSourceOptions>(
+  sourceOptions: TSourceOptions,
+  probe: ProbeInstance['probe'],
+): void {
+  if (!probe.progressMessages?.dispose) return;
+  emitCaptureProgress(sourceOptions, {
+    stage: 'finalize-capture',
+    message: probe.progressMessages.dispose,
+  });
+}
+
+function createProbeLifecycleContext<
+  TExtra extends Record<string, unknown> = Record<string, never>,
+>(
+  cdp: RunCaptureConnectedSession['cdp'],
+  mode: ProbeLifecycleContext['mode'],
+  kindId: string,
+  extra = {} as TExtra,
+): ProbeLifecycleContext & TExtra {
+  const ctx = {
+    cdp,
+    mode,
+    kindId,
+    ...extra,
+  };
+  return ctx;
+}
+
+async function disposeRuntimeBestEffort(
+  cdp: RunCaptureConnectedSession['cdp'],
+  captureIntegrity: CaptureIntegrity,
+): Promise<void> {
+  try {
+    await disposeRuntime(cdp);
+  } catch (error) {
+    recordCaptureDiagnostic(captureIntegrity, {
+      stage: 'runtime-dispose',
+      message: captureDiagnosticMessage(error),
+    });
+  }
 }
 
 async function collectRuntimeSignals({

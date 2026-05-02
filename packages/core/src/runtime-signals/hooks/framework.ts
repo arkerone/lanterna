@@ -27,6 +27,7 @@ export interface ComposePreloadOptions {
  * - `__lanterna.controlChannel.emit(event)` — best-effort control-channel write
  * - `__lanterna.registerGlobal(name, value)` — install a global
  * - `__lanterna.addResetHook(fn)` — register a hook called on capture reset
+ * - `__lanterna.addDisposeHook(fn)` — register a hook called at capture cleanup
  * - `__lanterna.releaseInstaller(id)` — let a cleaned installer run again
  * - `__lanterna.resolutionMs` — heartbeat resolution in ms
  * - `__lanterna.integrity` — shared integrity counters
@@ -112,6 +113,7 @@ interface FrameworkApi {
   integrity: FrameworkIntegrityCounters;
   registerGlobal(name: string, value: unknown): void;
   addResetHook(fn: () => void): void;
+  addDisposeHook(fn: () => void): void;
   registerInstaller(id: string, install: () => void): void;
   releaseInstaller(id: string): void;
   getBuiltin<T extends object>(name: string): T | null;
@@ -135,11 +137,13 @@ declare global {
     | {
         ensureInstalled(): FrameworkResult;
         readonly api: FrameworkApi;
+        dispose(): { disposed: true; errors: string[] };
       }
     | undefined;
   var __LANTERNA_ATTACH_RUNTIME__:
     | {
         ensureInstalled(): FrameworkResult;
+        dispose(): { disposed: true; errors: string[] };
       }
     | undefined;
 }
@@ -151,6 +155,10 @@ export function installLanternaFramework(
   const existing = globalThis.__LANTERNA_FRAMEWORK__;
   if (existing && typeof existing.ensureInstalled === 'function') {
     register(existing.api);
+    globalThis.__LANTERNA_ATTACH_RUNTIME__ = {
+      ensureInstalled: existing.ensureInstalled,
+      dispose: existing.dispose,
+    };
     return existing.ensureInstalled();
   }
 
@@ -224,9 +232,13 @@ export function installLanternaFramework(
   };
 
   const resetHooks: Array<() => void> = [];
+  const disposeHooks: Array<() => void> = [];
   const installedInstallers = new Set<string>();
   const addResetHook = (fn: () => void) => {
     resetHooks.push(fn);
+  };
+  const addDisposeHook = (fn: () => void) => {
+    disposeHooks.push(fn);
   };
 
   const registerGlobal = (name: string, value: unknown) => {
@@ -255,6 +267,7 @@ export function installLanternaFramework(
     integrity,
     registerGlobal,
     addResetHook,
+    addDisposeHook,
     registerInstaller,
     releaseInstaller,
     getBuiltin,
@@ -302,6 +315,34 @@ export function installLanternaFramework(
     nextExpectedHeartbeatMs = performanceApi.now() + resolutionMs;
     scheduleHeartbeat();
     emit({ type: 'capture-start', atMs: 0, resolutionMs });
+  };
+
+  const dispose = (): { disposed: true; errors: string[] } => {
+    const errors: string[] = [];
+    if (heartbeatTimer) {
+      clearTimeout(heartbeatTimer);
+      heartbeatTimer = null;
+    }
+    heartbeatSamples.length = 0;
+    for (const fn of disposeHooks.splice(0)) {
+      try {
+        fn();
+      } catch (error) {
+        errors.push(error instanceof Error ? error.message : String(error));
+      }
+    }
+    for (const name of Object.keys(globalThis)) {
+      if (name.startsWith('__LANTERNA_') && name !== '__LANTERNA_FRAMEWORK__') {
+        try {
+          delete (globalThis as Record<string, unknown>)[name];
+        } catch {
+          (globalThis as Record<string, unknown>)[name] = undefined;
+        }
+      }
+    }
+    installedInstallers.clear();
+    resetHooks.length = 0;
+    return { disposed: true, errors };
   };
 
   (api as unknown as { startCapture: typeof startCapture }).startCapture = startCapture;
@@ -383,9 +424,11 @@ export function installLanternaFramework(
   globalThis.__LANTERNA_FRAMEWORK__ = {
     ensureInstalled: () => ({ ...result, integrity: { ...integrity }, capabilities }),
     api,
+    dispose,
   };
   globalThis.__LANTERNA_ATTACH_RUNTIME__ = {
     ensureInstalled: () => ({ ...result, integrity: { ...integrity }, capabilities }),
+    dispose,
   };
 
   return result;

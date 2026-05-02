@@ -3,7 +3,7 @@ import {
   disableAsyncOperations,
   readAsyncOperations,
 } from '../../runtime-signals/readers/async-operations.js';
-import type { CaptureProbe } from '../core/types.js';
+import type { CaptureProbe, ProbeLifecycleContext } from '../core/types.js';
 import { normalizeCdpAsyncStackTrace } from './cdp-stack.js';
 import type { AsyncCdpContext, AsyncKindData } from './types.js';
 
@@ -26,7 +26,8 @@ export function createAsyncProbe(options: AsyncProbeOptions): CaptureProbe<Async
   const unsubscribers: Array<() => void> = [];
   let asyncStackSupport: 'enabled' | 'unsupported' | 'unknown' = 'unknown';
   return {
-    async start(cdp: CdpClient) {
+    async start(ctx: ProbeLifecycleContext) {
+      const { cdp } = ctx;
       // Best-effort. Older Node builds may reject either call; the report still
       // makes sense without async stacks.
       try {
@@ -42,20 +43,9 @@ export function createAsyncProbe(options: AsyncProbeOptions): CaptureProbe<Async
       }
       installCdpStackListeners(cdp, cdpAsyncContexts, unsubscribers);
     },
-    async stop(cdp: CdpClient): Promise<AsyncKindData> {
+    async stop(ctx: ProbeLifecycleContext): Promise<AsyncKindData> {
+      const { cdp } = ctx;
       const read = cdp.closed ? null : await readAsyncOperations(cdp);
-      for (const unsubscribe of unsubscribers.splice(0)) unsubscribe();
-      // Tear down the in-target async_hooks installer (frees the sampler
-      // timer, removes hooks, restores patched APIs). Critical in attach
-      // mode where the target keeps running after capture ends.
-      if (!cdp.closed) {
-        await disableAsyncOperations(cdp);
-        try {
-          await cdp.send('Debugger.disable');
-        } catch {
-          // ignore
-        }
-      }
       if (!read?.available) {
         return {
           available: false,
@@ -95,6 +85,16 @@ export function createAsyncProbe(options: AsyncProbeOptions): CaptureProbe<Async
         transformStats: read.transformStats,
         cdpAsyncContexts,
       };
+    },
+    async dispose(ctx: ProbeLifecycleContext) {
+      for (const unsubscribe of unsubscribers.splice(0)) unsubscribe();
+      if (ctx.cdp.closed) return;
+      await disableAsyncOperations(ctx.cdp);
+      try {
+        await ctx.cdp.send('Debugger.disable');
+      } catch {
+        // best-effort cleanup
+      }
     },
   };
 }

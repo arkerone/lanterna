@@ -4,6 +4,7 @@ import type { CdpClient } from './client.js';
 
 const MARK_CAPTURE_START_EXPRESSION = 'globalThis.__LANTERNA_EVENT_LOOP__?.markCaptureStart?.()';
 const READ_RUNTIME_CLOCK_EXPRESSION = 'performance.now()';
+const DISPOSE_RUNTIME_EXPRESSION = 'globalThis.__LANTERNA_ATTACH_RUNTIME__?.dispose?.()';
 const READ_TARGET_INFO_EXPRESSION = `JSON.stringify({
   pid: process.pid,
   nodeVersion: process.version,
@@ -20,6 +21,15 @@ export async function markCaptureStart(cdp: CdpClient): Promise<void> {
 export async function readRuntimeClockNow(cdp: CdpClient): Promise<number> {
   const value = await cdp.evaluate(READ_RUNTIME_CLOCK_EXPRESSION);
   return typeof value === 'number' ? value : 0;
+}
+
+export async function disposeRuntime(cdp: CdpClient): Promise<void> {
+  if (cdp.closed) return;
+  const value = await cdp.evaluate(DISPOSE_RUNTIME_EXPRESSION);
+  const errors = (value as { errors?: unknown } | null | undefined)?.errors;
+  if (Array.isArray(errors) && errors.length > 0) {
+    throw new Error(`runtime dispose failed: ${errors.map(String).join('; ')}`);
+  }
 }
 
 export async function fetchTargetInfo(

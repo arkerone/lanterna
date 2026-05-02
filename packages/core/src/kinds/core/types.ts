@@ -36,22 +36,45 @@ export interface KindViews {
   [kindId: string]: unknown;
 }
 
+export interface ProbeLifecycleContext {
+  cdp: CdpClient;
+  mode: 'spawn' | 'attach';
+  kindId: string;
+}
+
+export type ProbeStopReason = 'exit' | 'timeout' | 'signal';
+
 export interface CaptureProbe<TData> {
   /**
    * Optional timeout for probe stop/finalization work. Defaults to the coordinator
    * timeout; use false only when the probe has a protocol-level completion signal.
    */
   stopTimeoutMs?: number | false;
+  /**
+   * Optional timeout for best-effort probe cleanup. Defaults to the coordinator
+   * timeout; use false only when cleanup has its own completion signal.
+   */
+  disposeTimeoutMs?: number | false;
   progressMessages?: {
     start?: string;
     stop?: string;
+    dispose?: string;
   };
-  install?(cdp: CdpClient): Promise<void>;
-  start(cdp: CdpClient, options?: { abortSignal?: AbortSignal }): Promise<void>;
+  install?(ctx: ProbeLifecycleContext): Promise<void>;
+  start(ctx: ProbeLifecycleContext & { abortSignal?: AbortSignal }): Promise<void>;
   stop(
-    cdp: CdpClient,
-    options?: { abortSignal?: AbortSignal; stopReason?: 'exit' | 'timeout' | 'signal' },
+    ctx: ProbeLifecycleContext & {
+      abortSignal?: AbortSignal;
+      stopReason?: ProbeStopReason;
+    },
   ): Promise<TData>;
+  dispose?(
+    ctx: ProbeLifecycleContext & {
+      abortSignal?: AbortSignal;
+      stopReason?: ProbeStopReason;
+      stopSucceeded: boolean;
+    },
+  ): Promise<void>;
 }
 
 /**
