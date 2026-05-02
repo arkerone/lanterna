@@ -1,5 +1,13 @@
 # @lanterna-profiler/detectors
 
+## 1.5.1
+
+### Patch Changes
+
+- 19ff05c: Restructure documentation: split docs into per-topic and per-kind files (`docs/getting-started.md`, `docs/cli.md`, `docs/configuration.md`, `docs/programmatic-api.md`, `docs/report-schema.md`, `docs/reading-a-report.md`, `docs/signal-quality.md`, `docs/architecture.md`, `docs/troubleshooting.md`, `docs/kinds/{cpu,memory,async}.md`, `docs/extending/{detectors,profile-kinds,plugin-loading}.md`). Root README and package READMEs become concise landing pages pointing to the new structure. Update package descriptions to reflect that Lanterna covers CPU, memory and async profiling. No runtime changes.
+- Updated dependencies [19ff05c]
+  - @lanterna-profiler/core@1.7.1
+
 ## 1.5.0
 
 ### Minor Changes
