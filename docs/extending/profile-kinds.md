@@ -67,12 +67,20 @@ const fsReportSchema = z.object({
 
 function createFsProbe(): CaptureProbe<FsKindData> {
   return {
-    async start(cdp, { abortSignal } = {}) {
+    async install(ctx) {
+      await ctx.cdp.send('Runtime.enable');
+    },
+    async start(ctx) {
       /* enable a CDP domain, install in-target listeners, etc. */
     },
-    async stop(cdp, { stopReason } = {}) {
+    async stop(ctx) {
       /* drain buffers */
       return { events: [/* ... */] };
+    },
+    async dispose(ctx) {
+      if (!ctx.cdp.closed) {
+        /* remove listeners, disable CDP domains, clear in-target timers */
+      }
     },
   };
 }
@@ -128,19 +136,47 @@ Kinds typically write the section first, then publish the view.
 ```ts
 export interface CaptureProbe<TData> {
   stopTimeoutMs?: number | false;
-  progressMessages?: { start?: string; stop?: string };
-  install?(cdp: CdpClient): Promise<void>;
-  start(cdp: CdpClient, options?: { abortSignal?: AbortSignal }): Promise<void>;
-  stop(
-    cdp: CdpClient,
-    options?: { abortSignal?: AbortSignal; stopReason?: 'exit' | 'timeout' | 'signal' },
-  ): Promise<TData>;
+  disposeTimeoutMs?: number | false;
+  progressMessages?: { start?: string; stop?: string; dispose?: string };
+
+  install?(ctx: ProbeLifecycleContext): Promise<void>;
+  start(ctx: ProbeLifecycleContext & { abortSignal?: AbortSignal }): Promise<void>;
+  stop(ctx: ProbeLifecycleContext & {
+    abortSignal?: AbortSignal;
+    stopReason?: 'exit' | 'timeout' | 'signal';
+  }): Promise<TData>;
+  dispose?(ctx: ProbeLifecycleContext & {
+    abortSignal?: AbortSignal;
+    stopReason?: 'exit' | 'timeout' | 'signal';
+    stopSucceeded: boolean;
+  }): Promise<void>;
+}
+
+export interface ProbeLifecycleContext {
+  cdp: CdpClient;
+  mode: 'spawn' | 'attach';
+  kindId: string;
 }
 ```
 
-- `install` runs once before the target is released from the startup breakpoint (spawn mode). Use it to enable CDP domains (`Profiler.enable`, `HeapProfiler.enable`, …) and register listeners that must be active before user code runs.
+- `install` runs once before `start`. Use it to enable CDP domains (`Profiler.enable`, `HeapProfiler.enable`, …) and register listeners that must be active before user code runs.
 - `start` is called when the capture window opens (after `--wait-for-url` and `--capture-delay` if set).
 - `stop` is called when the duration expires, the target exits, or the user signals. Return the raw kind data.
+- `dispose` is best-effort cleanup and is called after `stop` for every installed probe, even when `start` or `stop` failed. Dispose failures do not discard collected data; they are recorded under `meta.captureIntegrity.diagnostics[]` with `stage: "probe-dispose"`.
+
+Use `ctx.mode` to choose cleanup aggressiveness. Attach-mode probes should remove timers, listeners, monkey patches, and CDP domain state because the target continues running. Spawn-mode probes should still clean up, but the target process often exits soon after capture.
+
+For in-target hook fragments, use the runtime framework cleanup API:
+
+```js
+__lanterna.addDisposeHook(() => {
+  clearInterval(timer);
+  observer.disconnect();
+  delete globalThis.__MY_KIND__;
+});
+```
+
+The coordinator also calls `globalThis.__LANTERNA_ATTACH_RUNTIME__.dispose()` at the end of each capture. Built-in runtime signals and the memory/async installers use this to stop heartbeat, GC observation, histograms, memory usage intervals, and async instrumentation without the coordinator knowing installer internals.
 
 ## Hook installer (in-target instrumentation)
 

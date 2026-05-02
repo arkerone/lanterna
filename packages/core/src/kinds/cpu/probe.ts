@@ -1,8 +1,7 @@
 import { startCpuMeasure, stopCpuMeasure } from '../../capture/core/cpu.js';
 import { parseDeoptsFromStderr } from '../../capture/core/deopts.js';
 import type { CaptureIntegrity, RawCpuProfile, RawDeopt } from '../../capture/core/types.js';
-import type { CdpClient } from '../../inspector/client.js';
-import type { CaptureProbe } from '../core/types.js';
+import type { CaptureProbe, ProbeLifecycleContext } from '../core/types.js';
 
 export interface CpuKindData {
   cpuProfile: RawCpuProfile;
@@ -24,14 +23,18 @@ export interface CpuProbeOptions {
  */
 export function createCpuProbe(options: CpuProbeOptions): CaptureProbe<CpuKindData> {
   return {
-    async start(cdp: CdpClient) {
-      await startCpuMeasure(cdp, options.sampleIntervalMicros);
+    async start(ctx: ProbeLifecycleContext) {
+      await startCpuMeasure(ctx.cdp, options.sampleIntervalMicros);
     },
-    async stop(cdp: CdpClient): Promise<CpuKindData> {
-      const cpuProfile = await stopCpuMeasure(cdp);
+    async stop(ctx: ProbeLifecycleContext): Promise<CpuKindData> {
+      const cpuProfile = await stopCpuMeasure(ctx.cdp);
       const samplesTimed = hasTimedCpuSamples(cpuProfile);
       const deopts = options.deep ? parseDeoptsFromStderr(options.readStderrSoFar()) : [];
       return { cpuProfile, deopts, samplesTimed };
+    },
+    async dispose(ctx: ProbeLifecycleContext) {
+      if (ctx.cdp.closed) return;
+      await ctx.cdp.send('Profiler.disable');
     },
   };
 }

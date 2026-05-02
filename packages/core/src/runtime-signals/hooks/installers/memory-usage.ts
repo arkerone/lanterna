@@ -24,6 +24,8 @@ interface MemoryUsageInstallerApi {
   performance: typeof globalThis.performance;
   registerGlobal(name: string, value: unknown): void;
   addResetHook(fn: () => void): void;
+  addDisposeHook?(fn: () => void): void;
+  releaseInstaller?(id: string): void;
 }
 
 function installMemoryUsage(api: MemoryUsageInstallerApi, sampleIntervalMs: number): void {
@@ -60,12 +62,23 @@ function installMemoryUsage(api: MemoryUsageInstallerApi, sampleIntervalMs: numb
   sample();
   const timer = setInterval(sample, intervalMs);
   if (typeof timer.unref === 'function') timer.unref();
+  let disabled = false;
 
   api.addResetHook(() => {
     captureStartMs = api.performance.now();
     samples.length = 0;
     sample();
   });
+
+  const disable = () => {
+    if (disabled) return;
+    disabled = true;
+    clearInterval(timer);
+    samples.length = 0;
+    api.releaseInstaller?.('memory-usage');
+  };
+
+  api.addDisposeHook?.(disable);
 
   api.registerGlobal('__LANTERNA_MEMORY__', {
     read: () => ({
@@ -75,6 +88,7 @@ function installMemoryUsage(api: MemoryUsageInstallerApi, sampleIntervalMs: numb
     clear: () => {
       samples.length = 0;
     },
+    disable,
     setIntervalMs: (next: number) => {
       if (Number.isFinite(next) && next > 0) intervalMs = next;
     },

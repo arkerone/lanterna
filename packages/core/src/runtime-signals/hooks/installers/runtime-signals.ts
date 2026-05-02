@@ -23,6 +23,7 @@ function installRuntimeSignals(api: {
   integrity: { gcObserverSetupFailed: number };
   registerGlobal(name: string, value: unknown): void;
   addResetHook(fn: () => void): void;
+  addDisposeHook(fn: () => void): void;
   getBuiltin<T extends object>(name: string): T | null;
   markGcObserverFailure(): void;
   startCapture(): void;
@@ -38,6 +39,7 @@ function installRuntimeSignals(api: {
       percentile: (value: number) => number;
       reset?: () => void;
       enable?: () => void;
+      disable?: () => void;
     };
   }
 
@@ -94,6 +96,13 @@ function installRuntimeSignals(api: {
 
   api.addResetHook(() => {
     histogram?.reset?.();
+    gcEvents.length = 0;
+  });
+
+  api.addDisposeHook(() => {
+    histogram?.disable?.();
+    histogram?.reset?.();
+    gcObserver?.disconnect();
     gcEvents.length = 0;
   });
 

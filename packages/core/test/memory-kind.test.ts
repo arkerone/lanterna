@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { createAnalysisPipeline } from '../src/analysis/core/pipeline.js';
 import type { RawSamplingHeapProfile } from '../src/capture/core/heap.js';
 import type { CaptureBundle } from '../src/capture/core/types.js';
-import { createMemoryProfileKind } from '../src/kinds/memory/index.js';
+import { createMemoryProbe, createMemoryProfileKind } from '../src/kinds/memory/index.js';
 import type { MemoryKindData } from '../src/kinds/memory/probe.js';
 import { buildLanternaReport, serializeReport } from '../src/report/index.js';
 import { memoryProfileReportSchema } from '../src/report/schema/memory-profile.js';
@@ -449,5 +449,67 @@ describe('memory kind analysis', () => {
 
     vm.runInNewContext(memoryScript, context);
     expect(context.globalThis.__LANTERNA_MEMORY__).toBeDefined();
+  });
+
+  it('exposes a disable() that clears the memory usage sampler', () => {
+    const intervalsCleared: unknown[] = [];
+    const timer = { unref() {} };
+    const context = {
+      process,
+      performance: { now: () => 0 },
+      setTimeout: () => ({ unref() {} }),
+      clearTimeout: () => {},
+      setInterval: () => timer,
+      clearInterval: (value: unknown) => intervalsCleared.push(value),
+      globalThis: {} as Record<string, unknown>,
+    };
+    context.globalThis = context as unknown as typeof context.globalThis;
+    const script = composeAttachScript(
+      [runtimeSignalsInstaller, createMemoryUsageInstaller({ sampleIntervalMs: 10 })],
+      { resolutionMs: 20 },
+    );
+
+    vm.runInNewContext(script, context);
+    const memory = context.globalThis.__LANTERNA_MEMORY__ as {
+      disable(): void;
+      read(): { samples: MemoryUsageSample[] };
+    };
+    memory.disable();
+
+    expect(intervalsCleared).toEqual([timer]);
+    expect(memory.read().samples).toHaveLength(0);
+  });
+
+  it('disables heap sampling and memory usage during probe dispose', async () => {
+    const sent: string[] = [];
+    const evaluated: string[] = [];
+    const cdp = {
+      closed: false,
+      send: async (method: string) => {
+        sent.push(method);
+        return {};
+      },
+      evaluate: async (expression: string) => {
+        evaluated.push(expression);
+        return null;
+      },
+      on: () => () => {},
+      onClose: () => () => {},
+      close: async () => {},
+    };
+
+    const probe = createMemoryProbe({
+      samplingIntervalBytes: 512 * 1024,
+      memoryUsageIntervalMs: 250,
+    });
+    await probe.dispose?.({
+      cdp,
+      mode: 'attach',
+      kindId: 'memory',
+      stopSucceeded: true,
+    });
+
+    expect(evaluated.some((expression) => expression.includes('__LANTERNA_MEMORY__'))).toBe(true);
+    expect(sent).toContain('HeapProfiler.disable');
   });
 });

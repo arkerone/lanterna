@@ -131,8 +131,8 @@ describe('lanternaReportSchema', () => {
       };
       captureIntegrity.diagnostics = [
         {
-          stage: 'probe-start',
-          message: 'cpu start failed',
+          stage: 'probe-dispose',
+          message: 'cpu dispose failed',
           kindId: 'cpu',
         },
       ];
@@ -141,7 +141,7 @@ describe('lanternaReportSchema', () => {
       expect(result.success).toBe(true);
       if (!result.success) return;
       expect(result.data.meta.captureIntegrity.diagnostics).toEqual([
-        { stage: 'probe-start', message: 'cpu start failed', kindId: 'cpu' },
+        { stage: 'probe-dispose', message: 'cpu dispose failed', kindId: 'cpu' },
       ]);
     });
 
