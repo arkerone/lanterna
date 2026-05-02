@@ -1,7 +1,7 @@
 {
   "name": "@lanterna-profiler/detectors",
   "version": "1.5.0",
-  "description": "Lanterna default detector pack — blocking I/O, GC, event loop, deopts, hotspots",
+  "description": "Lanterna default detector pack — CPU, memory & async detectors, thresholds, attribution helpers, plugin types",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
