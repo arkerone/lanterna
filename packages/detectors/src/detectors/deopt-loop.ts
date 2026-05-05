@@ -42,6 +42,7 @@ export const deoptLoopDetector: KindScopedDetector<'cpu'> = {
           line: deopt.line,
           function: deopt.function,
           selfPct: 0,
+          ...(matchingHotspot.source ? { source: matchingHotspot.source } : {}),
           extra: evidenceExtra,
         },
         measurements: {

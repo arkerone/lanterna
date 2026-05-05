@@ -54,6 +54,7 @@ export const longAwaitDetector: KindScopedDetector<'async'> = {
           line: frame?.line ?? 0,
           function: frame?.function ?? `${op.kind}#${op.asyncId}`,
           selfPct: 0,
+          ...(frame?.source ? { source: frame.source } : {}),
           extra: {
             asyncId: op.asyncId,
             triggerAsyncId: op.triggerAsyncId,

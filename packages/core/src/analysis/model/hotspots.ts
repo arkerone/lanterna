@@ -1,6 +1,13 @@
 import type { RawCpuProfile } from '../../capture/core/types.js';
-import type { FrameCategory, Hotspot, HotspotRef, OptimizationState } from '../../report/types.js';
+import type {
+  FrameCategory,
+  Hotspot,
+  HotspotRef,
+  OptimizationState,
+  SourceLocation,
+} from '../../report/types.js';
 import { isNoiseCategory, shouldKeepNoiseFrames } from '../noise-filters.js';
+import type { SourceMapResolver } from '../sourcemap/resolver.js';
 import { classifyFrame } from './classify.js';
 
 export interface NodeEnriched {
@@ -15,6 +22,7 @@ export interface NodeEnriched {
   children: number[];
   optimizationState: OptimizationState;
   deoptReason?: string;
+  source?: SourceLocation;
 }
 
 export interface EnrichedTree {
@@ -34,6 +42,7 @@ export interface HotspotAttribution {
   samplePct: number;
   supportPct: number;
   confidence: 'low' | 'high';
+  source?: SourceLocation;
 }
 
 export interface HotspotAnalysis {
@@ -63,16 +72,26 @@ interface HotspotAggregate {
   pathSamples: number;
   userAncestorSamples: Map<string, number>;
   sourceNodeIds: Set<number>;
+  source?: SourceLocation;
 }
 
 export function enrichCpuTree(
   profile: RawCpuProfile,
   cwd: string,
   sampleIntervalMicros: number,
+  sourceMaps?: SourceMapResolver,
 ): EnrichedTree {
   const nodes = new Map<number, NodeEnriched>();
   const parentOf = new Map<number, number>();
   let rootId = -1;
+
+  if (sourceMaps) {
+    const uniqueUrls = new Set<string>();
+    for (const raw of profile.nodes) {
+      if (raw.callFrame.url) uniqueUrls.add(raw.callFrame.url);
+    }
+    sourceMaps.prepare(uniqueUrls);
+  }
 
   for (const raw of profile.nodes) {
     const classification = classifyFrame(
@@ -80,12 +99,14 @@ export function enrichCpuTree(
       raw.callFrame.url || '',
       cwd,
     );
+    const line = raw.callFrame.lineNumber + 1;
+    const column = raw.callFrame.columnNumber + 1;
     const node: NodeEnriched = {
       id: raw.id,
       function: raw.callFrame.functionName || '(anonymous)',
       file: classification.file,
-      line: raw.callFrame.lineNumber + 1,
-      column: raw.callFrame.columnNumber + 1,
+      line,
+      column,
       category: classification.category,
       hitCount: raw.hitCount ?? 0,
       children: raw.children ?? [],
@@ -93,6 +114,10 @@ export function enrichCpuTree(
       deoptReason: raw.deoptReason,
     };
     if (classification.package) node.package = classification.package;
+    if (sourceMaps && raw.callFrame.url) {
+      const source = sourceMaps.resolve(raw.callFrame.url, line, column);
+      if (source) node.source = source;
+    }
     nodes.set(raw.id, node);
     if (rootId === -1 || raw.callFrame.functionName === '(root)') rootId = raw.id;
   }
@@ -157,7 +182,10 @@ export function buildHotspotAnalysis(
         sourceNodeIds: new Set(),
       };
       if (node.package) aggregate.package = node.package;
+      if (node.source) aggregate.source = node.source;
       hotspotAggregatesByKey.set(aggregateKey, aggregate);
+    } else if (!aggregate.source && node.source) {
+      aggregate.source = node.source;
     }
     aggregate.selfSamples += node.hitCount;
     aggregate.sourceNodeIds.add(node.id);
@@ -268,6 +296,7 @@ export function buildHotspotAnalysis(
       optimizationState: aggregate.optimizationState,
     };
     if (aggregate.package) hotspot.package = aggregate.package;
+    if (aggregate.source) hotspot.source = aggregate.source;
     fullHotspots.push(hotspot);
     hotspotById.set(hotspot.id, hotspot);
 
@@ -279,7 +308,7 @@ export function buildHotspotAnalysis(
     const [userAggregateKey, attributedSampleCount] = topUserAttributionEntry;
     const userHotspotAggregate = hotspotAggregatesByKey.get(userAggregateKey);
     if (!userHotspotAggregate) continue;
-    userAttributionById.set(hotspot.id, {
+    const attribution: HotspotAttribution = {
       hotspotId: `${userHotspotAggregate.file}:${userHotspotAggregate.line}:${userHotspotAggregate.function}`,
       function: userHotspotAggregate.function,
       file: userHotspotAggregate.file,
@@ -290,7 +319,9 @@ export function buildHotspotAnalysis(
         (attributedSampleCount / totalPathSamples) * 100 >= ATTRIBUTION_HIGH_CONFIDENCE_SUPPORT_PCT
           ? 'high'
           : 'low',
-    });
+    };
+    if (userHotspotAggregate.source) attribution.source = userHotspotAggregate.source;
+    userAttributionById.set(hotspot.id, attribution);
   }
 
   fullHotspots.sort((left, right) => right.selfPct - left.selfPct);

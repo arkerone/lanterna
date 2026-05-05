@@ -73,6 +73,7 @@ export const orphanAsyncResourceDetector: KindScopedDetector<'async'> = {
           line: frame?.line ?? 0,
           function: frame?.function ?? `orphans:${dominantKind}`,
           selfPct: 0,
+          ...(frame?.source ? { source: frame.source } : {}),
           extra: {
             orphanCount: totalOrphans,
             sampleOrphanCount: aged.length,

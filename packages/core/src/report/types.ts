@@ -37,6 +37,35 @@ export type BuiltinFindingCategory =
 
 export type FindingCategory = BuiltinFindingCategory | (string & {});
 
+/**
+ * Original (pre-compilation) source position resolved from a source map.
+ * Joined onto frames whose generated `file`/`line` could be remapped.
+ */
+export interface SourceLocation {
+  /** Source path: relative to cwd when filesystem-resolvable, otherwise the raw map source URL. */
+  file: string;
+  line: number;
+  column?: number;
+  /** Symbol name from the map's `names` field, when available. */
+  name?: string;
+}
+
+export interface SourceMapsIntegrity {
+  enabled: boolean;
+  framesResolved: number;
+  framesUnresolved: number;
+  /**
+   * `framesResolved / (framesResolved + framesUnresolved)`, or 0 when no
+   * mappable frames were observed. Only frames whose URL is a `file://` URL
+   * or an absolute path contribute to the denominator — `node:` builtins and
+   * other inherently unmappable frames are excluded so the metric reflects
+   * source-map quality on user/library code, not the V8 frame mix.
+   */
+  coverage: number;
+  mapsLoaded: number;
+  failures: Array<{ url: string; reason: string }>;
+}
+
 export interface ReportMeta {
   schemaVersion: string;
   nodeVersion: string;
@@ -66,6 +95,7 @@ export interface ReportMeta {
     diagnostics?: CaptureDiagnostic[];
     /** Per-kind integrity contributions. */
     kinds: Record<string, unknown>;
+    sourceMaps?: SourceMapsIntegrity;
   };
 }
 
@@ -77,6 +107,7 @@ export interface SummaryUserHotspot {
   totalPct: number;
   eventLoopCorrelation?: StallCorrelation;
   alternativeHotspots?: AlternativeHotspotEvidence[];
+  source?: SourceLocation;
 }
 
 /**
@@ -117,6 +148,7 @@ export interface Hotspot {
   callers: HotspotRef[];
   callees: HotspotRef[];
   optimizationState: OptimizationState;
+  source?: SourceLocation;
 }
 
 export interface HotStackFrame {
@@ -124,6 +156,7 @@ export interface HotStackFrame {
   file: string;
   line: number;
   category: FrameCategory;
+  source?: SourceLocation;
 }
 
 export interface HotStack {
@@ -136,6 +169,7 @@ export interface HotStackCluster {
     function: string;
     file: string;
     line: number;
+    source?: SourceLocation;
   };
   weightPct: number;
   stackCount: number;
@@ -203,6 +237,7 @@ export interface CorrelatedHotspot {
   samplePct: number;
   rank: number;
   confidence: 'low' | 'medium' | 'high';
+  source?: SourceLocation;
 }
 
 export interface DeoptEntry {
@@ -213,6 +248,7 @@ export interface DeoptEntry {
   bailoutType: string;
   count: number;
   explanation: string;
+  source?: SourceLocation;
 }
 
 export interface HotspotAttributionEvidence {
@@ -223,6 +259,7 @@ export interface HotspotAttributionEvidence {
   samplePct: number;
   supportPct: number;
   confidence: 'low' | 'high';
+  source?: SourceLocation;
 }
 
 export interface StallCorrelation {
@@ -237,6 +274,7 @@ export interface AlternativeHotspotEvidence {
   line: number;
   selfPct: number;
   totalPct: number;
+  source?: SourceLocation;
 }
 
 export interface AttributionEvidence {
@@ -333,6 +371,7 @@ export interface FindingEvidence<TExtra = FindingEvidenceExtra> {
   line: number;
   function: string;
   selfPct: number;
+  source?: SourceLocation;
   extra?: TExtra;
 }
 
@@ -444,6 +483,7 @@ export interface MemoryHotAllocator {
   selfPct: number;
   totalBytes: number;
   totalPct: number;
+  source?: SourceLocation;
 }
 
 export type HeapSnapshotSuspectedPattern =
@@ -495,6 +535,7 @@ export interface MemorySummary {
     line: number;
     selfPct: number;
     totalPct: number;
+    source?: SourceLocation;
   };
   /** `external` over `heapUsed`, averaged across the series. */
   externalRatio?: number;
@@ -562,6 +603,7 @@ export interface AsyncSummary {
     line: number;
     score: number;
     confidence: ProfileConfidence;
+    source?: SourceLocation;
   };
 }
 
@@ -570,6 +612,7 @@ export interface AsyncStackFrameReport {
   file: string;
   line: number;
   column: number;
+  source?: SourceLocation;
 }
 
 export interface AsyncCdpContextReport {

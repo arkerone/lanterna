@@ -1,6 +1,7 @@
 import type { CaptureBundle } from '../../capture/core/types.js';
 import type { KindViews, ProfileSectionMap } from '../../kinds/core/types.js';
 import type { Finding, LanternaReport } from '../../report/types.js';
+import type { SourceMapResolver } from '../sourcemap/resolver.js';
 
 /**
  * Options shared by every analyzer at pipeline run time. Kind-agnostic by
@@ -10,6 +11,12 @@ import type { Finding, LanternaReport } from '../../report/types.js';
 export interface AnalysisOptions {
   command: string[];
   mode?: LanternaReport['meta']['mode'];
+  /**
+   * Optional source-map resolver used by kinds to map V8-emitted frames back
+   * to their original (pre-compilation) positions. When omitted, frames are
+   * reported only with their generated `file`/`line`.
+   */
+  sourceMaps?: SourceMapResolver;
 }
 
 export type ExtensionEntry = unknown;

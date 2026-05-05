@@ -40,6 +40,7 @@ export const microtaskFloodDetector: KindScopedDetector<'async'> = {
           line: frame?.line ?? 0,
           function: frame?.function ?? '(concurrency)',
           selfPct: 0,
+          ...(frame?.source ? { source: frame.source } : {}),
           extra: {
             meanInflight: concurrency.meanInflight,
             maxInflight: concurrency.maxInflight,

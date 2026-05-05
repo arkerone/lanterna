@@ -41,6 +41,7 @@ export const deepAsyncChainDetector: KindScopedDetector<'async'> = {
           line: frame?.line ?? 0,
           function: frame?.function ?? `chain:${chain.rootKind}#${chain.rootAsyncId}`,
           selfPct: 0,
+          ...(frame?.source ? { source: frame.source } : {}),
           extra: {
             rootAsyncId: chain.rootAsyncId,
             rootKind: chain.rootKind,

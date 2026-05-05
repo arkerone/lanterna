@@ -1,5 +1,8 @@
+import { isAbsolute } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import type { RawDeopt } from '../../capture/core/types.js';
 import type { DeoptEntry } from '../../report/types.js';
+import type { SourceMapResolver } from '../sourcemap/resolver.js';
 
 const EXPLAIN: Record<string, string> = {
   'not a Smi':
@@ -15,19 +18,43 @@ const EXPLAIN: Record<string, string> = {
     'Call site polymorphic or too cold to optimise. Stabilise callee.',
 };
 
-export function enrichDeopts(raw: RawDeopt[]): DeoptEntry[] {
-  // parseDeoptsFromStderr already deduplicates and counts; just enrich with explanation.
+export function enrichDeopts(raw: RawDeopt[], sourceMaps?: SourceMapResolver): DeoptEntry[] {
+  // V8 stderr emits absolute paths; the source-map resolver keys on the URL
+  // form used by V8 callFrame.url (`file://` URLs). Normalize before lookup.
+  const candidateUrls = sourceMaps
+    ? Array.from(new Set(raw.map(deoptUrl).filter((u): u is string => Boolean(u))))
+    : [];
+  if (sourceMaps && candidateUrls.length > 0) sourceMaps.prepare(candidateUrls);
+
   return raw
-    .map((deopt) => ({
-      function: deopt.function,
-      file: deopt.file,
-      line: deopt.line,
-      reason: deopt.reason,
-      bailoutType: deopt.bailoutType,
-      count: deopt.count,
-      explanation: explain(deopt.reason),
-    }))
+    .map((deopt) => {
+      const entry: DeoptEntry = {
+        function: deopt.function,
+        file: deopt.file,
+        line: deopt.line,
+        reason: deopt.reason,
+        bailoutType: deopt.bailoutType,
+        count: deopt.count,
+        explanation: explain(deopt.reason),
+      };
+      if (sourceMaps && deopt.line > 0) {
+        const url = deoptUrl(deopt);
+        if (url) {
+          const resolved = sourceMaps.resolve(url, deopt.line, 1);
+          if (resolved) entry.source = resolved;
+        }
+      }
+      return entry;
+    })
     .sort((a, b) => b.count - a.count);
+}
+
+function deoptUrl(deopt: RawDeopt): string | undefined {
+  const file = deopt.file;
+  if (!file) return undefined;
+  if (file.startsWith('file://')) return file;
+  if (isAbsolute(file)) return pathToFileURL(file).href;
+  return undefined;
 }
 
 function explain(reason: string): string {

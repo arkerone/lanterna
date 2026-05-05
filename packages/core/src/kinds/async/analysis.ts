@@ -1,3 +1,4 @@
+import type { SourceMapResolver } from '../../analysis/sourcemap/resolver.js';
 import type { CaptureBundle, RawCpuProfile } from '../../capture/core/types.js';
 import type {
   AsyncChainSummary,
@@ -50,67 +51,113 @@ declare module '../core/types.js' {
   }
 }
 
+/**
+ * Module-level resolver, set for the duration of a single `analyze()` call.
+ * Async frames are produced from many helper functions; threading the
+ * resolver through every signature would inflate the API surface for marginal
+ * gain. The pipeline is single-threaded per analysis pass, so this is safe.
+ */
+let activeResolver: SourceMapResolver | undefined;
+
 export function createAsyncAnalysisContributor(): KindAnalysisContributor<AsyncKindData> {
   return {
     analyze(ctx: KindAnalysisContext<AsyncKindData>) {
       const { data, bundle } = ctx;
-
-      const sortedByDuration = [...data.records].sort(
-        (a, b) => effectiveDuration(b, bundle.durationMs) - effectiveDuration(a, bundle.durationMs),
-      );
-
-      const recordById = new Map<number, AsyncOperationRecord>();
-      for (const rec of data.records) recordById.set(rec.asyncId, rec);
-      correlateCdpAsyncContexts(data.records, data.cdpAsyncContexts ?? []);
-
-      const chainNodes = buildChainTree(data.records, recordById);
-      const rootByAsyncId = buildRootMap(data.records, recordById);
-
-      const topOperations = buildTopOperations(sortedByDuration, bundle.durationMs);
-      const chains = buildChains(chainNodes, recordById);
-      const orphans = buildOrphans(data.records, bundle.durationMs);
-
-      const cpuAttribution = buildCpuAttribution({
-        records: data.records,
-        recordById,
-        rootByAsyncId,
-        cpuKind: bundle.kinds.cpu as { cpuProfile: RawCpuProfile } | undefined,
-      });
-      const quality = buildQuality(data, cpuAttribution);
-      const hotFiles = buildHotFiles({
-        records: data.records,
-        captureDurationMs: bundle.durationMs,
-        chainNodes,
-        rootByAsyncId,
-        cpuAttribution,
-        quality,
-      });
-      const summary = buildSummary(data, bundle.durationMs, hotFiles);
-
-      const report: AsyncProfileReport = {
-        summary,
-        quality,
-        hotFiles,
-        topOperations,
-        chains,
-        orphans,
-        concurrencyTimeline: data.concurrency,
-        filteredCounts: data.filteredCounts,
-        cdpAsyncContexts: (data.cdpAsyncContexts ?? []).map(toReportCdpContext),
-        cpuAttribution,
-      };
-
-      ctx.writeSection<AsyncProfileReport>(report);
-      ctx.setContextView<AsyncAnalysisView>({
-        data,
-        bundle,
-        chainNodes,
-        sortedByDuration,
-        rootByAsyncId,
-        cpuAttribution,
-      });
+      activeResolver = ctx.options.sourceMaps;
+      try {
+        if (activeResolver) {
+          const urls = collectAsyncFrameUrls(data);
+          activeResolver.prepare(urls);
+        }
+        analyzeInner(ctx, data, bundle);
+      } finally {
+        activeResolver = undefined;
+      }
     },
   };
+}
+
+function collectAsyncFrameUrls(data: AsyncKindData): Set<string> {
+  const urls = new Set<string>();
+  const addStack = (stack: AsyncStackFrame[] | undefined): void => {
+    if (!stack) return;
+    for (const frame of stack) if (frame.file) urls.add(frame.file);
+  };
+  for (const rec of data.records) {
+    addStack(rec.initStack);
+    addStack(rec.promiseRegistrationStack);
+    addStack(rec.promiseHandlerStack);
+    addStack(rec.awaitStack);
+    addStack(rec.safeRegistrationStack);
+    addStack(rec.safeHandlerStack);
+    addStack(rec.executionStack);
+  }
+  for (const ctx of data.cdpAsyncContexts ?? []) {
+    addStack(ctx.frames);
+    for (const segment of ctx.asyncStack) addStack(segment.frames);
+  }
+  return urls;
+}
+
+function analyzeInner(
+  ctx: KindAnalysisContext<AsyncKindData>,
+  data: AsyncKindData,
+  bundle: CaptureBundle,
+): void {
+  const sortedByDuration = [...data.records].sort(
+    (a, b) => effectiveDuration(b, bundle.durationMs) - effectiveDuration(a, bundle.durationMs),
+  );
+
+  const recordById = new Map<number, AsyncOperationRecord>();
+  for (const rec of data.records) recordById.set(rec.asyncId, rec);
+  correlateCdpAsyncContexts(data.records, data.cdpAsyncContexts ?? []);
+
+  const chainNodes = buildChainTree(data.records, recordById);
+  const rootByAsyncId = buildRootMap(data.records, recordById);
+
+  const topOperations = buildTopOperations(sortedByDuration, bundle.durationMs);
+  const chains = buildChains(chainNodes, recordById);
+  const orphans = buildOrphans(data.records, bundle.durationMs);
+
+  const cpuAttribution = buildCpuAttribution({
+    records: data.records,
+    recordById,
+    rootByAsyncId,
+    cpuKind: bundle.kinds.cpu as { cpuProfile: RawCpuProfile } | undefined,
+  });
+  const quality = buildQuality(data, cpuAttribution);
+  const hotFiles = buildHotFiles({
+    records: data.records,
+    captureDurationMs: bundle.durationMs,
+    chainNodes,
+    rootByAsyncId,
+    cpuAttribution,
+    quality,
+  });
+  const summary = buildSummary(data, bundle.durationMs, hotFiles);
+
+  const report: AsyncProfileReport = {
+    summary,
+    quality,
+    hotFiles,
+    topOperations,
+    chains,
+    orphans,
+    concurrencyTimeline: data.concurrency,
+    filteredCounts: data.filteredCounts,
+    cdpAsyncContexts: (data.cdpAsyncContexts ?? []).map(toReportCdpContext),
+    cpuAttribution,
+  };
+
+  ctx.writeSection<AsyncProfileReport>(report);
+  ctx.setContextView<AsyncAnalysisView>({
+    data,
+    bundle,
+    chainNodes,
+    sortedByDuration,
+    rootByAsyncId,
+    cpuAttribution,
+  });
 }
 
 function effectiveDuration(rec: AsyncOperationRecord, captureDurationMs: number): number {
@@ -119,12 +166,17 @@ function effectiveDuration(rec: AsyncOperationRecord, captureDurationMs: number)
 }
 
 function toReportFrame(frame: AsyncStackFrame): AsyncStackFrameReport {
-  return {
+  const reportFrame: AsyncStackFrameReport = {
     function: frame.function,
     file: frame.file,
     line: frame.line,
     column: frame.column,
   };
+  if (activeResolver && frame.file && frame.line > 0) {
+    const source = activeResolver.resolve(frame.file, frame.line, frame.column);
+    if (source) reportFrame.source = source;
+  }
+  return reportFrame;
 }
 
 function toReportCdpContext(
@@ -181,6 +233,7 @@ function buildSummary(
       line: topHotFile.primaryFrame.line,
       score: topHotFile.score,
       confidence: topHotFile.confidence,
+      ...(topHotFile.primaryFrame.source ? { source: topHotFile.primaryFrame.source } : {}),
     };
   }
   if (durations.length > 0) {

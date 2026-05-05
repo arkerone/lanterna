@@ -56,6 +56,7 @@ export const eventLoopStallDetector: KindScopedDetector<'cpu'> = {
           line: strongCorrelation ? topCandidate.line : 0,
           function: strongCorrelation ? topCandidate.function : '(aggregate)',
           selfPct: strongCorrelation ? topCandidate.samplePct : 0,
+          ...(strongCorrelation && topCandidate.source ? { source: topCandidate.source } : {}),
           extra: evidenceExtra,
         },
         measurements: {
