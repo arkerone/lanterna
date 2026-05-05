@@ -2,7 +2,7 @@
 
 Use this for report navigation and multi-kind path conventions. For CPU-specific interpretation, see [cpu-profiling.md](cpu-profiling.md).
 
-For human-readable triage of an existing report, run `lanterna report <file> --format text` or `lanterna report <file> --format markdown`. This renders the same schema without changing the JSON report shape.
+For human-readable triage of an existing report, run `lanterna report <file> --format text` or `lanterna report <file> --format markdown`. For agent analysis, run `lanterna report <file> --format agent --output report.agent.md` first. The agent format is the deterministic first read for existing JSON reports and renders `Signal Gate`, `Action Queue`, and `Files To Read First` without changing the JSON report shape.
 
 ## Top-Level Shape
 
@@ -88,6 +88,36 @@ Optional field on every frame-bearing object (`hotspots[]`, `summary.topUserHots
 
 **Reading rule:** when `source` is present, cite `source.file:source.line` instead of the sibling `file:line`. The sibling points at compiled JS; `source` points at the source you can patch. Treat virtual source paths such as `webpack://...` and `vite:/...` as bundler labels unless they resolve on disk.
 
+### `userCaller`
+
+`userCaller` points to the closest user-code frame associated with an otherwise external or indirect hot frame. It can appear on:
+
+- `profiles.cpu.hotspots[].userCaller`
+- `profiles.memory.hotAllocators[].userCaller`
+- `profiles.memory.summary.topAllocator.userCaller`
+- `profiles.async.topOperations[].userCaller`
+- `profiles.async.hotFiles[].userCaller`
+- `profiles.async.cpuAttribution.topChains[].userCaller`
+- `profiles.async.summary.topAsyncHotFile.userCaller`
+- `findings[].evidence.extra.userCaller`
+
+Shape:
+
+```json
+{
+  "function": "handleRequest",
+  "file": "/repo/dist/app.js",
+  "line": 22,
+  "source": { "file": "src/app.ts", "line": 44 },
+  "profilePct": 37.5,
+  "supportPct": 92,
+  "confidence": "high",
+  "basis": "cpu-sample-path"
+}
+```
+
+Location rule: prefer `userCaller.source.file:userCaller.source.line`, then `userCaller.file:userCaller.line`, then the generated fallback already shown by the agent report. `confidence: "high"` can support an actionable finding when the finding confidence, proof level, action confidence, and signal gate also support action. `confidence: "medium"` or `"low"` is only an inspection lead.
+
 ## `profiles`
 
 `profiles` is a map of report section key to kind-specific data. The schema is composed from the active kinds. Built-in kinds:
@@ -170,6 +200,7 @@ Common fields:
 | `evidence.file`, `evidence.line`, `evidence.function` | Source location to inspect first |
 | `evidence.selfPct` | CPU share or kind-specific share represented by the evidence |
 | `evidence.extra` | Detector-specific proof, attribution, and correlation details |
+| `evidence.extra.userCaller` | Optional nearest user-code caller attribution for external or indirect evidence |
 | `measurements.observed`, `measurements.thresholds` | Numeric trigger data |
 | `confidence` | Finding-level confidence: `"low"`, `"medium"`, or `"high"` when supplied |
 | `proofLevel` | Evidence class: `"direct-sample"`, `"correlated-window"`, `"trace-only"`, or `"heuristic"` when supplied |
@@ -179,7 +210,10 @@ Common fields:
 Rules:
 
 - Read `evidence.file` before proposing code changes.
+- In agent reports, `Action Queue` may include `User caller: <fn> (<location>) [confidence, support X%]`. Use that location before dependency/runtime frames, but only treat high-confidence user callers as potentially actionable.
+- `Files To Read First` excludes `node_modules`, `node:`, pnpm store, and runtime locations unless an editable user-code `userCaller` location is available.
 - Use `confidence`, `proofLevel`, `measurements`, and `priority`, not severity alone.
+- Use `confidence`, `proofLevel`, `priority.actionConfidence`, `sourceMaps.coverage`, and `userCaller.confidence` together: high can be actionable; medium/low user callers are inspection leads; missing or unknown proof with non-high confidence means rerun.
 - Unknown categories are extension findings, not schema violations.
 - Treat missing optional fields as absent signal, not as zero.
 

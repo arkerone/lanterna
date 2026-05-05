@@ -40,6 +40,7 @@ npx -y @lanterna-profiler/cli --help
 # Profile a CLI script for 30 s and read the report
 lanterna run --duration 30s --output report.json -- node app.js
 lanterna report report.json --format text
+lanterna report report.json --format agent --output report.agent.md
 
 # Profile a server with representative load
 lanterna run \

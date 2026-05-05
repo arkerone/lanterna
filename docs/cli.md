@@ -8,7 +8,7 @@ Complete reference for the `lanterna` binary shipped by [`@lanterna-profiler/cli
 | --- | --- |
 | [`lanterna run`](#lanterna-run) | Spawn a Node program and profile it. |
 | [`lanterna attach`](#lanterna-attach) | Connect to an already-running Node process. |
-| [`lanterna report`](#lanterna-report) | Render an existing JSON report as text, markdown or reformatted JSON. |
+| [`lanterna report`](#lanterna-report) | Render an existing JSON report as text, markdown, agent markdown or reformatted JSON. |
 
 The `--` separator is required before the target command in `run`. `attach` never takes `-- <command>`; it takes `--pid` or `--inspect-url` instead.
 
@@ -29,6 +29,9 @@ lanterna run --pretty -- node script.js
 
 # Markdown report after 30 s
 lanterna run --duration 30s --format markdown --output report.md -- node app.js
+
+# Agent report after 30 s
+lanterna run --duration 30s --format agent --output report.agent.md -- node app.js
 
 # Server: wait for readiness, drive load during capture
 lanterna run \
@@ -73,6 +76,9 @@ lanterna attach --pid
 
 # Directly to a known inspector WebSocket
 lanterna attach --inspect-url ws://127.0.0.1:9229/<uuid>
+
+# Immediate agent report
+lanterna attach --pid 4242 --duration 15s --format agent --output report.agent.md
 ```
 
 Constraints:
@@ -87,13 +93,16 @@ Constraints:
 lanterna report <file> [options]
 ```
 
-Reads an existing JSON `LanternaReport` and renders it. Capture commands default to `--format json`; `report` defaults to `--format text`.
+Reads an existing JSON `LanternaReport` and renders it. Capture commands default to `--format json`; `report` defaults to `--format text`. For agents, prefer capturing JSON first and then rendering the deterministic agent contract:
 
 ```bash
 lanterna report report.json --format text
 lanterna report report.json --format markdown --output report.md
+lanterna report report.json --format agent --output report.agent.md
 lanterna report report.json --format json --pretty
 ```
+
+`--format agent` is a deterministic Markdown contract for automated analysis. It contains a signal gate, action queue, evidence pack, files to read first, decision rules, and rerun commands only when the captured signal is insufficient.
 
 ## Options
 
@@ -155,7 +164,7 @@ Options are grouped by purpose. Capture options apply to `run` and `attach` unle
 | Option | Description |
 | --- | --- |
 | `-o, --output <path>` | Write the selected output format to a file instead of stdout. |
-| `--format <json\|text\|markdown>` | Output format. Capture commands default to `json`; `report` defaults to `text`. |
+| `--format <json\|text\|markdown\|agent>` | Output format. Capture commands default to `json`; `report` defaults to `text`. |
 | `--pretty` | Pretty-print JSON with 2-space indentation. |
 
 ### Plugins

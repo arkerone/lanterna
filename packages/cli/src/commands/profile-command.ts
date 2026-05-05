@@ -15,14 +15,14 @@ import {
 import { startActivityIndicator } from '../activity-indicator.js';
 import { applyLanternaConfig, loadLanternaConfig } from '../config.js';
 import { writeReportOutput } from '../output.js';
-import { getProvidedFlags } from '../parse.js';
+import { getProvidedFlags, type OutputFormat } from '../parse.js';
 import { loadPlugins } from '../plugins.js';
 import { createRunOrchestration } from '../run-orchestration.js';
 
 type ParsedProfileOptions = {
   detectors: string[];
   kinds: string[];
-  format: 'json' | 'text' | 'markdown';
+  format: OutputFormat;
   output?: string;
   pretty: boolean;
   heapSamplingIntervalBytes: number;

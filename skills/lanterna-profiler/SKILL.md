@@ -21,12 +21,14 @@ command -v lanterna >/dev/null 2>&1 && echo installed || echo use-npx
 
 Use `lanterna` when installed; otherwise use `npx -y @lanterna-profiler/cli`. Examples use `$LANTERNA` as notation only. Replace it with the concrete prefix in every command.
 
-Ask the user for the profiling duration and representative workload before starting any new server capture, unless they already provided them. Do not choose a duration, route, port, credentials, or load scenario silently.
+Ask the user for the profiling target, duration, representative workload, and HTTP readiness URL before starting any new capture, unless they already provided them. The target is either a command to run, a PID, or an inspector URL. Do not choose a PID, duration, route, port, credentials, or load scenario silently.
 
 ```bash
 $LANTERNA run --duration <duration> --output /tmp/lanterna-report.json -- node server.js
+$LANTERNA run --duration <duration> --format agent --output /tmp/lanterna-report.agent.md -- node server.js
 $LANTERNA run --deep --duration <duration> --output /tmp/lanterna-report.json -- node server.js
 $LANTERNA attach --pid 4242 --duration <duration> --output /tmp/lanterna-report.json
+$LANTERNA attach --pid 4242 --duration <duration> --format agent --output /tmp/lanterna-report.agent.md
 $LANTERNA attach --pid
 $LANTERNA run --kind memory --duration <duration> --output /tmp/lanterna-report.json -- node server.js
 $LANTERNA run --kind memory --heap-snapshot-analysis --heap-snapshot-dir /tmp/lanterna-heaps --duration <duration> --output /tmp/lanterna-report.json -- node server.js
@@ -36,7 +38,7 @@ $LANTERNA run --kind async --async-instrumentation full --duration <duration> --
 $LANTERNA run --duration <duration> --wait-for-url <health-url> --workload "npx -y autocannon <base-url>" --output /tmp/lanterna-report.json -- node server.js
 $LANTERNA run --no-source-maps --duration <duration> --output /tmp/lanterna-report.json -- node dist/server.js
 $LANTERNA attach --pid 4242 --no-source-maps --duration <duration> --output /tmp/lanterna-report.json
-$LANTERNA report /tmp/lanterna-report.json --format text
+$LANTERNA report /tmp/lanterna-report.json --format agent --output /tmp/lanterna-report.agent.md
 $LANTERNA report /tmp/lanterna-report.json --format markdown --output /tmp/lanterna-report.md
 ```
 
@@ -55,18 +57,30 @@ Use `--wait-for-url` for HTTP servers so Lanterna does not profile only startup.
 
 ## Workflow
 
-1. If the user already provided a report, skip capture. Run `$LANTERNA report <file> --format text` for a first pass, then read the JSON for exact fields and go straight to analysis.
-2. If no report exists, confirm the target command or ask whether the process is already running, and ask how long to profile.
-3. For running processes, prefer `$LANTERNA attach --pid` in a TTY; otherwise list plausible Node processes and ask which PID matters.
-4. For HTTP services, identify readiness and traffic before capture. Prefer `run --wait-for-url <health-url> --workload "npx -y autocannon <base-url>"` for simple local load, or `--workload "npx -y artillery run load.yml"` for scenario-based load.
-5. Read the report in two passes: `meta` + quality first, then `findings[]`, hotspots, event loop, GC, memory, and deopts as needed.
-6. Before patching, prefer `evidence.source.file:evidence.source.line` when `evidence.source` is present (this is the original TypeScript or bundled source); fall back to `evidence.file:evidence.line` only when there is no `source` field. If `source.file` is virtual (`webpack://...`, `vite:/...`), first resolve it to a real workspace file or treat it as a label, not an editable path. Read the cited function, and trace callers when evidence points at `node_modules` or a Node builtin. The same `source` precedence applies to `hotspots[].source`, `summary.topUserHotspot.source`, `hotStacks[].frames[].source`, and `hotAllocators[].source`.
-7. **When the dominant frame is external** (node_modules, node:builtin, native), look for `userCaller` on the same record before reading the call tree by hand. It points to the closest user-code frame on the sampled path and is exposed on `hotspots[]`, `hotAllocators[]`, `memory.summary.topAllocator`, `async.topOperations[]`, `async.hotFiles[]`, `async.cpuAttribution.topChains[]`, `async.summary.topAsyncHotFile`, and on `findings[].evidence.extra.userCaller`. Use `userCaller.confidence` (`high` ≥ 80 % support, `medium` for async cpu-window basis, `low` otherwise) and `userCaller.basis` (`cpu-sample-path`, `heap-sample-path`, `async-cpu-window`, `async-stack`) to decide whether to act on it directly or only treat it as an inspection lead. Patch at `userCaller.source.file:userCaller.source.line` when present, or `userCaller.file:userCaller.line` otherwise.
+### Existing report
+
+1. If the user already provided a JSON report, skip capture. First render it with the deterministic agent format: `$LANTERNA report <file> --format agent --output <file>.agent.md`. This first read is mandatory; do not start from `--format text`, `--format markdown`, or raw JSON.
+2. Read the agent report in this order and keep that order in your reasoning: `Signal Gate` -> `Action Queue` -> `Files To Read First` -> implicated source files -> conclusion.
+3. Apply `Signal Gate` before treating findings as proof. Low confidence, `heuristic`, `trace-only`, or degraded signal means hypothesis or rerun, not a patch basis.
+4. Follow `Action Queue` in Lanterna order. Do not reorder findings by intuition.
+5. Read `Files To Read First` before proposing patches. Prefer source-map locations and keep generated fallbacks visible when source-map coverage is low.
+6. Consult the JSON only to clarify a specific field cited by the agent report. Do not use raw JSON to invent a stronger conclusion than the agent report supports.
+
+### New capture
+
+1. Ask only for information that cannot be discovered safely: command or PID/inspector URL, duration, representative workload, and readiness URL for HTTP servers.
+2. Before capture, ask concrete questions for any missing items: "What command, PID, or inspector URL should I profile?", "How long should the representative capture run?", "What workload should run during the capture?", and, for HTTP servers, "What readiness URL should Lanterna wait for before starting load?"
+3. Do not choose duration, PID, route, port, credentials, or workload silently. Do not attach to the first PID found.
+4. For running processes, prefer `$LANTERNA attach --pid` in a TTY; otherwise list plausible Node processes and ask which PID matters.
+5. For HTTP services, identify readiness and traffic before capture. Prefer `run --wait-for-url <health-url> --workload "npx -y autocannon <base-url>"` for simple local load, or `--workload "npx -y artillery run load.yml"` for scenario-based load.
+6. Prefer the robust two-step path: capture JSON (`--output /tmp/lanterna-report.json`), then render `$LANTERNA report /tmp/lanterna-report.json --format agent --output /tmp/lanterna-report.agent.md`. Use `--format agent` directly on `run` or `attach` only when immediate agent output is the goal.
+7. Before patching, prefer `evidence.source.file:evidence.source.line` when `evidence.source` is present (this is the original TypeScript or bundled source); fall back to `evidence.file:evidence.line` only when there is no `source` field. If `source.file` is virtual (`webpack://...`, `vite:/...`), first resolve it to a real workspace file or treat it as a label, not an editable path. Read the cited function, and trace callers when evidence points at `node_modules` or a Node builtin. The same `source` precedence applies to `hotspots[].source`, `summary.topUserHotspot.source`, `hotStacks[].frames[].source`, and `hotAllocators[].source`.
+8. **When the dominant frame is external** (node_modules, node:builtin, native), look for `userCaller` on the same record before reading the call tree by hand. It points to the closest user-code frame on the sampled path and is exposed on `hotspots[]`, `hotAllocators[]`, `memory.summary.topAllocator`, `async.topOperations[]`, `async.hotFiles[]`, `async.cpuAttribution.topChains[]`, `async.summary.topAsyncHotFile`, and on `findings[].evidence.extra.userCaller`. Use `userCaller.confidence` (`high` ≥ 80 % support, `medium` for async cpu-window basis, `low` otherwise) and `userCaller.basis` (`cpu-sample-path`, `heap-sample-path`, `async-cpu-window`, `async-stack`) to decide whether to act on it directly or only treat it as an inspection lead. `high` can be actionable when the rest of the finding is also actionable; `medium` and `low` are inspection leads only. For locations, `userCaller.source.file:userCaller.source.line` wins, then `userCaller.file:userCaller.line`, then the generated fallback shown by the agent report.
 
 Useful first-pass report query:
 
 ```bash
-$LANTERNA report /tmp/lanterna-report.json --format text
+$LANTERNA report /tmp/lanterna-report.json --format agent --output /tmp/lanterna-report.agent.md
 jq '{meta, profiles, findingsCount: (.findings | length)}' /tmp/lanterna-report.json
 ```
 
@@ -97,6 +111,12 @@ Never:
 - run `npx -y @lanterna-profiler/cli node server.js` without `run` and `--`;
 - recommend global install as a prerequisite;
 - attach to the first PID without confirmation;
+- fall back to `--format text` when deterministic agent analysis requires `--format agent`;
+- skip the agent order (`Signal Gate` -> `Action Queue` -> `Files To Read First` -> source reading -> conclusion);
+- patch from `suggestion` alone without reading implicated source;
+- treat `heuristic`, `trace-only`, low confidence, or degraded signal as proof;
+- treat `medium` or `low` `userCaller.confidence` as a patch location instead of an inspection lead;
+- reorder findings by intuition instead of following `Action Queue`;
 - claim event-loop causality when the event-loop signal is unavailable or histogram-only;
 - treat low-confidence `profiles.cpu.quality` as definitive;
 - quote a virtual `source.file` (`webpack://`, `vite:/...`) as a fix location without first checking that the path resolves on disk — these are bundler labels, not necessarily files;

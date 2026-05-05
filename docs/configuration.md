@@ -7,8 +7,8 @@ Lanterna can read default options from a `.lanterna.json` (or `.lanterna.config.
 ```json
 {
   "duration": "30s",
-  "output": "report.md",
-  "format": "markdown",
+  "output": "report.agent.md",
+  "format": "agent",
   "pretty": true,
   "sourceMaps": true,
   "kinds": ["cpu", "memory"],
@@ -34,7 +34,7 @@ Lanterna can read default options from a `.lanterna.json` (or `.lanterna.config.
 }
 ```
 
-Every field maps 1:1 to a CLI flag. `sourceMaps` defaults to `true`; set it to `false` to match `--no-source-maps`. See [cli.md](./cli.md) for option semantics.
+Every field maps 1:1 to a CLI flag. `format` accepts `json`, `text`, `markdown`, or `agent`. `sourceMaps` defaults to `true`; set it to `false` to match `--no-source-maps`. See [cli.md](./cli.md) for option semantics.
 
 ## Load order
 

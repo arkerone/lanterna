@@ -107,6 +107,13 @@ describe('parseRunArgs', () => {
     });
   });
 
+  it('accepts agent format for run captures', () => {
+    expect(parseRunArgs(['--format', 'agent', '--', 'node', 'app.js'])).toMatchObject({
+      command: ['node', 'app.js'],
+      format: 'agent',
+    });
+  });
+
   it('parses --no-source-maps for run captures', () => {
     expect(parseRunArgs(['--no-source-maps', '--', 'node', 'app.js']).sourceMaps).toBe(false);
   });
@@ -344,6 +351,13 @@ describe('parseAttachArgs', () => {
     expect(parseAttachArgs(['--pid', '42', '--no-source-maps']).sourceMaps).toBe(false);
   });
 
+  it('accepts agent format for attach captures', () => {
+    expect(parseAttachArgs(['--pid', '42', '--format', 'agent'])).toMatchObject({
+      pid: 42,
+      format: 'agent',
+    });
+  });
+
   it('does not prompt interactively for bare attach anymore', () => {
     expect(parseAttachArgs([])).toEqual({
       pretty: false,
@@ -372,6 +386,17 @@ describe('parseReportArgs', () => {
       format: 'text',
       output: 'report.txt',
       pretty: true,
+    });
+  });
+
+  it('accepts agent format for existing reports', () => {
+    expect(
+      parseReportArgs(['report.json', '--format', 'agent', '--output', 'report.agent.md']),
+    ).toEqual({
+      file: 'report.json',
+      format: 'agent',
+      output: 'report.agent.md',
+      pretty: false,
     });
   });
 

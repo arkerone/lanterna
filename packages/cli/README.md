@@ -16,6 +16,7 @@ npx -y @lanterna-profiler/cli --help
 lanterna run --duration 30s --output report.json -- node app.js
 lanterna attach --pid 4242 --duration 15s --output report.json
 lanterna report report.json --format text
+lanterna report report.json --format agent --output report.agent.md
 ```
 
 ## Documentation

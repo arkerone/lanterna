@@ -1,6 +1,6 @@
 import { MIN_SAMPLE_INTERVAL_MICROS } from '@lanterna-profiler/core';
 
-export type OutputFormat = 'json' | 'text' | 'markdown';
+export type OutputFormat = 'json' | 'text' | 'markdown' | 'agent';
 
 export const DEFAULT_WAIT_TIMEOUT_MS = 30_000;
 export const MIN_HEAP_SAMPLING_INTERVAL_BYTES = 1024;
@@ -90,8 +90,10 @@ export function parseSampleIntervalMicros(
 }
 
 export function parseOutputFormat(value: string): OutputFormat {
-  if (value === 'json' || value === 'text' || value === 'markdown') return value;
-  throw new Error(`Invalid format: ${value} (expected json, text, or markdown)`);
+  if (value === 'json' || value === 'text' || value === 'markdown' || value === 'agent') {
+    return value;
+  }
+  throw new Error(`Invalid format: ${value} (expected json, text, markdown, or agent)`);
 }
 
 export function normalizeKinds(
