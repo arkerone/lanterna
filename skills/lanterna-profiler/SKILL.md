@@ -60,11 +60,13 @@ Use `--wait-for-url` for HTTP servers so Lanterna does not profile only startup.
 ### Existing report
 
 1. If the user already provided a JSON report, skip capture. First render it with the deterministic agent format: `$LANTERNA report <file> --format agent --output <file>.agent.md`. This first read is mandatory; do not start from `--format text`, `--format markdown`, or raw JSON.
-2. Read the agent report in this order and keep that order in your reasoning: `Signal Gate` -> `Action Queue` -> `Files To Read First` -> implicated source files -> conclusion.
-3. Apply `Signal Gate` before treating findings as proof. Low confidence, `heuristic`, `trace-only`, or degraded signal means hypothesis or rerun, not a patch basis.
+2. Read the agent report in this order and keep that order in your reasoning: `Capture` -> `Signal Gate` -> `Action Queue` -> `Evidence Pack` -> `Decision Rules` -> `Kind Review` -> `Files To Read First` -> implicated source files -> conclusion.
+3. Apply `Signal Gate` before treating findings as proof. Low confidence, `heuristic`, `trace-only`, degraded integrity, weak source-map coverage, memory caveats, or async caveats mean hypothesis or rerun, not a patch basis.
 4. Follow `Action Queue` in Lanterna order. Do not reorder findings by intuition.
-5. Read `Files To Read First` before proposing patches. Prefer source-map locations and keep generated fallbacks visible when source-map coverage is low.
-6. Consult the JSON only to clarify a specific field cited by the agent report. Do not use raw JSON to invent a stronger conclusion than the agent report supports.
+5. Read `Evidence Pack` and `Decision Rules` before deciding whether an item is actionable. A `high` `userCaller` can be actionable only when the finding confidence, proof level, action confidence, and signal gate are also actionable. `medium` and `low` `userCaller` attributions are inspection leads only.
+6. Perform `Kind Review` for every kind listed in `meta.profileKinds`, including reports with no findings. For custom kinds, do not assume `kind.id === report.profiles` section key beyond what the report declares.
+7. Read `Files To Read First` before proposing patches. Prefer source-map locations and keep generated fallbacks visible when source-map coverage is low.
+8. Consult the JSON only for targeted fields not yet rendered by the agent report. Do not use raw JSON to invent a stronger conclusion than the agent report supports.
 
 ### New capture
 
@@ -74,8 +76,8 @@ Use `--wait-for-url` for HTTP servers so Lanterna does not profile only startup.
 4. For running processes, prefer `$LANTERNA attach --pid` in a TTY; otherwise list plausible Node processes and ask which PID matters.
 5. For HTTP services, identify readiness and traffic before capture. Prefer `run --wait-for-url <health-url> --workload "npx -y autocannon <base-url>"` for simple local load, or `--workload "npx -y artillery run load.yml"` for scenario-based load.
 6. Prefer the robust two-step path: capture JSON (`--output /tmp/lanterna-report.json`), then render `$LANTERNA report /tmp/lanterna-report.json --format agent --output /tmp/lanterna-report.agent.md`. Use `--format agent` directly on `run` or `attach` only when immediate agent output is the goal.
-7. Before patching, prefer `evidence.source.file:evidence.source.line` when `evidence.source` is present (this is the original TypeScript or bundled source); fall back to `evidence.file:evidence.line` only when there is no `source` field. If `source.file` is virtual (`webpack://...`, `vite:/...`), first resolve it to a real workspace file or treat it as a label, not an editable path. Read the cited function, and trace callers when evidence points at `node_modules` or a Node builtin. The same `source` precedence applies to `hotspots[].source`, `summary.topUserHotspot.source`, `hotStacks[].frames[].source`, and `hotAllocators[].source`.
-8. **When the dominant frame is external** (node_modules, node:builtin, native), look for `userCaller` on the same record before reading the call tree by hand. It points to the closest user-code frame on the sampled path and is exposed on `hotspots[]`, `hotAllocators[]`, `memory.summary.topAllocator`, `async.topOperations[]`, `async.hotFiles[]`, `async.cpuAttribution.topChains[]`, `async.summary.topAsyncHotFile`, and on `findings[].evidence.extra.userCaller`. Use `userCaller.confidence` (`high` ≥ 80 % support, `medium` for async cpu-window basis, `low` otherwise) and `userCaller.basis` (`cpu-sample-path`, `heap-sample-path`, `async-cpu-window`, `async-stack`) to decide whether to act on it directly or only treat it as an inspection lead. `high` can be actionable when the rest of the finding is also actionable; `medium` and `low` are inspection leads only. For locations, `userCaller.source.file:userCaller.source.line` wins, then `userCaller.file:userCaller.line`, then the generated fallback shown by the agent report.
+7. Before patching, prefer `source.file:source.line` when `source` is present, but keep the generated fallback `file:line` visible in your notes. If `source.file` is virtual (`webpack://...`, `vite:/...`, etc.) or cannot be found in the workspace, treat it as a label, not an editable path. Read the cited function, and trace callers when evidence points at `node_modules`, Node builtins, or native frames.
+8. **When the dominant frame is external** (node_modules, node:builtin, native), look for `userCaller` on the same record before reading the call tree by hand. It points to the closest user-code frame on the sampled path. Use `userCaller.confidence` (`high` ≥ 80 % support, `medium` for async cpu-window basis, `low` otherwise) and `userCaller.basis` (`cpu-sample-path`, `heap-sample-path`, `async-cpu-window`, `async-stack`) to decide whether to act on it directly or only treat it as an inspection lead. For locations, `userCaller.source.file:userCaller.source.line` wins, but keep `userCaller.file:userCaller.line` as generated fallback.
 
 Useful first-pass report query:
 
@@ -84,6 +86,59 @@ $LANTERNA report /tmp/lanterna-report.json --format agent --output /tmp/lanterna
 jq '{meta, profiles, findingsCount: (.findings | length)}' /tmp/lanterna-report.json
 ```
 
+## Kind Review Rules
+
+Run the matching review for every kind in `meta.profileKinds`. The agent report should expose the most important fields; use targeted JSON only when a field below is missing from the rendered report.
+
+### CPU
+
+Check:
+
+- `profiles.cpu.quality`
+- `profiles.cpu.summary.topUserHotspot.source`
+- `profiles.cpu.hotspots[].source`
+- `profiles.cpu.hotspots[].userCaller`
+- `profiles.cpu.hotStacks[].frames[].source`
+- `profiles.cpu.hotStackClusters[].anchor.source`
+- `findings[].evidence.source` for CPU findings
+
+Never patch an external CPU hotspot directly without looking for `userCaller` or another user-code caller.
+
+### Memory
+
+Check:
+
+- `profiles.memory.summary.topAllocator.source`
+- `profiles.memory.summary.topAllocator.userCaller`
+- `profiles.memory.hotAllocators[].source`
+- `profiles.memory.hotAllocators[].userCaller`
+- `profiles.memory.memoryUsage`
+- `profiles.memory.heapSnapshotAnalysis` when present
+- `findings[].evidence.source` for memory findings
+
+For external or native allocators, use `userCaller` as the inspection point. Do not treat the allocator frame itself as the patch location.
+
+### Async
+
+Check:
+
+- `profiles.async.quality`
+- `profiles.async.summary.topAsyncHotFile.source`
+- `profiles.async.summary.topAsyncHotFile.userCaller`
+- `profiles.async.topOperations[].userCaller`
+- `profiles.async.hotFiles[].userCaller`
+- `profiles.async.cpuAttribution.topChains[].userCaller`
+- frame `source` fields on `initFrame`, `primaryFrame`, `awaitFrame`, `executionFrame`, and `cdpAsyncContextFrame`
+- `findings[].evidence.source` for async findings
+
+Do not assume an async finding always has `evidence.extra.userCaller`. If it is absent, read the async aggregates above before concluding.
+
+### Multi-Kind
+
+- For `alloc-in-hot-path`, verify both CPU and memory evidence before concluding.
+- For `hot-async-context`, verify both CPU and async evidence before concluding.
+- For custom kinds, inspect the declared kind and report shape without assuming the built-in section naming rules.
+
 ## Quality Gate
 
 Always check quality before claiming causality:
@@ -91,6 +146,8 @@ Always check quality before claiming causality:
 - `profiles.cpu.quality.confidence`, `reasons[]`, and `recommendations[]`
 - `meta.captureIntegrity.*` and `meta.captureIntegrity.kinds.<kind>.*`
 - `meta.captureIntegrity.sourceMaps.{enabled, coverage, failures[]}` — when `enabled` and `coverage < 0.7`, treat `source.file:source.line` as a hint and keep the generated `file:line` visible as fallback context
+- `profiles.memory.memoryUsage.available`, `sampleCount`, and heap snapshot warnings when memory is present
+- `profiles.async.quality.confidence`, `recordsDropped`, stack coverage, and CPU attribution coverage when async is present
 - `finding.confidence`, `finding.proofLevel`, `priority`, and `measurements`
 
 If confidence is low, say what is still useful, what is only a hypothesis, and what rerun would improve the signal.
@@ -112,7 +169,8 @@ Never:
 - recommend global install as a prerequisite;
 - attach to the first PID without confirmation;
 - fall back to `--format text` when deterministic agent analysis requires `--format agent`;
-- skip the agent order (`Signal Gate` -> `Action Queue` -> `Files To Read First` -> source reading -> conclusion);
+- skip the agent order (`Capture` -> `Signal Gate` -> `Action Queue` -> `Evidence Pack` -> `Decision Rules` -> `Kind Review` -> `Files To Read First` -> source reading -> conclusion);
+- skip `Kind Review` for any kind in `meta.profileKinds`;
 - patch from `suggestion` alone without reading implicated source;
 - treat `heuristic`, `trace-only`, low confidence, or degraded signal as proof;
 - treat `medium` or `low` `userCaller.confidence` as a patch location instead of an inspection lead;
