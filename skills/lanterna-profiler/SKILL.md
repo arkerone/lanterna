@@ -1,6 +1,6 @@
 ---
 name: lanterna-profiler
-description: Use when investigating Node.js CPU bottlenecks, slow endpoints, hot paths, event-loop stalls, GC pressure, blocking sync I/O, sync crypto, deopt loops, memory leaks, sustained heap growth, large allocators, off-heap Buffer pressure, Lanterna CLI captures, or Lanterna JSON profiling reports.
+description: Use when investigating Node.js CPU bottlenecks, slow endpoints, hot paths, event-loop stalls, GC pressure, blocking sync I/O, sync crypto, deopt loops, memory leaks, sustained heap growth, large allocators, off-heap Buffer pressure, Lanterna CLI captures, or Lanterna profiling reports.
 ---
 
 # lanterna-profiler
@@ -39,6 +39,7 @@ $LANTERNA run --duration <duration> --wait-for-url <health-url> --workload "npx 
 $LANTERNA run --no-source-maps --duration <duration> --output /tmp/lanterna-report.json -- node dist/server.js
 $LANTERNA attach --pid 4242 --no-source-maps --duration <duration> --output /tmp/lanterna-report.json
 $LANTERNA report /tmp/lanterna-report.json --format agent --output /tmp/lanterna-report.agent.md
+# Human-readable only; agents must analyze report.agent.md first.
 $LANTERNA report /tmp/lanterna-report.json --format markdown --output /tmp/lanterna-report.md
 ```
 
@@ -64,7 +65,7 @@ Use `--wait-for-url` for HTTP servers so Lanterna does not profile only startup.
 3. Apply `Signal Gate` before treating findings as proof. Low confidence, `heuristic`, `trace-only`, degraded integrity, weak source-map coverage, memory caveats, or async caveats mean hypothesis or rerun, not a patch basis.
 4. Follow `Action Queue` in Lanterna order. Do not reorder findings by intuition.
 5. Read `Evidence Pack` and `Decision Rules` before deciding whether an item is actionable. A `high` `userCaller` can be actionable only when the finding confidence, proof level, action confidence, and signal gate are also actionable. `medium` and `low` `userCaller` attributions are inspection leads only.
-6. Perform `Kind Review` for every kind listed in `meta.profileKinds`, including reports with no findings. For custom kinds, do not assume `kind.id === report.profiles` section key beyond what the report declares.
+6. Perform `Kind Review` for every kind listed in the agent report's `Capture` section, including reports with no findings. For custom kinds, do not assume `kind.id === report.profiles` section key beyond what the report declares.
 7. Read `Files To Read First` before proposing patches. Prefer source-map locations and keep generated fallbacks visible when source-map coverage is low.
 8. Consult the JSON only for targeted fields not yet rendered by the agent report. Do not use raw JSON to invent a stronger conclusion than the agent report supports.
 
@@ -79,16 +80,17 @@ Use `--wait-for-url` for HTTP servers so Lanterna does not profile only startup.
 7. Before patching, prefer `source.file:source.line` when `source` is present, but keep the generated fallback `file:line` visible in your notes. If `source.file` is virtual (`webpack://...`, `vite:/...`, etc.) or cannot be found in the workspace, treat it as a label, not an editable path. Read the cited function, and trace callers when evidence points at `node_modules`, Node builtins, or native frames.
 8. **When the dominant frame is external** (node_modules, node:builtin, native), look for `userCaller` on the same record before reading the call tree by hand. It points to the closest user-code frame on the sampled path. Use `userCaller.confidence` (`high` ≥ 80 % support, `medium` for async cpu-window basis, `low` otherwise) and `userCaller.basis` (`cpu-sample-path`, `heap-sample-path`, `async-cpu-window`, `async-stack`) to decide whether to act on it directly or only treat it as an inspection lead. For locations, `userCaller.source.file:userCaller.source.line` wins, but keep `userCaller.file:userCaller.line` as generated fallback.
 
-Useful first-pass report query:
+Required first-pass report rendering:
 
 ```bash
 $LANTERNA report /tmp/lanterna-report.json --format agent --output /tmp/lanterna-report.agent.md
-jq '{meta, profiles, findingsCount: (.findings | length)}' /tmp/lanterna-report.json
 ```
+
+Use `jq` only after reading `report.agent.md`, and only to answer a targeted question about a field the agent report does not render yet.
 
 ## Kind Review Rules
 
-Run the matching review for every kind in `meta.profileKinds`. The agent report should expose the most important fields; use targeted JSON only when a field below is missing from the rendered report.
+Run the matching review for every kind listed in the agent report's `Capture` section. The field paths below are JSON lookup paths for targeted clarification only; do not start analysis from them.
 
 ### CPU
 
@@ -143,12 +145,10 @@ Do not assume an async finding always has `evidence.extra.userCaller`. If it is 
 
 Always check quality before claiming causality:
 
-- `profiles.cpu.quality.confidence`, `reasons[]`, and `recommendations[]`
-- `meta.captureIntegrity.*` and `meta.captureIntegrity.kinds.<kind>.*`
-- `meta.captureIntegrity.sourceMaps.{enabled, coverage, failures[]}` — when `enabled` and `coverage < 0.7`, treat `source.file:source.line` as a hint and keep the generated `file:line` visible as fallback context
-- `profiles.memory.memoryUsage.available`, `sampleCount`, and heap snapshot warnings when memory is present
-- `profiles.async.quality.confidence`, `recordsDropped`, stack coverage, and CPU attribution coverage when async is present
-- `finding.confidence`, `finding.proofLevel`, `priority`, and `measurements`
+- Agent `Signal Gate`: CPU quality, integrity, blocking caveats, degrading caveats, and source-map coverage.
+- Agent `Action Queue`, `Evidence Pack`, and `Decision Rules`: finding confidence, proof level, priority, action confidence, measurements, and actionability.
+- Agent `Kind Review`: CPU, memory, and async summaries for every kind in `Capture`.
+- Targeted JSON only when the rendered agent report omits a needed detail such as `meta.captureIntegrity.sourceMaps.failures[]`, full memory samples, heap snapshot retainer paths, or an async frame not printed in `Kind Review`.
 
 If confidence is low, say what is still useful, what is only a hypothesis, and what rerun would improve the signal.
 
@@ -170,13 +170,13 @@ Never:
 - attach to the first PID without confirmation;
 - fall back to `--format text` when deterministic agent analysis requires `--format agent`;
 - skip the agent order (`Capture` -> `Signal Gate` -> `Action Queue` -> `Evidence Pack` -> `Decision Rules` -> `Kind Review` -> `Files To Read First` -> source reading -> conclusion);
-- skip `Kind Review` for any kind in `meta.profileKinds`;
+- skip `Kind Review` for any kind listed in agent `Capture`;
 - patch from `suggestion` alone without reading implicated source;
 - treat `heuristic`, `trace-only`, low confidence, or degraded signal as proof;
 - treat `medium` or `low` `userCaller.confidence` as a patch location instead of an inspection lead;
 - reorder findings by intuition instead of following `Action Queue`;
 - claim event-loop causality when the event-loop signal is unavailable or histogram-only;
-- treat low-confidence `profiles.cpu.quality` as definitive;
+- treat low-confidence agent `Signal Gate` CPU quality as definitive;
 - quote a virtual `source.file` (`webpack://`, `vite:/...`) as a fix location without first checking that the path resolves on disk — these are bundler labels, not necessarily files;
 - infer report values that are not present.
 

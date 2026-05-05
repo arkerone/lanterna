@@ -1,8 +1,8 @@
 # LanternaReport Schema Reference
 
-Use this for report navigation and multi-kind path conventions. For CPU-specific interpretation, see [cpu-profiling.md](cpu-profiling.md).
+Use this only for targeted JSON field lookup after reading the agent report. For CPU-specific interpretation, see [cpu-profiling.md](cpu-profiling.md).
 
-For human-readable triage of an existing report, run `lanterna report <file> --format text` or `lanterna report <file> --format markdown`. For agent analysis, run `lanterna report <file> --format agent --output report.agent.md` first. The agent format is the deterministic first read for existing JSON reports and renders `Signal Gate`, `Action Queue`, and `Files To Read First` without changing the JSON report shape.
+For agent analysis, run `lanterna report <file> --format agent --output report.agent.md` first and read that output in skill order. Do not start with `--format text`, `--format markdown`, or raw JSON. The JSON paths below are a schema dictionary for targeted clarification only when the agent report omits a field you need. The agent format renders the contract sections: `Capture`, `Signal Gate`, `Action Queue`, `Evidence Pack`, `Decision Rules`, `Kind Review`, and `Files To Read First`.
 
 ## Top-Level Shape
 
@@ -86,7 +86,7 @@ Optional field on every frame-bearing object (`hotspots[]`, `summary.topUserHots
 - `column` — 1-based, optional.
 - `name` — original symbol name from the map's `names` array, useful when the generated `function` is `(anonymous)`.
 
-**Reading rule:** when `source` is present, cite `source.file:source.line` instead of the sibling `file:line`. The sibling points at compiled JS; `source` points at the source you can patch. Treat virtual source paths such as `webpack://...` and `vite:/...` as bundler labels unless they resolve on disk.
+**Reading rule:** use the agent report's rendered location first. It prefers `source.file:source.line` and keeps the generated fallback in parentheses. When consulting JSON for a missing field, apply the same rule. Treat virtual source paths such as `webpack://...` and `vite:/...` as bundler labels unless they resolve on disk.
 
 ### `userCaller`
 
@@ -116,7 +116,7 @@ Shape:
 }
 ```
 
-Location rule: prefer `userCaller.source.file:userCaller.source.line`, then `userCaller.file:userCaller.line`, then the generated fallback already shown by the agent report. `confidence: "high"` can support an actionable finding when the finding confidence, proof level, action confidence, and signal gate also support action. `confidence: "medium"` or `"low"` is only an inspection lead.
+Location rule: use the agent report's rendered `User caller` first. If targeted JSON lookup is needed, prefer `userCaller.source.file:userCaller.source.line`, then keep `userCaller.file:userCaller.line` as generated fallback. `confidence: "high"` can support an actionable finding when the finding confidence, proof level, action confidence, and signal gate also support action. `confidence: "medium"` or `"low"` is only an inspection lead.
 
 ## `profiles`
 
@@ -186,7 +186,7 @@ Do not treat unknown profile sections as invalid; third-party kinds may add new 
 
 ## `findings[]`
 
-Findings are the primary agent-facing output and are sorted by action priority.
+Findings are rendered in the agent report's `Action Queue` and are sorted by action priority.
 
 Common fields:
 
@@ -209,7 +209,7 @@ Common fields:
 
 Rules:
 
-- Read `evidence.file` before proposing code changes.
+- Read the agent report's `Source` and `Generated fallback` before proposing code changes.
 - In agent reports, `Action Queue` may include `User caller: <fn> (<location>) [confidence, support X%]`. Use that location before dependency/runtime frames, but only treat high-confidence user callers as potentially actionable.
 - `Files To Read First` excludes `node_modules`, `node:`, pnpm store, and runtime locations unless an editable user-code `userCaller` location is available.
 - Use `confidence`, `proofLevel`, `measurements`, and `priority`, not severity alone.
@@ -219,7 +219,7 @@ Rules:
 
 ## CPU Quality
 
-`profiles.cpu.quality` is the first place to check before drawing conclusions from CPU data.
+The agent report's `Signal Gate` is the first place to check before drawing conclusions from CPU data. Use `profiles.cpu.quality` only as the targeted JSON path behind that rendered gate.
 
 | Field | Meaning |
 |---|---|

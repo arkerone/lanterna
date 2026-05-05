@@ -26,7 +26,18 @@ Stop conditions specific to memory:
 - A capture under ~2 s with < 8 series samples is unreliable for `memory-growth` (slope is noisy). Ask the user to extend the duration before asserting a leak.
 - An empty `hotAllocators[]` with `memoryUsage.sampleCount > 0` means no allocations crossed the sampling threshold during capture — typically a steady-state workload reusing pools, or too short a window.
 
-## Reading `profiles.memory`
+## Reading Memory Evidence
+
+Start from the agent report, not from JSON:
+
+1. `Signal Gate` — memory usage availability, heap snapshot warnings, integrity and source-map caveats.
+2. `Action Queue` / `Evidence Pack` / `Decision Rules` — memory findings, proof level, measurements, and actionability.
+3. `Kind Review` -> `memory` — memory usage, top allocator, hot allocators, user callers, and heap snapshot summary.
+4. `Files To Read First` — editable source locations to inspect before proposing patches.
+
+Use the JSON shape below only when the agent report does not render a memory field you need to clarify.
+
+## Targeted JSON Lookup: `profiles.memory`
 
 ```json
 {
@@ -93,7 +104,7 @@ Stop conditions specific to memory:
 }
 ```
 
-Reading order:
+Targeted lookup order after the agent report:
 
 1. `summary.rss.slopeBytesPerSec` — positive and large means growth. Compare with `heapUsed` slope: if RSS grows but heapUsed is flat, the leak is off-heap (Buffer / native). If both grow, it's likely a JS-heap leak.
 2. `summary.topAllocator` and `hotAllocators[0..N]` — actionable allocation sources.
@@ -127,7 +138,9 @@ Each memory finding's `evidence.extra` carries the raw counters (slope, MB delta
 - **No growth, but `large-allocator` fires hard** → allocation churn. Hot path allocates and frees rapidly, driving GC pauses. Often co-fires with `excessive-gc` from the CPU side. Pool/reuse, prefer for-loops to `map+filter+slice` chains, avoid intermediate strings/objects.
 - **`alloc-in-hot-path` fires** → highest-leverage fix in the report. Reducing allocations on this frame cuts both CPU and GC.
 
-## jq snippets
+## Targeted jq snippets
+
+Use these only after reading `report.agent.md`, and only to clarify a field not rendered by `Signal Gate`, `Kind Review`, `Action Queue`, or `Evidence Pack`.
 
 ```bash
 # Memory summary at a glance
@@ -154,7 +167,7 @@ jq '.profiles.memory.heapSnapshotAnalysis.retainerPaths[] | {constructorName, re
 Stop and ask the user when:
 
 - The capture window is < 2 s — slope is unreliable, do not assert a leak.
-- `meta.profileKinds` does not include `memory` — the user did not request memory capture; do not invent memory observations from the CPU profile.
+- The agent `Capture` section does not list `memory` — the user did not request memory capture; do not invent memory observations from the CPU profile.
 - `memoryUsage.available` is false — the preload hook didn't run (e.g. no inspector). Time-series claims are not supported; only `hotAllocators` (from the CDP-side sampling profile) remain trustworthy.
 - `heapSnapshotAnalysis.available` is false — snapshot capture or parsing failed. Read `warnings[]`, keep using `summary`, `hotAllocators`, and `memoryUsage`, and avoid retainer claims.
 - The user mentions "OOM" but `summary.rss.maxBytes` is far below the host memory limit — the run probably did not reach the failure window; ask for a longer capture or one started closer to the OOM event.

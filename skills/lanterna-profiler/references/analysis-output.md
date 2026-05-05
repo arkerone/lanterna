@@ -1,8 +1,8 @@
 # Analysis Output Reference
 
-Use this when answering from a Lanterna report. Keep the answer source-backed and only include sections supported by `meta.profileKinds`.
+Use this when answering from a Lanterna report. Keep the answer source-backed and only include sections supported by the agent report's `Capture` kinds.
 
-When creating an issue or PR summary from a report, start with `lanterna report <file> --format agent --output report.agent.md`, read `Signal Gate` -> `Action Queue` -> `Files To Read First`, and then edit for source-backed conclusions after reading the implicated files.
+When creating an issue or PR summary from a report, start with `lanterna report <file> --format agent --output report.agent.md`. Read `Capture` -> `Signal Gate` -> `Action Queue` -> `Evidence Pack` -> `Decision Rules` -> `Kind Review` -> `Files To Read First`, then read implicated source files before writing source-backed conclusions. Do not start from raw JSON; use JSON only for a targeted field missing from the agent report.
 
 ## Recommended Shape
 
@@ -10,31 +10,29 @@ When creating an issue or PR summary from a report, start with `lanterna report 
 ## Lanterna Profile - <command or pid> (<durationMs>ms, kinds: <profileKinds>)
 
 ### Quality
-CPU confidence: <profiles.cpu.quality.confidence> - <reasons or "no quality warnings">
-Integrity caveats: <captureIntegrity issues or "none">
+CPU confidence: <agent Signal Gate CPU quality> - <agent caveats or "no quality warnings">
+Integrity caveats: <agent Signal Gate integrity issues or "none">
 
 ### Summary
-CPU: <onCpuRatio * 100>% on-CPU | top category: <topCategory> | <samplesTotal> samples @ <sampleIntervalMicros>us
-Memory: RSS <startMB> -> <endMB> MB (slope <slopeBytesPerSec>) | top allocator: `<fn>` <selfPct>% | <totalSampledBytes> bytes sampled
+CPU: <agent Kind Review CPU summary and top hotspot>
+Memory: <agent Kind Review memory usage/top allocator>
+Async: <agent Kind Review async quality/top operation/hot file/cpu chain>
 
 ### Findings
 #### [<SEVERITY>] <title>
 Confidence: <finding.confidence> | proof: <finding.proofLevel>
-Location: <file>:<line> in `<function>`
-User caller: `<fn>` at <userCaller.source.file:userCaller.source.line or userCaller.file:userCaller.line> (<userCaller.confidence>, support <supportPct>%, basis <basis>) or "none"
+Location: <agent Source with generated fallback> in `<function>`
+User caller: <agent User caller line with confidence/support/basis when rendered, or "none">
 Decision: <actionable | hypothesis | rerun required>
-Evidence: <observed measurements, thresholds, proof fields, and sampled percentages>
+Evidence: <agent Evidence Pack measurements, thresholds, proof fields, and sampled percentages>
 Caveats: <source-map coverage, degraded signal, medium/low userCaller, missing proof, or "none">
 Why: <why this matters in this run>
 Fix: <concrete remediation or confidence caveat>
 
-### Top Hotspots
-1. `<function>` - <selfPct>% self, <totalPct>% total
+### Kind Review Leads
+Use the agent `Kind Review` section. Include only kinds present in `Capture`.
 
-### Top Allocators
-1. `<function>` - <selfPct>% bytes (<selfBytes> B)
-
-### GC / Event Loop / Deopts / Memory Series
+### GC / Event Loop / Deopts / Memory Series / Async
 <only claims supported by available report signals>
 ```
 
@@ -42,12 +40,13 @@ Fix: <concrete remediation or confidence caveat>
 
 - Lead with quality when confidence is not `high`.
 - Use `finding.confidence` and `finding.proofLevel` in the finding summary when present.
-- Include `finding.evidence.extra.userCaller` when present. Prefer `userCaller.source.file:userCaller.source.line`, then `userCaller.file:userCaller.line`, and keep the confidence, support percentage, and basis visible.
+- Include `User caller` from the agent report when present. Prefer the rendered source location and keep confidence, support percentage, and basis visible when available. If a kind aggregate should have `userCaller` but the agent report omits it, then perform a targeted JSON lookup for that one field.
 - Treat `userCaller.confidence === "high"` as potentially actionable only when the finding, proof level, and signal gate are also actionable. Treat `medium` and `low` user callers as inspection leads.
 - Cite evidence and caveats together: measurements, thresholds, support percentage, proof level, source-map coverage, and any integrity degradation.
 - Say "hypothesis" for `trace-only`, `heuristic`, weak correlation, or low profile confidence.
-- Do not include CPU sections unless `meta.profileKinds` includes `cpu`.
-- Do not include memory sections unless `meta.profileKinds` includes `memory`.
+- Do not include CPU sections unless the agent `Capture` section lists `cpu`.
+- Do not include memory sections unless the agent `Capture` section lists `memory`.
+- Do not include async sections unless the agent `Capture` section lists `async`.
 - Do not patch from a finding alone. Read the cited source first.
 
 ## Short Form
