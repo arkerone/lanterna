@@ -29,6 +29,7 @@ describe('loadLanternaConfig', () => {
           output: 'report.md',
           format: 'markdown',
           pretty: true,
+          sourceMaps: false,
           detectors: ['@scope/plugin', './local.js'],
           kinds: ['cpu', 'memory'],
           sampleInterval: 2000,
@@ -54,6 +55,7 @@ describe('loadLanternaConfig', () => {
         output: 'report.md',
         format: 'markdown',
         pretty: true,
+        sourceMaps: false,
         detectors: ['@scope/plugin', './local.js'],
         kinds: ['cpu', 'memory'],
         sampleIntervalMicros: 2000,
@@ -116,6 +118,7 @@ describe('loadLanternaConfig', () => {
         waitTimeoutMs: 10_000,
         captureDelayMs: 250,
         workload: 'npm run load',
+        sourceMaps: false,
       },
       {
         command: ['node', 'app.js'],
@@ -149,7 +152,33 @@ describe('loadLanternaConfig', () => {
       waitTimeoutMs: 10_000,
       captureDelayMs: 250,
       workload: 'npm run load',
+      sourceMaps: false,
     });
+  });
+
+  it('lets an explicit CLI source maps setting win over config', () => {
+    const parsed = applyLanternaConfig(
+      {
+        sourceMaps: false,
+      },
+      {
+        command: ['node', 'app.js'],
+        pretty: false,
+        format: 'json',
+        detectors: [],
+        kinds: ['cpu'],
+        sampleIntervalMicros: 1000,
+        heapSamplingIntervalBytes: 524_288,
+        memoryUsageIntervalMs: 250,
+        includeMemoryUsageSamples: false,
+        heapSnapshotAnalysis: { enabled: false },
+        sourceMaps: true,
+        deep: false,
+      },
+      new Set(['sourceMaps']),
+    );
+
+    expect(parsed.sourceMaps).toBe(true);
   });
 
   it('uses config kinds instead of the parser default when no kind flag was provided', () => {

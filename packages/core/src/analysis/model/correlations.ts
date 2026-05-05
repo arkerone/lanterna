@@ -105,7 +105,7 @@ export function correlateUserHotspotsWithCoverage(
     const overlapPct = (count / samplesAttributed) * 100;
     const next = limited[index + 1];
     const nextOverlapPct = next ? (next.count / samplesAttributed) * 100 : 0;
-    return {
+    const correlated: CorrelatedHotspot = {
       id: `${node.file}:${node.line}:${node.function}`,
       function: node.function,
       file: node.file,
@@ -115,6 +115,8 @@ export function correlateUserHotspotsWithCoverage(
       rank: index + 1,
       confidence: scoreConfidence(overlapPct, nextOverlapPct),
     };
+    if (node.source) correlated.source = node.source;
+    return correlated;
   });
 
   return { hotspots, coverage };

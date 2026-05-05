@@ -70,6 +70,7 @@ function buildFinding(
       line: allocator.line,
       function: allocator.function,
       selfPct: allocator.selfPct,
+      ...(allocator.source ? { source: allocator.source } : {}),
       extra: {
         category: allocator.category,
         ...(allocator.package ? { package: allocator.package } : {}),

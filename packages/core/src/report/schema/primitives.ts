@@ -32,6 +32,13 @@ export const measurementConfidenceSchema = z.enum(MEASUREMENT_CONFIDENCES);
 export const frameCategorySchema = z.enum(FRAME_CATEGORIES);
 export const optimizationStateSchema = z.enum(OPTIMIZATION_STATES);
 
+export const sourceLocationSchema = z.object({
+  file: z.string(),
+  line: z.number().int(),
+  column: z.number().int().optional(),
+  name: z.string().optional(),
+});
+
 export const hotspotAttributionSchema = z.object({
   hotspotId: z.string().min(1),
   function: z.string(),
@@ -40,6 +47,7 @@ export const hotspotAttributionSchema = z.object({
   samplePct: z.number(),
   supportPct: z.number(),
   confidence: z.enum(['low', 'high']),
+  source: sourceLocationSchema.optional(),
 });
 
 export const stallCorrelationSchema = z.object({
@@ -61,6 +69,7 @@ export const alternativeHotspotEvidenceSchema = z.object({
   line: z.number().int(),
   selfPct: z.number(),
   totalPct: z.number(),
+  source: sourceLocationSchema.optional(),
 });
 
 export const correlatedHotspotSchema = z.object({
@@ -72,6 +81,7 @@ export const correlatedHotspotSchema = z.object({
   samplePct: z.number(),
   rank: z.number().int().positive(),
   confidence: z.enum(['low', 'medium', 'high']),
+  source: sourceLocationSchema.optional(),
 });
 
 export const correlationCoverageSchema = z.object({

@@ -80,16 +80,22 @@ export function deriveTopUserHotspot(
       candidate.line === top.line &&
       candidate.function === top.function,
   );
-  const alternatives = matches.slice(1, 3).map((hotspot) => ({
-    id: hotspot.id,
-    function: hotspot.function,
-    file: hotspot.file,
-    line: hotspot.line,
-    selfPct: hotspot.selfPct,
-    totalPct: hotspot.totalPct,
-  }));
+  const alternatives = matches.slice(1, 3).map((hotspot) => {
+    const alt: SummaryUserHotspot['alternativeHotspots'] extends (infer T)[] | undefined
+      ? T
+      : never = {
+      id: hotspot.id,
+      function: hotspot.function,
+      file: hotspot.file,
+      line: hotspot.line,
+      selfPct: hotspot.selfPct,
+      totalPct: hotspot.totalPct,
+    };
+    if (hotspot.source) alt.source = hotspot.source;
+    return alt;
+  });
 
-  return {
+  const summary: SummaryUserHotspot = {
     function: top.function,
     file: top.file,
     line: top.line,
@@ -100,6 +106,8 @@ export function deriveTopUserHotspot(
       : undefined,
     alternativeHotspots: alternatives.length > 0 ? alternatives : undefined,
   };
+  if (top.source) summary.source = top.source;
+  return summary;
 }
 
 const SPECIFIC_FINDING_CATEGORIES = new Set([

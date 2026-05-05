@@ -49,6 +49,9 @@ lanterna run --kind async --duration 30s -- node server.js
 
 # Deep mode (CPU only, run-only): adds V8 deopt tracing
 lanterna run --deep --duration 15s -- node app.js
+
+# Disable source-map resolution
+lanterna run --no-source-maps -- node dist/app.js
 ```
 
 `--workload` is a shell command run from the same cwd and environment as Lanterna. It is intended for external traffic generators: `npx -y autocannon ...`, `npx -y artillery run load.yml`, `npm run load`, `node scripts/load.mjs`. Prefer `npx -y` for one-off tools so the workload cannot block on an install confirmation prompt. If the workload exits non-zero, Lanterna still writes the report and then returns an error, so automation can fail the run without losing the captured evidence.
@@ -140,6 +143,12 @@ Options are grouped by purpose. Capture options apply to `run` and `attach` unle
 | `--async-include-microtasks` | Include `TickObject` / `Microtask` resources (very noisy). |
 | `--async-concurrency-interval <ms>` | Concurrency timeline cadence in ms. Default `100`. |
 | `--async-instrumentation <off\|safe\|full>` | Extra async instrumentation mode. `full` rewrites later-loaded `await` sites and is higher risk. Default `safe`. |
+
+### Source maps
+
+| Option | Description |
+| --- | --- |
+| `--no-source-maps` | Disable source-map resolution for captured frame positions. Source maps are enabled by default for `run` and `attach`; `report` only renders what is already present in the JSON. |
 
 ### Output
 

@@ -76,6 +76,11 @@ const prismaHotspotDetector: KindScopedDetector<'cpu'> = {
           line: attribution?.line ?? hotspot.line,
           function: attribution?.function ?? hotspot.function,
           selfPct: hotspot.selfPct,
+          // Forward the resolved source position so agents can patch the
+          // original TS / bundler input rather than the compiled JS.
+          ...((attribution?.source ?? hotspot.source)
+            ? { source: attribution?.source ?? hotspot.source }
+            : {}),
           extra: { package: '@prisma/client', totalPct: hotspot.totalPct },
         },
         why: 'Prisma serialization or query execution is on the hot path of a request.',

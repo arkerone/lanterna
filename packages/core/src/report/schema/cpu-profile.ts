@@ -10,6 +10,7 @@ import {
   measurementConfidenceSchema,
   optimizationStateSchema,
   profileConfidenceSchema,
+  sourceLocationSchema,
   stallCorrelationSchema,
   stallIntervalSchema,
 } from './primitives.js';
@@ -34,6 +35,7 @@ const cpuSummarySchema = z.object({
       totalPct: z.number(),
       eventLoopCorrelation: stallCorrelationSchema.optional(),
       alternativeHotspots: z.array(alternativeHotspotEvidenceSchema).optional(),
+      source: sourceLocationSchema.optional(),
     })
     .optional(),
 });
@@ -58,6 +60,7 @@ const hotspotSchema = z.object({
   callers: z.array(hotspotRefSchema),
   callees: z.array(hotspotRefSchema),
   optimizationState: optimizationStateSchema,
+  source: sourceLocationSchema.optional(),
 });
 
 const hotStackFrameSchema = z.object({
@@ -65,6 +68,7 @@ const hotStackFrameSchema = z.object({
   file: z.string(),
   line: z.number().int(),
   category: frameCategorySchema,
+  source: sourceLocationSchema.optional(),
 });
 
 const hotStackSchema = z.object({
@@ -77,6 +81,7 @@ const hotStackClusterSchema = z.object({
     function: z.string(),
     file: z.string(),
     line: z.number().int(),
+    source: sourceLocationSchema.optional(),
   }),
   weightPct: z.number(),
   stackCount: z.number().int().positive(),
@@ -121,6 +126,7 @@ const deoptEntrySchema = z.object({
   bailoutType: z.string(),
   count: z.number().int().nonnegative(),
   explanation: z.string(),
+  source: sourceLocationSchema.optional(),
 });
 
 const profileQualitySchema = z.object({

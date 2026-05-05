@@ -36,12 +36,14 @@ export function computeHotStacks(
       if (!node) break;
       if (node.function !== '(root)') {
         if (!isNoiseCategory(node.category) || keepNoise) {
-          frames.push({
+          const frame: HotStack['frames'][number] = {
             function: node.function,
             file: node.file,
             line: node.line,
             category: node.category,
-          });
+          };
+          if (node.source) frame.source = node.source;
+          frames.push(frame);
         }
       }
       currentNodeId = tree.parentOf.get(currentNodeId);
@@ -81,12 +83,14 @@ export function clusterHotStacksByUserAnchor(stacks: HotStack[]): HotStackCluste
       existing.weightPct += stack.weightPct;
       existing.memberIndices.push(index);
     } else {
+      const anchor: HotStackCluster['anchor'] = {
+        function: userFrame.function,
+        file: userFrame.file,
+        line: userFrame.line,
+      };
+      if (userFrame.source) anchor.source = userFrame.source;
       clustersByKey.set(key, {
-        anchor: {
-          function: userFrame.function,
-          file: userFrame.file,
-          line: userFrame.line,
-        },
+        anchor,
         weightPct: stack.weightPct,
         memberIndices: [index],
       });

@@ -10,6 +10,7 @@ Lanterna can read default options from a `.lanterna.json` (or `.lanterna.config.
   "output": "report.md",
   "format": "markdown",
   "pretty": true,
+  "sourceMaps": true,
   "kinds": ["cpu", "memory"],
   "sampleInterval": 1000,
   "heapSampleInterval": "512KiB",
@@ -33,7 +34,7 @@ Lanterna can read default options from a `.lanterna.json` (or `.lanterna.config.
 }
 ```
 
-Every field maps 1:1 to a CLI flag. See [cli.md](./cli.md) for option semantics.
+Every field maps 1:1 to a CLI flag. `sourceMaps` defaults to `true`; set it to `false` to match `--no-source-maps`. See [cli.md](./cli.md) for option semantics.
 
 ## Load order
 
@@ -55,7 +56,8 @@ This keeps a versioned baseline (e.g. workload, output format) and lets a develo
   "workload": "npx -y autocannon http://127.0.0.1:3000",
   "format": "markdown",
   "output": "report.md",
-  "pretty": true
+  "pretty": true,
+  "sourceMaps": true
 }
 ```
 

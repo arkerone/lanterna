@@ -24,6 +24,7 @@ import {
   OUTPUT_OPTIONS,
   PLUGIN_OPTIONS,
   RUN_CAPTURE_OPTIONS,
+  SOURCE_MAP_OPTIONS,
 } from './option-descriptors.js';
 import { parseAttachArgs, parseReportArgs, parseRunArgs } from './parse.js';
 import { renderBrandHeader, renderCommandHeader } from './terminal-style.js';
@@ -52,6 +53,7 @@ const asyncOptionRows = renderOptionRows(ASYNC_OPTIONS);
 const captureRunRows = renderOptionRows([...COMMON_CAPTURE_OPTIONS, ...RUN_CAPTURE_OPTIONS]);
 const captureAttachRows = renderOptionRows([...ATTACH_CAPTURE_OPTIONS, ...COMMON_CAPTURE_OPTIONS]);
 const outputRows = renderOptionRows(OUTPUT_OPTIONS);
+const sourceMapRows = renderOptionRows(SOURCE_MAP_OPTIONS);
 const pluginRows = renderOptionRows(PLUGIN_OPTIONS);
 const generalRows = renderOptionRows(GENERAL_OPTIONS);
 
@@ -73,7 +75,12 @@ ${formatSection('Commands', [
 ])}
 
 ${formatSection('Common options', [
-  ...renderOptionRows([...COMMON_CAPTURE_OPTIONS, ...OUTPUT_OPTIONS, ...PLUGIN_OPTIONS]),
+  ...renderOptionRows([
+    ...COMMON_CAPTURE_OPTIONS,
+    ...SOURCE_MAP_OPTIONS,
+    ...OUTPUT_OPTIONS,
+    ...PLUGIN_OPTIONS,
+  ]),
 ])}
 
 ${formatSection('Run-only options', renderOptionRows(RUN_CAPTURE_OPTIONS))}
@@ -138,6 +145,8 @@ ${formatSection('Async kind', asyncOptionRows)}
 
 ${formatSection('Output', outputRows)}
 
+${formatSection('Source maps', sourceMapRows)}
+
 ${formatSection('Plugins', pluginRows)}
 
 ${formatSection('General', generalRows)}
@@ -194,6 +203,8 @@ ${formatSection('Memory kind', memoryOptionRows)}
 ${formatSection('Async kind', asyncOptionRows)}
 
 ${formatSection('Output', outputRows)}
+
+${formatSection('Source maps', sourceMapRows)}
 
 ${formatSection('Plugins', pluginRows)}
 

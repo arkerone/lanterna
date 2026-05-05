@@ -1,6 +1,6 @@
 # Reading a Lanterna Report
 
-This page is the **interpretation playbook**: in what order to read a `LanternaReport`, what each section tells you, and the most common mistakes when drawing conclusions. For the schema itself, see [report-schema.md](./report-schema.md). For per-kind detail, see [kinds/cpu.md](./kinds/cpu.md), [kinds/memory.md](./kinds/memory.md), and [kinds/async.md](./kinds/async.md).
+This page is the **interpretation playbook**: in what order to read a `LanternaReport`, what each section tells you, and the most common mistakes when drawing conclusions. For the schema itself, see [report-schema.md](./report-schema.md). For per-kind detail, see [kinds/cpu.md](./kinds/cpu.md), [kinds/memory.md](./kinds/memory.md), and [kinds/async.md](./kinds/async.md). For source-map handling (mapping generated `file:line` back to original TypeScript or bundled sources), see [source-maps.md](./source-maps.md).
 
 ## At a glance
 

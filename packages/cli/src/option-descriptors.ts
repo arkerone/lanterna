@@ -129,6 +129,14 @@ export const OUTPUT_OPTIONS = [
   },
 ] as const satisfies readonly CliOptionDescriptor[];
 
+export const SOURCE_MAP_OPTIONS = [
+  {
+    flag: '--no-source-maps',
+    description: 'Disable source-map resolution of frame positions',
+    hint: 'on by default',
+  },
+] as const satisfies readonly CliOptionDescriptor[];
+
 export const PLUGIN_OPTIONS = [
   {
     flag: '--detectors <spec>',
@@ -167,5 +175,6 @@ export const OPTION_FLAGS = {
   output: OUTPUT_OPTIONS[0].flag,
   format: OUTPUT_OPTIONS[1].flag,
   pretty: OUTPUT_OPTIONS[2].flag,
+  noSourceMaps: SOURCE_MAP_OPTIONS[0].flag,
   detectors: PLUGIN_OPTIONS[0].flag,
 } as const;

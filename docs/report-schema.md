@@ -62,9 +62,42 @@ Instrumentation mode (`safe` / `full` / `off`), max events cap, stack depth, mic
 | `controlChannelWriteErrors` | Counter — write failures on FD 3. |
 | `gcObserverSetupFailed` | Counter — GC observer setup failures in target. |
 | `heartbeatDropped` | Counter — heartbeats lost. |
+| `sourceMaps` | Optional source-map resolution integrity when source maps were enabled for the capture. |
 | `kinds.cpu.samplesTimed` | The CPU profile included usable per-sample timing deltas. |
 | `kinds.memory.*` | Memory-specific integrity counters when `--kind memory` is active. |
 | `kinds.async.*` | Async-specific integrity counters when `--kind async` is active (e.g. dropped events, partial-capture markers). |
+
+`meta.captureIntegrity.sourceMaps` has this shape:
+
+```ts
+interface SourceMapsIntegrity {
+  enabled: boolean;
+  framesResolved: number;
+  framesUnresolved: number;
+  coverage: number;
+  mapsLoaded: number;
+  failures: Array<{ url: string; reason: string }>;
+}
+```
+
+`coverage` is `framesResolved / (framesResolved + framesUnresolved)`. `failures` is capped and omits expected noise such as builtin URLs or files with no `sourceMappingURL`.
+
+## Source locations
+
+Frame-bearing objects keep their generated V8 location and may also include the original source-map location:
+
+```ts
+interface SourceLocation {
+  file: string;
+  line: number;
+  column?: number;
+  name?: string;
+}
+```
+
+When present, prefer `source.file:source.line` for human diagnosis and patching, but keep the generated `file:line` as fallback context. On-disk sources are relative to `meta.cwd` when possible. Bundler virtual sources such as `webpack://app/src/server.ts` or `vite:/src/server.ts` are kept verbatim and may not exist on disk.
+
+`source?: SourceLocation` can appear on CPU hotspots, hot-stack frames and anchors, memory allocators and memory summaries, async frame/resource records, deopts, and `findings[].evidence`.
 
 ## `profiles.cpu`
 

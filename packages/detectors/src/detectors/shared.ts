@@ -258,6 +258,7 @@ export function buildAttributedFinding<
       line: resolveEvidenceField(caller, hotspot, 'line'),
       function: resolveEvidenceField(caller, hotspot, 'function'),
       selfPct,
+      ...((caller?.source ?? hotspot.source) ? { source: caller?.source ?? hotspot.source } : {}),
       extra: extra as C extends 'blocking-io'
         ? BlockingIoEvidenceExtra
         : C extends 'sync-crypto'

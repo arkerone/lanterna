@@ -47,6 +47,7 @@ export const hotAsyncContextDetector: KindScopedDetector<'cpu' | 'async'> = {
           line: frame?.line ?? 0,
           function: frame?.function ?? `chain#${entry.rootAsyncId}`,
           selfPct: entry.cpuPct,
+          ...(frame?.source ? { source: frame.source } : {}),
           extra: {
             rootAsyncId: entry.rootAsyncId,
             rootKind: entry.rootKind,

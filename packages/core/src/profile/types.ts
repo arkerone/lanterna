@@ -26,6 +26,12 @@ export interface RunProfileOptions {
   onTargetDiagnosticChunk?: (chunk: string) => void;
   beforeCaptureStart?: () => void | Promise<void>;
   onCaptureStarted?: () => void | Promise<void>;
+  /**
+   * Resolve V8-emitted frames back to their original (pre-compilation) source
+   * positions via discovered source maps. Default `true`. Pass `false` to
+   * disable — useful when filesystem access is restricted or maps are absent.
+   */
+  sourceMaps?: boolean;
 }
 
 export interface AttachProfileOptions {
@@ -39,6 +45,8 @@ export interface AttachProfileOptions {
   kinds?: ProfileKind[];
   extraAnalyzers?: (FindingAnalyzer | SectionAnalyzer)[];
   setupPipeline?: ProfilePipelinePlugin;
+  /** See {@link RunProfileOptions.sourceMaps}. */
+  sourceMaps?: boolean;
 }
 
 export type AttachProgressEvent =

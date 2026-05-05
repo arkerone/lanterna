@@ -65,6 +65,9 @@ function buildFinding(
       line: hotspot.line,
       function: hotspot.function,
       selfPct: hotspot.selfPct,
+      ...((hotspot.source ?? allocator.source)
+        ? { source: hotspot.source ?? allocator.source }
+        : {}),
       extra: {
         cpuSelfPct: hotspot.selfPct,
         cpuTotalPct: hotspot.totalPct,

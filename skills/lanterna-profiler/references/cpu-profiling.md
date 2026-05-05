@@ -72,6 +72,16 @@ Strongest actionable lead:
 2. `attributionConfidence === "high"` or a direct builtin proof;
 3. meaningful event-loop correlation when latency is the concern.
 
+## Source Positions
+
+Every CPU frame may carry an optional `source` object resolved from a source map: `hotspots[].source`, `summary.topUserHotspot.source`, `hotStacks[].frames[].source`, `hotStacks[].clusters[].anchor.source`, and `findings[].evidence.source`.
+
+- When `source` is present, cite `source.file:source.line` (the original TypeScript / bundled source) — do not cite `file:line` (the compiled `dist/` output).
+- When `source` is absent, fall back to `file:line` (no map was found for that frame — common for `node:` builtins or stripped bundles).
+- When `function` is `(anonymous)`, prefer `source.name` if set.
+- Treat virtual `source.file` values (e.g. `webpack://`, `vite:/`) as bundler labels, not editable files, unless they resolve on disk.
+- Gate everything above on `meta.captureIntegrity.sourceMaps.coverage`. Below ~0.7, treat resolved positions as hints, not facts.
+
 ## Interpretation Order
 
 1. State command or PID, duration, samples, top category, `onCpuRatio * 100`, and CPU quality.

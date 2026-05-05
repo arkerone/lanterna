@@ -65,6 +65,7 @@ export const excessiveGcDetector: KindScopedDetector<'cpu'> = {
           line: topCandidate?.line ?? 0,
           function: topCandidate?.function ?? '(aggregate)',
           selfPct: topCandidate?.samplePct ?? 0,
+          ...(topCandidate?.source ? { source: topCandidate.source } : {}),
           extra: evidenceExtra,
         },
         measurements: {

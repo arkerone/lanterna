@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { ATTACH_HELP, GLOBAL_HELP, main, RUN_HELP, VERSION } from '../src/main.js';
+import { ATTACH_HELP, GLOBAL_HELP, main, REPORT_HELP, RUN_HELP, VERSION } from '../src/main.js';
 import {
   ASYNC_OPTIONS,
   ATTACH_CAPTURE_OPTIONS,
@@ -8,6 +8,7 @@ import {
   OUTPUT_OPTIONS,
   PLUGIN_OPTIONS,
   RUN_CAPTURE_OPTIONS,
+  SOURCE_MAP_OPTIONS,
 } from '../src/option-descriptors.js';
 
 describe('main help routing', () => {
@@ -91,6 +92,7 @@ describe('main help routing', () => {
       ...RUN_CAPTURE_OPTIONS,
       ...MEMORY_OPTIONS,
       ...ASYNC_OPTIONS,
+      ...SOURCE_MAP_OPTIONS,
       ...OUTPUT_OPTIONS,
       ...PLUGIN_OPTIONS,
     ];
@@ -99,6 +101,7 @@ describe('main help routing', () => {
       ...COMMON_CAPTURE_OPTIONS,
       ...MEMORY_OPTIONS,
       ...ASYNC_OPTIONS,
+      ...SOURCE_MAP_OPTIONS,
       ...OUTPUT_OPTIONS,
       ...PLUGIN_OPTIONS,
     ];
@@ -108,6 +111,7 @@ describe('main help routing', () => {
       ...ATTACH_CAPTURE_OPTIONS,
       ...MEMORY_OPTIONS,
       ...ASYNC_OPTIONS,
+      ...SOURCE_MAP_OPTIONS,
       ...OUTPUT_OPTIONS,
       ...PLUGIN_OPTIONS,
     ];
@@ -115,6 +119,10 @@ describe('main help routing', () => {
     for (const option of runOptions) expect(RUN_HELP).toContain(option.flag);
     for (const option of attachOptions) expect(ATTACH_HELP).toContain(option.flag);
     for (const option of globalOptions) expect(GLOBAL_HELP).toContain(option.flag);
+  });
+
+  it('does not show capture-only source map flags in report help', () => {
+    expect(REPORT_HELP).not.toContain('--no-source-maps');
   });
 
   it('documents async as experimental in global, run, and attach help', () => {

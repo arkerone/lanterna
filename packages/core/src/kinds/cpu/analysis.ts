@@ -61,7 +61,12 @@ export function createCpuAnalysisContributor(
   return {
     analyze(ctx: KindAnalysisContext<CpuKindData>) {
       const { data, bundle } = ctx;
-      const tree = enrichCpuTree(data.cpuProfile, bundle.target.cwd, sampleIntervalMicros);
+      const tree = enrichCpuTree(
+        data.cpuProfile,
+        bundle.target.cwd,
+        sampleIntervalMicros,
+        ctx.options.sourceMaps,
+      );
       const hotspotAnalysis = buildHotspotAnalysis(data.cpuProfile, tree);
       const timedSamples = buildTimedSamples(data.cpuProfile, sampleIntervalMicros);
 
@@ -106,7 +111,7 @@ export function createCpuAnalysisContributor(
         gc,
         eventLoop,
         quality,
-        deopts: enrichDeopts(data.deopts),
+        deopts: enrichDeopts(data.deopts, ctx.options.sourceMaps),
       };
 
       ctx.writeSection<CpuProfileReport>(section);

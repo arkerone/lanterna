@@ -17,6 +17,7 @@ const SCALAR_CONFIG_KEYS = [
   'output',
   'format',
   'pretty',
+  'sourceMaps',
   'sampleIntervalMicros',
   'heapSamplingIntervalBytes',
   'memoryUsageIntervalMs',
@@ -40,6 +41,7 @@ const RawConfigSchema = z.object({
   output: z.string().optional(),
   format: z.enum(['json', 'text', 'markdown']).optional(),
   pretty: z.boolean().optional(),
+  sourceMaps: z.boolean().optional(),
   detectors: z.array(z.string()).optional(),
   kinds: z.array(z.string()).optional(),
   sampleInterval: z.union([z.string(), z.number()]).optional(),
@@ -64,6 +66,7 @@ export interface LanternaConfig {
   output?: string;
   format?: OutputFormat;
   pretty?: boolean;
+  sourceMaps?: boolean;
   detectors?: string[];
   kinds?: string[];
   sampleIntervalMicros?: number;
@@ -205,6 +208,7 @@ function normalizeConfig(raw: z.infer<typeof RawConfigSchema>): LanternaConfig {
   if (raw.output !== undefined) config.output = raw.output;
   if (raw.format !== undefined) config.format = raw.format;
   if (raw.pretty !== undefined) config.pretty = raw.pretty;
+  if (raw.sourceMaps !== undefined) config.sourceMaps = raw.sourceMaps;
   if (raw.detectors !== undefined) config.detectors = raw.detectors;
   if (raw.kinds !== undefined) config.kinds = normalizeKinds(raw.kinds);
   if (raw.sampleInterval !== undefined) {

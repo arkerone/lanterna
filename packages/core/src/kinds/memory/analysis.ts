@@ -1,5 +1,6 @@
 import { classifyFrame } from '../../analysis/model/classify.js';
 import { isNoiseCategory, shouldKeepNoiseFrames } from '../../analysis/noise-filters.js';
+import type { SourceMapResolver } from '../../analysis/sourcemap/resolver.js';
 import type {
   RawSamplingHeapProfile,
   RawSamplingHeapProfileNode,
@@ -12,6 +13,7 @@ import type {
   MemorySeriesStats,
   MemorySummary,
   MemoryUsageSample,
+  SourceLocation,
 } from '../../report/types.js';
 import type { KindAnalysisContext, KindAnalysisContributor } from '../core/types.js';
 import {
@@ -60,7 +62,11 @@ export function createMemoryAnalysisContributor(
   return {
     analyze(ctx: KindAnalysisContext<MemoryKindData>) {
       const { data, bundle } = ctx;
-      const aggregates = aggregateAllocators(data.samplingProfile, bundle.target.cwd);
+      const aggregates = aggregateAllocators(
+        data.samplingProfile,
+        bundle.target.cwd,
+        ctx.options.sourceMaps,
+      );
       const totalSampledBytes = aggregates.totalSelfBytes;
 
       const hotAllocators = buildHotAllocators(aggregates, totalSampledBytes);
@@ -81,6 +87,7 @@ export function createMemoryAnalysisContributor(
                 line: hotAllocators[0].line,
                 selfPct: hotAllocators[0].selfPct,
                 totalPct: hotAllocators[0].totalPct,
+                ...(hotAllocators[0].source ? { source: hotAllocators[0].source } : {}),
               },
             }
           : {}),
@@ -146,6 +153,7 @@ interface AllocatorAggregate {
   package?: string;
   selfBytes: number;
   totalBytes: number;
+  source?: SourceLocation;
 }
 
 interface AggregateResult {
@@ -153,9 +161,23 @@ interface AggregateResult {
   totalSelfBytes: number;
 }
 
-function aggregateAllocators(profile: RawSamplingHeapProfile, cwd: string): AggregateResult {
+function aggregateAllocators(
+  profile: RawSamplingHeapProfile,
+  cwd: string,
+  sourceMaps?: SourceMapResolver,
+): AggregateResult {
   const byId = new Map<string, AllocatorAggregate>();
   let totalSelfBytes = 0;
+
+  if (sourceMaps) {
+    const uniqueUrls = new Set<string>();
+    const collect = (node: RawSamplingHeapProfileNode): void => {
+      if (node.callFrame.url) uniqueUrls.add(node.callFrame.url);
+      for (const child of node.children) collect(child);
+    };
+    collect(profile.head);
+    sourceMaps.prepare(uniqueUrls);
+  }
 
   // Walk: post-order accumulation of subtree size into `totalBytes`, summing
   // self into the per-frame aggregate keyed by (file, function, line, column).
@@ -175,8 +197,12 @@ function aggregateAllocators(profile: RawSamplingHeapProfile, cwd: string): Aggr
     if (existing) {
       existing.selfBytes += node.selfSize;
       existing.totalBytes += subtreeSize;
+      if (!existing.source && sourceMaps && cf.url) {
+        const resolved = sourceMaps.resolve(cf.url, line, column);
+        if (resolved) existing.source = resolved;
+      }
     } else {
-      byId.set(id, {
+      const aggregate: AllocatorAggregate = {
         id,
         function: cf.functionName || '(anonymous)',
         file: classified.file,
@@ -186,7 +212,12 @@ function aggregateAllocators(profile: RawSamplingHeapProfile, cwd: string): Aggr
         ...(classified.package ? { package: classified.package } : {}),
         selfBytes: node.selfSize,
         totalBytes: subtreeSize,
-      });
+      };
+      if (sourceMaps && cf.url) {
+        const resolved = sourceMaps.resolve(cf.url, line, column);
+        if (resolved) aggregate.source = resolved;
+      }
+      byId.set(id, aggregate);
     }
     totalSelfBytes += node.selfSize;
     return subtreeSize;
@@ -224,6 +255,7 @@ function buildHotAllocators(
       selfPct: (agg.selfBytes * 100) / denom,
       totalBytes: agg.totalBytes,
       totalPct: (agg.totalBytes * 100) / denom,
+      ...(agg.source ? { source: agg.source } : {}),
     });
   }
   // Match detector relevance: inclusive-heavy allocator parents should stay

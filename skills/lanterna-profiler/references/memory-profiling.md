@@ -103,6 +103,10 @@ Reading order:
 
 `selfBytes` is bytes attributed exclusively to the frame; `totalBytes` includes its callees. Treat node\_modules / builtin frames as **symptoms**, not root causes — open the user-code caller first.
 
+## Source Positions
+
+`hotAllocators[]`, `summary.topAllocator`, and memory findings (`evidence`) may carry a resolved `source` object. Always prefer `source.file:source.line` over `file:line` when present — `file:line` points at the compiled JS, `source.*` at the original TypeScript or bundled source. Fall back to `file:line` when `source` is absent. Use `source.name` if `function` is `(anonymous)`. Treat virtual paths (`webpack://`, `vite:/`) as bundler labels, not editable files, unless they resolve on disk. Quality gate: `meta.captureIntegrity.sourceMaps.coverage`.
+
 ## Memory findings
 
 | Finding id | Category | Trigger |

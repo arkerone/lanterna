@@ -33,6 +33,12 @@ export {
   registerNoiseFilter,
   shouldKeepNoiseFrames,
 } from './analysis/noise-filters.js';
+export {
+  type CreateSourceMapResolverOptions,
+  createNoopSourceMapResolver,
+  createSourceMapResolver,
+  type SourceMapResolver,
+} from './analysis/sourcemap/resolver.js';
 export { AttachSource, createAttachSource } from './capture/attach.js';
 export type { RunCaptureOptions } from './capture/coordinator.js';
 // Capture

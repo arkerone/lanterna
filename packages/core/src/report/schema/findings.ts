@@ -10,6 +10,7 @@ import {
   gcCountSchema,
   measurementBasisSchema,
   measurementConfidenceSchema,
+  sourceLocationSchema,
   stallCorrelationSchema,
   stallIntervalSchema,
 } from './primitives.js';
@@ -96,6 +97,7 @@ const findingEvidenceSchema = z.object({
   line: z.number().int(),
   function: z.string(),
   selfPct: z.number(),
+  source: sourceLocationSchema.optional(),
   extra: z.union([builtinFindingExtraSchema, genericFindingExtraSchema]).optional(),
 });
 

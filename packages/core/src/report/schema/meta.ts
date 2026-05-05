@@ -46,5 +46,15 @@ export const metaSchema = z.object({
     heartbeatDropped: z.number().int().nonnegative(),
     diagnostics: z.array(captureDiagnosticSchema).optional(),
     kinds: z.record(z.string(), z.unknown()),
+    sourceMaps: z
+      .object({
+        enabled: z.boolean(),
+        framesResolved: z.number().int().nonnegative(),
+        framesUnresolved: z.number().int().nonnegative(),
+        coverage: z.number(),
+        mapsLoaded: z.number().int().nonnegative(),
+        failures: z.array(z.object({ url: z.string(), reason: z.string() })),
+      })
+      .optional(),
   }),
 });

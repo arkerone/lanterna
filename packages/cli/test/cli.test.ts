@@ -18,6 +18,7 @@ const MEMORY_DEFAULTS = {
   asyncIncludeMicrotasks: false,
   asyncConcurrencyIntervalMs: DEFAULT_ASYNC_CONCURRENCY_INTERVAL_MS,
   asyncInstrumentation: 'safe',
+  sourceMaps: true,
 };
 
 afterEach(() => {
@@ -104,6 +105,10 @@ describe('parseRunArgs', () => {
       captureDelayMs: 250,
       workload: 'npx -y autocannon http://127.0.0.1:3000',
     });
+  });
+
+  it('parses --no-source-maps for run captures', () => {
+    expect(parseRunArgs(['--no-source-maps', '--', 'node', 'app.js']).sourceMaps).toBe(false);
   });
 
   it('rejects unknown output formats', () => {
@@ -333,6 +338,10 @@ describe('parseAttachArgs', () => {
       detectors: [],
     });
     expectKindsToEqual(parsed.kinds, ['cpu', 'memory', 'async']);
+  });
+
+  it('parses --no-source-maps for attach captures', () => {
+    expect(parseAttachArgs(['--pid', '42', '--no-source-maps']).sourceMaps).toBe(false);
   });
 
   it('does not prompt interactively for bare attach anymore', () => {

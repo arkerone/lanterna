@@ -22,6 +22,7 @@ export const PROVIDED_FLAG_ALIASES: Readonly<Record<string, string>> = {
   output: 'output',
   format: 'format',
   pretty: 'pretty',
+  'no-source-maps': 'sourceMaps',
   workload: 'workload',
   'async-max-events': 'asyncMaxRecords',
   'async-stack-depth': 'asyncStackDepth',

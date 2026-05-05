@@ -1,3 +1,8 @@
+import {
+  createNoopSourceMapResolver,
+  createSourceMapResolver,
+  type SourceMapResolver,
+} from '../analysis/sourcemap/resolver.js';
 import { AttachSource } from '../capture/attach.js';
 import { createManualStopSignal, runCapture } from '../capture/coordinator.js';
 import type { CaptureBundle } from '../capture/core/types.js';
@@ -112,13 +117,19 @@ async function analyzeAndBuild(
     extraAnalyzers?: RunProfileOptions['extraAnalyzers'];
     setupPipeline?: RunProfileOptions['setupPipeline'];
     command?: string[];
+    sourceMaps?: boolean;
   },
   kinds: ProfileKind[],
   mode: 'spawn' | 'attach',
 ) {
+  const sourceMaps: SourceMapResolver =
+    options.sourceMaps === false
+      ? createNoopSourceMapResolver()
+      : createSourceMapResolver({ cwd: bundle.target.cwd, enabled: true });
   const analysisOptions = {
     command: options.command ?? [],
     mode,
+    sourceMaps,
   };
   const builtIn = kinds.flatMap((kind) => kind.builtInAnalyzers ?? []);
   const analyzers = [...builtIn, ...(options.extraAnalyzers ?? [])];
@@ -131,7 +142,12 @@ async function analyzeAndBuild(
     mode,
   );
   const analysis = pipeline.run(bundle, analysisOptions);
-  return buildLanternaReport(bundle, analysis, kinds, analysisOptions);
+  const report = buildLanternaReport(bundle, analysis, kinds, analysisOptions);
+  const integrity = sourceMaps.integrity();
+  if (integrity.enabled && report.meta?.captureIntegrity) {
+    report.meta.captureIntegrity.sourceMaps = integrity;
+  }
+  return report;
 }
 
 function bindStopSignals(trigger: () => void, onSignal?: () => void): { dispose: () => void } {

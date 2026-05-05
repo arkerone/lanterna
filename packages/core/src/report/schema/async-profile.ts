@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { sourceLocationSchema } from './primitives.js';
 
 const asyncOperationKindSchema = z.enum([
   'promise',
@@ -49,6 +50,7 @@ const asyncSummarySchema = z.object({
       line: z.number().int().nonnegative(),
       score: z.number().nonnegative(),
       confidence: z.enum(['low', 'medium', 'high']),
+      source: sourceLocationSchema.optional(),
     })
     .optional(),
 });
@@ -58,6 +60,7 @@ const asyncStackFrameSchema = z.object({
   file: z.string(),
   line: z.number().int().nonnegative(),
   column: z.number().int().nonnegative(),
+  source: sourceLocationSchema.optional(),
 });
 
 const asyncCdpContextSchema = z.object({

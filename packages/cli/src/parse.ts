@@ -43,6 +43,8 @@ interface ParsedCommonOptions {
   asyncInstrumentation?: 'off' | 'safe' | 'full';
   detectors?: string[];
   kind?: string[];
+  /** Commander negates `--no-source-maps` to `sourceMaps: false`. Default true. */
+  sourceMaps?: boolean;
 }
 
 interface NormalizedCommonOptions {
@@ -65,6 +67,7 @@ interface NormalizedCommonOptions {
   asyncInstrumentation: 'off' | 'safe' | 'full';
   detectors: string[];
   kinds: string[];
+  sourceMaps: boolean;
 }
 
 interface ParsedRunOptions extends ParsedCommonOptions {
@@ -88,6 +91,7 @@ export interface RunProfileOptions {
   pretty: boolean;
   deep: boolean;
   sampleIntervalMicros: number;
+  sourceMaps: boolean;
   heapSamplingIntervalBytes: number;
   memoryUsageIntervalMs: number;
   includeMemoryUsageSamples: boolean;
@@ -117,6 +121,7 @@ export interface AttachProfileOptions {
   format: OutputFormat;
   pretty: boolean;
   sampleIntervalMicros: number;
+  sourceMaps: boolean;
   heapSamplingIntervalBytes: number;
   memoryUsageIntervalMs: number;
   includeMemoryUsageSamples: boolean;
@@ -219,6 +224,7 @@ function normalizeCommonOptions(parsed: ParsedCommonOptions): NormalizedCommonOp
   const options: NormalizedCommonOptions = {
     format: parsed.format ?? 'json',
     pretty: Boolean(parsed.pretty),
+    sourceMaps: parsed.sourceMaps !== false,
     sampleIntervalMicros: parsed.sampleInterval ?? DEFAULT_SAMPLE_INTERVAL_MICROS,
     heapSamplingIntervalBytes: parsed.heapSampleInterval ?? DEFAULT_MEMORY_SAMPLING_INTERVAL_BYTES,
     memoryUsageIntervalMs: parsed.memoryUsageInterval ?? DEFAULT_MEMORY_USAGE_INTERVAL_MS,
@@ -287,6 +293,10 @@ function addCommonProfilingOptions(command: Command): Command {
     .option(OPTION_FLAGS.output, 'Write report to path')
     .option(OPTION_FLAGS.format, 'Output format: json, text, or markdown', parseOutputFormat)
     .option(OPTION_FLAGS.pretty, 'Pretty-print JSON')
+    .option(
+      OPTION_FLAGS.noSourceMaps,
+      'Disable source-map resolution of frame positions (on by default)',
+    )
     .option(
       OPTION_FLAGS.sampleInterval,
       'V8 sample interval in microseconds',
