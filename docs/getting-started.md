@@ -109,5 +109,6 @@ lanterna run --kind cpu,memory --duration 30s -- node app.js
 - All flags: [cli.md](./cli.md)
 - Project-level config (`.lanterna.json`): [configuration.md](./configuration.md)
 - Interpret your report: [reading-a-report.md](./reading-a-report.md)
+- Map TypeScript/bundled frames back to source: [source-maps.md](./source-maps.md)
 - Trouble? [troubleshooting.md](./troubleshooting.md)
 - Plug in your own detectors: [extending/detectors.md](./extending/detectors.md)

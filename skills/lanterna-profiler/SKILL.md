@@ -34,6 +34,8 @@ $LANTERNA run --kind cpu --kind memory --duration <duration> --output /tmp/lante
 $LANTERNA run --kind async --duration <duration> --output /tmp/lanterna-report.json -- node server.js
 $LANTERNA run --kind async --async-instrumentation full --duration <duration> --output /tmp/lanterna-report.json -- node server.js
 $LANTERNA run --duration <duration> --wait-for-url <health-url> --workload "npx -y autocannon <base-url>" --output /tmp/lanterna-report.json -- node server.js
+$LANTERNA run --no-source-maps --duration <duration> --output /tmp/lanterna-report.json -- node dist/server.js
+$LANTERNA attach --pid 4242 --no-source-maps --duration <duration> --output /tmp/lanterna-report.json
 $LANTERNA report /tmp/lanterna-report.json --format text
 $LANTERNA report /tmp/lanterna-report.json --format markdown --output /tmp/lanterna-report.md
 ```
@@ -58,7 +60,7 @@ Use `--wait-for-url` for HTTP servers so Lanterna does not profile only startup.
 3. For running processes, prefer `$LANTERNA attach --pid` in a TTY; otherwise list plausible Node processes and ask which PID matters.
 4. For HTTP services, identify readiness and traffic before capture. Prefer `run --wait-for-url <health-url> --workload "npx -y autocannon <base-url>"` for simple local load, or `--workload "npx -y artillery run load.yml"` for scenario-based load.
 5. Read the report in two passes: `meta` + quality first, then `findings[]`, hotspots, event loop, GC, memory, and deopts as needed.
-6. Before patching, open `evidence.file`, read the cited function, and trace callers when evidence points at `node_modules` or a Node builtin.
+6. Before patching, prefer `evidence.source.file:evidence.source.line` when `evidence.source` is present (this is the original TypeScript or bundled source); fall back to `evidence.file:evidence.line` only when there is no `source` field. If `source.file` is virtual (`webpack://...`, `vite:/...`), first resolve it to a real workspace file or treat it as a label, not an editable path. Read the cited function, and trace callers when evidence points at `node_modules` or a Node builtin. The same `source` precedence applies to `hotspots[].source`, `summary.topUserHotspot.source`, `hotStacks[].frames[].source`, and `hotAllocators[].source`.
 
 Useful first-pass report query:
 
@@ -73,6 +75,7 @@ Always check quality before claiming causality:
 
 - `profiles.cpu.quality.confidence`, `reasons[]`, and `recommendations[]`
 - `meta.captureIntegrity.*` and `meta.captureIntegrity.kinds.<kind>.*`
+- `meta.captureIntegrity.sourceMaps.{enabled, coverage, failures[]}` — when `enabled` and `coverage < 0.7`, treat `source.file:source.line` as a hint and keep the generated `file:line` visible as fallback context
 - `finding.confidence`, `finding.proofLevel`, `priority`, and `measurements`
 
 If confidence is low, say what is still useful, what is only a hypothesis, and what rerun would improve the signal.
@@ -95,6 +98,7 @@ Never:
 - attach to the first PID without confirmation;
 - claim event-loop causality when the event-loop signal is unavailable or histogram-only;
 - treat low-confidence `profiles.cpu.quality` as definitive;
+- quote a virtual `source.file` (`webpack://`, `vite:/...`) as a fix location without first checking that the path resolves on disk — these are bundler labels, not necessarily files;
 - infer report values that are not present.
 
 ## References

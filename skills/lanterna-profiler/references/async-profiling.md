@@ -76,7 +76,11 @@ Async findings usually include:
 - `hot-async-context` / async CPU attribution findings when combined with CPU data.
 - `microtask-flood` when microtask or TickObject volume dominates and microtasks were included.
 
-Prefer findings with high confidence, clear `evidence.file` / `line`, and corroborating records or chains. For orphan resources, inspect whether the resource is intentionally long-lived before patching.
+Prefer findings with high confidence, clear `evidence.source.file` / `line` when present (or `evidence.file` / `line` as fallback), and corroborating records or chains. For orphan resources, inspect whether the resource is intentionally long-lived before patching.
+
+## Source Positions
+
+Await sites, resource origins, and async findings may carry a resolved `source` object. Prefer `source.file:source.line` over the raw `file:line` — raw coordinates point at compiled JS, `source.*` at the original TypeScript or bundled source. Fall back when `source` is missing. Use `source.name` for anonymous frames. Treat virtual paths (`webpack://`, `vite:/`) as bundler labels, not editable files, unless they resolve on disk. Quality gate: `meta.captureIntegrity.sourceMaps.coverage`.
 
 ## Stop Conditions
 
@@ -87,4 +91,3 @@ Stop and ask for a better capture when:
 - attach partial capture hides the lifecycle the user cares about;
 - dropped records are high enough that top chains or orphans are incomplete;
 - the capture is mostly idle or lacks the workload that creates the async behavior.
-

@@ -71,6 +71,22 @@ Important global integrity flags:
 | `gcObserverAvailable` | Runtime GC observer was unavailable |
 | `controlChannelWriteErrors`, `gcObserverSetupFailed`, `heartbeatDropped` | Non-zero counters reduce confidence |
 | `diagnostics[]` | Non-fatal capture, probe, or analyzer diagnostics |
+| `sourceMaps` | Source-map resolution counters: `{ enabled, framesResolved, framesUnresolved, coverage, mapsLoaded, failures: [{url, reason}] }`. When `enabled` and `coverage < 0.7`, treat any `source.*` position as a hint, not a fact. Capped at 20 `failures`. |
+
+### `SourceLocation`
+
+Optional field on every frame-bearing object (`hotspots[]`, `summary.topUserHotspot`, `hotStacks[].frames[]`, `hotStacks[].clusters[].anchor`, `hotAllocators[]`, async `awaitSites[]`, `findings[].evidence`):
+
+```json
+{ "file": "src/server.ts", "line": 42, "column": 18, "name": "handleRequest" }
+```
+
+- `file` — relative to capture cwd when on disk; otherwise the raw map source URL (`webpack://app/src/...`, `vite:/src/...`).
+- `line` — 1-based.
+- `column` — 1-based, optional.
+- `name` — original symbol name from the map's `names` array, useful when the generated `function` is `(anonymous)`.
+
+**Reading rule:** when `source` is present, cite `source.file:source.line` instead of the sibling `file:line`. The sibling points at compiled JS; `source` points at the source you can patch. Treat virtual source paths such as `webpack://...` and `vite:/...` as bundler labels unless they resolve on disk.
 
 ## `profiles`
 
