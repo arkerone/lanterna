@@ -3,7 +3,7 @@ import {
   formatBytes,
   formatCommand,
   formatEventLoop,
-  formatLocation,
+  formatFrameLocation,
   formatMs,
   formatPct,
   formatRatio,
@@ -20,6 +20,12 @@ export class TextReportRenderer implements ReportRenderer {
     lines.push('');
     lines.push(`Duration: ${formatMs(report.meta?.durationMs)}`);
     lines.push(`Command: ${formatCommand(report.meta?.command)}`);
+    const sourceMaps = report.meta?.captureIntegrity?.sourceMaps;
+    if (sourceMaps?.enabled) {
+      lines.push(
+        `Source maps: ${formatRatio(sourceMaps.coverage)} coverage (${sourceMaps.mapsLoaded} maps loaded)`,
+      );
+    }
     lines.push('');
 
     const cpu = report.profiles?.cpu;
@@ -57,7 +63,7 @@ export class TextReportRenderer implements ReportRenderer {
     }
     for (const hotspot of top) {
       lines.push(
-        `${indent}${hotspot.function} (${formatLocation(hotspot.file, hotspot.line)}): self ${formatPct(hotspot.selfPct)}, total ${formatPct(hotspot.totalPct)}`,
+        `${indent}${hotspot.function} (${formatFrameLocation(hotspot)}): self ${formatPct(hotspot.selfPct)}, total ${formatPct(hotspot.totalPct)}`,
       );
     }
   }
@@ -74,7 +80,7 @@ export class TextReportRenderer implements ReportRenderer {
     }
     for (const allocator of top) {
       lines.push(
-        `${indent}${allocator.function} (${formatLocation(allocator.file, allocator.line)}): self ${formatBytes(allocator.selfBytes)} (${formatPct(allocator.selfPct)}), total ${formatBytes(allocator.totalBytes)} (${formatPct(allocator.totalPct)})`,
+        `${indent}${allocator.function} (${formatFrameLocation(allocator)}): self ${formatBytes(allocator.selfBytes)} (${formatPct(allocator.selfPct)}), total ${formatBytes(allocator.totalBytes)} (${formatPct(allocator.totalPct)})`,
       );
     }
   }
@@ -88,7 +94,7 @@ export class TextReportRenderer implements ReportRenderer {
       lines.push(`${indent}[${f.severity}] ${f.title}`);
       lines.push(`${indent}  ${f.suggestion}`);
       lines.push(
-        `${indent}  Evidence: ${f.evidence.function} (${formatLocation(f.evidence.file, f.evidence.line)})`,
+        `${indent}  Evidence: ${f.evidence.function} (${formatFrameLocation(f.evidence)})`,
       );
       if (f.evidence.extra !== undefined) {
         const extra = renderValue(f.evidence.extra);

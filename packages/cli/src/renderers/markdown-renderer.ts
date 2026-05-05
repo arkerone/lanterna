@@ -3,7 +3,7 @@ import {
   formatBytes,
   formatCommand,
   formatEventLoop,
-  formatLocation,
+  formatFrameLocation,
   formatMs,
   formatPct,
   formatRatio,
@@ -22,6 +22,12 @@ export class MarkdownReportRenderer implements ReportRenderer {
     lines.push('| --- | --- |');
     lines.push(`| Duration | ${formatMs(report.meta?.durationMs)} |`);
     lines.push(`| Command | \`${escapeBackticks(formatCommand(report.meta?.command))}\` |`);
+    const sourceMaps = report.meta?.captureIntegrity?.sourceMaps;
+    if (sourceMaps?.enabled) {
+      lines.push(
+        `| Source maps | ${formatRatio(sourceMaps.coverage)} coverage (${sourceMaps.mapsLoaded} maps loaded) |`,
+      );
+    }
     lines.push('');
 
     const cpu = report.profiles?.cpu;
@@ -65,7 +71,7 @@ export class MarkdownReportRenderer implements ReportRenderer {
     lines.push('| --- | --- | ---: | ---: |');
     for (const hotspot of hotspots.slice(0, 5)) {
       lines.push(
-        `| ${escapePipe(hotspot.function)} | \`${escapeBackticks(formatLocation(hotspot.file, hotspot.line))}\` | ${formatPct(hotspot.selfPct)} | ${formatPct(hotspot.totalPct)} |`,
+        `| ${escapePipe(hotspot.function)} | \`${escapeBackticks(formatFrameLocation(hotspot))}\` | ${formatPct(hotspot.selfPct)} | ${formatPct(hotspot.totalPct)} |`,
       );
     }
   }
@@ -79,7 +85,7 @@ export class MarkdownReportRenderer implements ReportRenderer {
     lines.push('| --- | --- | ---: | ---: |');
     for (const allocator of allocators.slice(0, 5)) {
       lines.push(
-        `| ${escapePipe(allocator.function)} | \`${escapeBackticks(formatLocation(allocator.file, allocator.line))}\` | ${formatBytes(allocator.selfBytes)} (${formatPct(allocator.selfPct)}) | ${formatBytes(allocator.totalBytes)} (${formatPct(allocator.totalPct)}) |`,
+        `| ${escapePipe(allocator.function)} | \`${escapeBackticks(formatFrameLocation(allocator))}\` | ${formatBytes(allocator.selfBytes)} (${formatPct(allocator.selfPct)}) | ${formatBytes(allocator.totalBytes)} (${formatPct(allocator.totalPct)}) |`,
       );
     }
   }
@@ -95,7 +101,7 @@ export class MarkdownReportRenderer implements ReportRenderer {
       lines.push(`- Severity: ${f.severity}`);
       lines.push(`- Kind: ${f.profileKind}`);
       lines.push(
-        `- Evidence: \`${escapeBackticks(f.evidence.function)}\` at \`${escapeBackticks(formatLocation(f.evidence.file, f.evidence.line))}\``,
+        `- Evidence: \`${escapeBackticks(f.evidence.function)}\` at \`${escapeBackticks(formatFrameLocation(f.evidence))}\``,
       );
       lines.push(`- Suggestion: ${f.suggestion}`);
       if (f.evidence.extra !== undefined) {

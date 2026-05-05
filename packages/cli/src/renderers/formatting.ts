@@ -37,6 +37,22 @@ export function formatLocation(file: string, line: number): string {
   return `${file}:${line}`;
 }
 
+/**
+ * Render a frame's location, preferring the resolved source position when
+ * present. The generated `(file:line)` is appended in parens so consumers can
+ * still see where V8 sampled — useful when the source mapping is suspect.
+ */
+export function formatFrameLocation(frame: {
+  file: string;
+  line: number;
+  source?: { file: string; line: number };
+}): string {
+  if (frame.source) {
+    return `${frame.source.file}:${frame.source.line} (${frame.file}:${frame.line})`;
+  }
+  return formatLocation(frame.file, frame.line);
+}
+
 export function formatEventLoop(
   eventLoop: { available?: boolean; p99LagMs?: number; maxLagMs?: number } | undefined,
 ): string {

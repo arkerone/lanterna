@@ -174,4 +174,114 @@ describe('renderReport', () => {
     expect(output).toContain('Cache grows');
     expect(output).toContain('allocate');
   });
+
+  it('prefers source locations in text and markdown while keeping generated locations', () => {
+    const report = {
+      meta: {
+        ...baseMeta,
+        captureIntegrity: {
+          ...baseMeta.captureIntegrity,
+          sourceMaps: {
+            enabled: true,
+            framesResolved: 2,
+            framesUnresolved: 1,
+            coverage: 2 / 3,
+            mapsLoaded: 1,
+            failures: [],
+          },
+        },
+      },
+      profiles: {
+        cpu: {
+          summary: {
+            totalCpuMs: 120,
+            onCpuRatio: 0.5,
+            userCodeRatio: 0.4,
+            nodeModulesRatio: 0.1,
+            builtinRatio: 0,
+            nativeRatio: 0,
+            gcRatio: 0.02,
+            idleRatio: 0.5,
+            topCategory: 'user',
+            dominantBlockingKind: null,
+          },
+          hotspots: [
+            {
+              id: 'h1',
+              function: 'handler',
+              file: '/repo/dist/server.js',
+              line: 12,
+              column: 1,
+              source: { file: 'src/server.ts', line: 42 },
+              category: 'user',
+              selfMs: 45,
+              selfPct: 37.5,
+              totalMs: 60,
+              totalPct: 50,
+              callers: [],
+              callees: [],
+              optimizationState: 'optimized',
+            },
+          ],
+          hotStacks: [],
+          gc: {
+            totalPauseMs: 3,
+            count: { scavenge: 1, markSweep: 0, incremental: 0, other: 0 },
+            longestPauseMs: 3,
+            pausesOver10ms: [],
+          },
+          eventLoop: {
+            maxLagMs: 18,
+            p99LagMs: 12,
+            p50LagMs: 2,
+            meanLagMs: 3,
+            sampleCount: 20,
+            stallIntervals: [],
+            available: true,
+            measurementBasis: 'histogram',
+            confidence: 'high',
+          },
+          quality: {
+            confidence: 'high',
+            sampleCount: 100,
+            durationMs: 1500,
+            idleRatio: 0.5,
+            samplesTimed: true,
+            durationBasis: 'timeDeltas',
+            reasons: [],
+            recommendations: [],
+          },
+          deopts: [],
+        },
+      },
+      findings: [
+        {
+          id: 'f1',
+          profileKind: 'cpu',
+          severity: 'warning',
+          category: 'cpu-hotspot',
+          title: 'Hot handler',
+          evidence: {
+            file: '/repo/dist/server.js',
+            line: 12,
+            function: 'handler',
+            selfPct: 37.5,
+            source: { file: 'src/server.ts', line: 42 },
+          },
+          why: 'Handler is hot.',
+          suggestion: 'Inspect handler.',
+          references: [],
+        },
+      ],
+    };
+
+    const text = renderReport(report, { format: 'text' });
+    const markdown = renderReport(report, { format: 'markdown' });
+
+    for (const output of [text, markdown]) {
+      expect(output).toContain('src/server.ts:42 (/repo/dist/server.js:12)');
+    }
+    expect(text).toContain('Source maps: 66.7% coverage (1 maps loaded)');
+    expect(markdown).toContain('| Source maps | 66.7% coverage (1 maps loaded) |');
+  });
 });
