@@ -51,6 +51,8 @@ Confidence gate for the CPU section. See [signal-quality.md](../signal-quality.m
 
 Aggregated nodes sharing `(file, function, line)`. Each entry has direct CPU (`selfMs`, `selfPct`), inclusive CPU (`totalMs`, `totalPct`), top callers/callees, frame `category`, and V8 `optimizationState` (`optimized` / `interpreted` / `unknown`).
 
+For non-user frames, `userCaller` is present when a user-code ancestor was observed on sampled paths. `profilePct` is the share of the whole CPU profile attributed to that caller; `supportPct` is the share of the external frame's sampled paths explained by that caller. Findings only move their primary evidence to the caller for high-confidence attribution; low-confidence callers remain visible as an inspection lead.
+
 `selfMs` / `totalMs` come from V8 `timeDeltas[]` when available (`quality.durationBasis === "timeDeltas"`), otherwise they are estimated from the configured `sampleIntervalMicros` (`durationBasis === "sampleInterval"`). When estimated, prefer the percentage fields.
 
 ### `hotStacks`

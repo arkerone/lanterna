@@ -185,6 +185,45 @@ describe('lanternaReportSchema', () => {
       expect(result.data.findings[0]?.priority?.score).toBe(250);
     });
 
+    it('accepts user caller attribution on CPU hotspots', () => {
+      const report = makeReport({
+        profiles: {
+          cpu: makeCpuSection({
+            hotspots: [
+              {
+                id: 'node_modules/pkg/index.js:8:parsePayload',
+                function: 'parsePayload',
+                file: 'node_modules/pkg/index.js',
+                line: 8,
+                column: 1,
+                category: 'node_modules',
+                selfMs: 40,
+                selfPct: 40,
+                totalMs: 50,
+                totalPct: 50,
+                callers: [],
+                callees: [],
+                optimizationState: 'unknown',
+                userCaller: {
+                  function: 'handleRequest',
+                  file: 'src/app.js',
+                  line: 22,
+                  profilePct: 40,
+                  supportPct: 100,
+                  confidence: 'high',
+                  basis: 'cpu-sample-path',
+                },
+              },
+            ],
+          }),
+        },
+      });
+      const result = lanternaReportSchema.safeParse(report);
+      expect(result.success).toBe(true);
+      if (!result.success) return;
+      expect(result.data.profiles.cpu?.hotspots[0]?.userCaller?.function).toBe('handleRequest');
+    });
+
     it('accepts a report with a custom (extension) finding', () => {
       const report = makeReport({
         findings: [

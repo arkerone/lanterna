@@ -125,9 +125,8 @@ function isExplainedBySpecificFinding(
   return findings.some((finding) => {
     if (!SPECIFIC_FINDING_CATEGORIES.has(finding.category)) return false;
     if (matchesHotspot(finding.evidence, hotspot)) return true;
-    const userAttribution = (finding.evidence.extra as { userAttribution?: unknown } | undefined)
-      ?.userAttribution;
-    return matchesHotspot(userAttribution, hotspot);
+    const userCaller = (finding.evidence.extra as { userCaller?: unknown } | undefined)?.userCaller;
+    return matchesHotspot(userCaller, hotspot);
   });
 }
 

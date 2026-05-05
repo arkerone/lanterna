@@ -22,7 +22,6 @@ export {
   type KindScopedDetectorBundle,
   type KindScopedDetectorShared,
 } from './analysis/kind-scoped-detector.js';
-export type { HotspotAttribution } from './analysis/model/hotspots.js';
 export type { NoiseFilter, NoiseUrlMatch } from './analysis/noise-filters.js';
 export {
   classifyNoisePackage,
@@ -218,6 +217,7 @@ export type {
   StallCorrelation,
   SummaryUserHotspot,
   SyncCryptoEvidenceExtra,
+  UserCallerAttribution,
 } from './report/types.js';
 export { defineBuiltinFinding } from './report/types.js';
 export { LANTERNA_VERSION } from './report/version.generated.js';

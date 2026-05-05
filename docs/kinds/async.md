@@ -42,6 +42,7 @@ Async-specific options:
 `profiles.async.*` exposes:
 
 - **`summary`** — total resources, totals per type, destruction rate.
+- **`topOperations`**, **`hotFiles`**, and **`cpuAttribution.topChains`** — ranked async operations, hot user files, and CPU-over-window chains. Entries include `userCaller` when an existing user frame can anchor the work; CPU-window execution frames use `basis: "async-cpu-window"`, otherwise stack-derived anchors use `basis: "async-stack"`.
 - **`chains`** — async parent chains rooted at user-code, with depth and frame counts. Drives `deep-async-chain` findings.
 - **`awaits`** — `await` boundaries with elapsed-time distribution. Drives `long-await` findings.
 - **`orphans`** — resources that never resolved or destroyed during capture. Drives `orphan-async-resource` findings.
@@ -75,3 +76,4 @@ Async-specific options:
 - **`--async-instrumentation full` is experimental.** It rewrites `await` sites in modules loaded **after** registration. Code loaded earlier is not covered. It can interact poorly with bundlers, source maps, or other instrumentation hooks. Stick to `safe` unless `safe` cannot identify the await sites you need.
 - **Microtasks default to off.** Enabling `--async-include-microtasks` produces very noisy reports. Use it only for the `microtask-flood` finding.
 - **Dropped events are sampled, not lost forever.** `quality.droppedEvents > 0` means raise `--async-max-events` for the next run if completeness matters.
+- **User callers are anchors, not proof.** Async `userCaller` is derived from already captured user frames. Prefer high-confidence CPU-window attribution when present; stack-only callers should guide inspection rather than be treated as the definitive line to edit.

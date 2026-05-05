@@ -1,5 +1,7 @@
 /** Shared, format-agnostic value formatters used by every renderer. */
 
+import type { UserCallerAttribution } from '@lanterna-profiler/core';
+
 export function formatCommand(command: string[] | undefined): string {
   if (!command || command.length === 0) return '(unknown)';
   return command.join(' ');
@@ -51,6 +53,10 @@ export function formatFrameLocation(frame: {
     return `${frame.source.file}:${frame.source.line} (${frame.file}:${frame.line})`;
   }
   return formatLocation(frame.file, frame.line);
+}
+
+export function formatUserCaller(caller: UserCallerAttribution): string {
+  return `${caller.function} (${formatFrameLocation(caller)}) [${caller.confidence}, support ${formatPct(caller.supportPct)}]`;
 }
 
 export function formatEventLoop(

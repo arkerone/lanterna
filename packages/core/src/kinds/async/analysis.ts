@@ -13,6 +13,7 @@ import type {
   AsyncSummary,
   AsyncTopOperation,
   ProfileConfidence,
+  UserCallerAttribution,
 } from '../../report/types.js';
 import type { KindAnalysisContext, KindAnalysisContributor } from '../core/types.js';
 import { firstCdpAsyncContextFrame } from './cdp-stack.js';
@@ -115,7 +116,6 @@ function analyzeInner(
   const chainNodes = buildChainTree(data.records, recordById);
   const rootByAsyncId = buildRootMap(data.records, recordById);
 
-  const topOperations = buildTopOperations(sortedByDuration, bundle.durationMs);
   const chains = buildChains(chainNodes, recordById);
   const orphans = buildOrphans(data.records, bundle.durationMs);
 
@@ -125,6 +125,16 @@ function analyzeInner(
     rootByAsyncId,
     cpuKind: bundle.kinds.cpu as { cpuProfile: RawCpuProfile } | undefined,
   });
+  const userCallerByRootId = new Map<number, UserCallerAttribution>();
+  for (const entry of cpuAttribution.topChains) {
+    if (entry.userCaller) userCallerByRootId.set(entry.rootAsyncId, entry.userCaller);
+  }
+  const topOperations = buildTopOperations(
+    sortedByDuration,
+    bundle.durationMs,
+    rootByAsyncId,
+    userCallerByRootId,
+  );
   const quality = buildQuality(data, cpuAttribution);
   const hotFiles = buildHotFiles({
     records: data.records,
@@ -177,6 +187,25 @@ function toReportFrame(frame: AsyncStackFrame): AsyncStackFrameReport {
     if (source) reportFrame.source = source;
   }
   return reportFrame;
+}
+
+function userCallerFromAsyncFrame(
+  frame: AsyncStackFrameReport | undefined,
+  options: Pick<UserCallerAttribution, 'profilePct' | 'supportPct' | 'confidence' | 'basis'>,
+): UserCallerAttribution | undefined {
+  if (!frame) return undefined;
+  const caller: UserCallerAttribution = {
+    function: frame.function,
+    file: frame.file,
+    line: frame.line,
+    column: frame.column,
+    profilePct: options.profilePct,
+    supportPct: options.supportPct,
+    confidence: options.confidence,
+    basis: options.basis,
+  };
+  if (frame.source) caller.source = frame.source;
+  return caller;
 }
 
 function toReportCdpContext(
@@ -234,6 +263,7 @@ function buildSummary(
       score: topHotFile.score,
       confidence: topHotFile.confidence,
       ...(topHotFile.primaryFrame.source ? { source: topHotFile.primaryFrame.source } : {}),
+      ...(topHotFile.userCaller ? { userCaller: topHotFile.userCaller } : {}),
     };
   }
   if (durations.length > 0) {
@@ -253,6 +283,8 @@ function buildSummary(
 function buildTopOperations(
   sorted: AsyncOperationRecord[],
   captureDurationMs: number,
+  rootByAsyncId: Map<number, number>,
+  userCallerByRootId: Map<number, UserCallerAttribution>,
 ): AsyncTopOperation[] {
   const out: AsyncTopOperation[] = [];
   for (const rec of sorted) {
@@ -341,6 +373,16 @@ function buildTopOperations(
       op.overallConfidence =
         op.awaitConfidence ?? op.executionConfidence ?? op.creationConfidence ?? 'medium';
     }
+    const rootId = rootByAsyncId.get(rec.asyncId) ?? rec.asyncId;
+    const cpuCaller = userCallerByRootId.get(rootId);
+    op.userCaller =
+      cpuCaller ??
+      userCallerFromAsyncFrame(primaryFrame, {
+        profilePct: 0,
+        supportPct: 100,
+        confidence: op.overallConfidence ?? 'medium',
+        basis: 'async-stack',
+      });
     out.push(op);
   }
   return out;
@@ -807,6 +849,12 @@ function buildHotFiles(args: {
       aggregate.orphanCount * 100 +
       aggregate.maxChainDepth * 10 +
       aggregate.cpuPct * 5;
+    const userCaller = userCallerFromAsyncFrame(primary.frame, {
+      profilePct: aggregate.cpuPct,
+      supportPct: 100,
+      confidence: confidenceForHotFile(quality, aggregate.operationCount),
+      basis: 'async-stack',
+    });
     hotFiles.push({
       file: aggregate.file,
       score,
@@ -821,6 +869,7 @@ function buildHotFiles(args: {
       runMs: aggregate.runMs,
       kindBreakdown: aggregate.kindBreakdown,
       sampleAsyncIds: aggregate.sampleAsyncIds,
+      ...(userCaller ? { userCaller } : {}),
     });
   }
   hotFiles.sort(
@@ -997,6 +1046,16 @@ function buildCpuAttribution(args: BuildAttributionArgs): AsyncCpuAttribution {
       root.cpuAttributedSamples = bucket.sampleNodeIds.length;
       root.cpuAmbiguousSamples = ambiguousCount;
     }
+    const callerFrame = entry.executionFrame ?? entry.rootFrame;
+    const basis = entry.executionFrame ? 'async-cpu-window' : 'async-stack';
+    const confidence = entry.executionFrame ? (entry.executionConfidence ?? 'medium') : 'medium';
+    const userCaller = userCallerFromAsyncFrame(callerFrame, {
+      profilePct: cpuPct,
+      supportPct: 100,
+      confidence,
+      basis,
+    });
+    if (userCaller) entry.userCaller = userCaller;
     topChains.push(entry);
   }
   topChains.sort((a, b) => b.cpuPct - a.cpuPct);

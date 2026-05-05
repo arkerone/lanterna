@@ -9,12 +9,12 @@ import type {
   FindingMeasurements,
   FindingRemediation,
   Hotspot,
-  HotspotAttribution,
   JsonHotPathEvidenceExtra,
   NodeModulesHotspotEvidenceExtra,
   RequireInHotPathEvidenceExtra,
   StallCorrelation,
   SyncCryptoEvidenceExtra,
+  UserCallerAttribution,
 } from '@lanterna-profiler/core';
 import { isNoiseCategory } from '@lanterna-profiler/core';
 
@@ -25,12 +25,12 @@ import { isNoiseCategory } from '@lanterna-profiler/core';
  */
 export type CpuHotspotContext = Pick<
   CpuAnalysisView['hotspotAnalysis'],
-  'fullHotspots' | 'hotspotById' | 'userAttributionById'
+  'fullHotspots' | 'hotspotById' | 'userCallerById'
 >;
 
 export interface ResolvedAttribution {
-  attribution: HotspotAttribution | undefined;
-  caller: HotspotAttribution | undefined;
+  attribution: UserCallerAttribution | undefined;
+  caller: UserCallerAttribution | undefined;
 }
 
 export const BUILTIN_RUNTIME_CATEGORIES = ['node:builtin', 'native'] as const;
@@ -80,7 +80,7 @@ export function resolveAttribution(
   hotspot: Hotspot,
   context: CpuHotspotContext,
 ): ResolvedAttribution {
-  const attribution = context.userAttributionById.get(hotspot.id);
+  const attribution = context.userCallerById.get(hotspot.id);
   const caller = attribution?.confidence === 'high' ? attribution : undefined;
   return { attribution, caller };
 }
@@ -101,14 +101,14 @@ export function findStallCorrelation(
 }
 
 export function buildAttributionEvidence(
-  attribution: HotspotAttribution | undefined,
-  caller: HotspotAttribution | undefined,
+  attribution: UserCallerAttribution | undefined,
+  caller: UserCallerAttribution | undefined,
 ): AttributionEvidence {
   return {
     proofLevel: caller ? 'attributed-caller' : 'direct-builtin',
     attributionBasis: caller ? 'sample-path' : 'builtin-only',
     attributionConfidence: caller?.confidence ?? 'low',
-    userAttribution: attribution,
+    userCaller: attribution,
   };
 }
 
@@ -170,7 +170,7 @@ export function aggregateByPatterns<TPattern extends { re: RegExp; api: string }
 }
 
 export function resolveEvidenceField<K extends 'file' | 'line' | 'function'>(
-  caller: HotspotAttribution | undefined,
+  caller: UserCallerAttribution | undefined,
   hotspot: Hotspot,
   field: K,
 ): Hotspot[K] {
@@ -209,7 +209,7 @@ export function buildAttributedFinding<
   severity: BaseFinding['severity'];
   title: string;
   hotspot: Hotspot;
-  caller: HotspotAttribution | undefined;
+  caller: UserCallerAttribution | undefined;
   selfPct: number;
   why: string;
   suggestion: string;

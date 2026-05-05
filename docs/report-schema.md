@@ -99,13 +99,15 @@ When present, prefer `source.file:source.line` for human diagnosis and patching,
 
 `source?: SourceLocation` can appear on CPU hotspots, hot-stack frames and anchors, memory allocators and memory summaries, async frame/resource records, deopts, and `findings[].evidence`.
 
+`userCaller?: UserCallerAttribution` can appear when the visible cost is outside user code but Lanterna can identify the nearest user frame that led there. It contains `function`, `file`, `line`, optional `column`/`source`, `profilePct`, `supportPct`, `confidence` (`low`/`medium`/`high`), and `basis` (`cpu-sample-path`, `heap-sample-path`, `async-stack`, or `async-cpu-window`). Treat it as an inspection lead; low-confidence attribution should not be read as the line to patch.
+
 ## `profiles.cpu`
 
 | Section | Purpose |
 | --- | --- |
 | `summary` | High-level CPU ratios (user / node_modules / builtin / native / GC / idle), `topCategory`, `dominantBlockingKind`, `topUserHotspot`. |
 | `quality` | Confidence gate for CPU evidence — `confidence`, `sampleCount`, `durationMs`, `idleRatio`, `samplesTimed`, `durationBasis`, `reasons[]`, `recommendations[]`. |
-| `hotspots` | Aggregated functions with `selfMs`/`selfPct` and `totalMs`/`totalPct`, `callers[]`/`callees[]`, `category`, `optimizationState`. |
+| `hotspots` | Aggregated functions with `selfMs`/`selfPct` and `totalMs`/`totalPct`, `callers[]`/`callees[]`, `category`, `optimizationState`, and optional `userCaller` for non-user frames. |
 | `hotStacks` | Most frequent complete sampled stacks with `weightPct` and `frames[]`. |
 | `gc` | Pause totals, counts, `longestPauseMs`, `pausesOver10ms`, `correlatedHotspots`. |
 | `eventLoop` | `available`, `measurementBasis` (`both`/`heartbeats`/`histogram`/`none`), `confidence`, lag percentiles, `stallIntervals`, `correlatedHotspots`. |
@@ -118,7 +120,7 @@ Detail: [kinds/cpu.md](./kinds/cpu.md).
 | Section | Purpose |
 | --- | --- |
 | `summary` | Total sampled bytes, top allocator, RSS / heapUsed / external / arrayBuffers stats (start/end/min/max/mean/p95) plus linear `slopeBytesPerSec`. |
-| `hotAllocators` | Frames ranked by `selfBytes` / `totalBytes`, with file/line and frame category. |
+| `hotAllocators` | Frames ranked by `selfBytes` / `totalBytes`, with file/line, frame category, and optional `userCaller` for external allocators. |
 | `memoryUsage` | Compact `process.memoryUsage()` metadata (`sampleCount`, first/last sample). Raw samples present only with `--include-memory-samples`. |
 | `heapSnapshotAnalysis` | Optional start/end retained-growth summary when `--heap-snapshot-analysis` is enabled. Very large snapshots are skipped with a warning instead of being parsed unbounded. |
 

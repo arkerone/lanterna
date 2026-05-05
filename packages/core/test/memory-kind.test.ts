@@ -92,6 +92,50 @@ function profile(): RawSamplingHeapProfile {
   };
 }
 
+function externalAllocatorProfile(): RawSamplingHeapProfile {
+  return {
+    head: {
+      callFrame: {
+        functionName: '(root)',
+        scriptId: '0',
+        url: '',
+        lineNumber: 0,
+        columnNumber: 0,
+      },
+      selfSize: 0,
+      id: 1,
+      children: [
+        {
+          callFrame: {
+            functionName: 'handleRequest',
+            scriptId: '1',
+            url: 'file:///app/src/app.js',
+            lineNumber: 21,
+            columnNumber: 4,
+          },
+          selfSize: 100,
+          id: 2,
+          children: [
+            {
+              callFrame: {
+                functionName: 'buildResult',
+                scriptId: '2',
+                url: 'file:///app/node_modules/pkg/index.js',
+                lineNumber: 8,
+                columnNumber: 2,
+              },
+              selfSize: 900,
+              id: 3,
+              children: [],
+            },
+          ],
+        },
+      ],
+    },
+    samples: [],
+  };
+}
+
 function series(slopeBytesPerMs: number, count = 20): MemoryUsageSample[] {
   const out: MemoryUsageSample[] = [];
   for (let i = 0; i < count; i++) {
@@ -175,6 +219,33 @@ describe('memory kind analysis', () => {
     expect(doWork?.totalBytes).toBe(1000);
 
     // Schema validates.
+    expect(memoryProfileReportSchema.safeParse(report).success).toBe(true);
+  });
+
+  it('attributes external allocators to the nearest user caller', () => {
+    const data: MemoryKindData = {
+      samplingProfile: externalAllocatorProfile(),
+      samplingIntervalBytes: 512 * 1024,
+      memoryUsage: { samples: series(0), available: true, sampleIntervalMs: 200 },
+    };
+    const pipeline = createAnalysisPipeline({ kinds: [createMemoryProfileKind()] });
+    const result = pipeline.run(bundle(data), { command: ['node', 'app.js'], mode: 'spawn' });
+
+    const report = result.profiles.memory as MemoryProfileReport;
+    const allocator = report.hotAllocators.find((entry) => entry.function === 'buildResult');
+
+    expect(allocator?.userCaller).toMatchObject({
+      function: 'handleRequest',
+      file: 'src/app.js',
+      line: 22,
+      profilePct: 90,
+      supportPct: 100,
+      confidence: 'high',
+      basis: 'heap-sample-path',
+    });
+    const userAllocator = report.hotAllocators.find((entry) => entry.function === 'handleRequest');
+    expect(userAllocator?.category).toBe('user');
+    expect(userAllocator?.userCaller).toBeUndefined();
     expect(memoryProfileReportSchema.safeParse(report).success).toBe(true);
   });
 

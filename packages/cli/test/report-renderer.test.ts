@@ -284,4 +284,158 @@ describe('renderReport', () => {
     expect(text).toContain('Source maps: 66.7% coverage (1 maps loaded)');
     expect(markdown).toContain('| Source maps | 66.7% coverage (1 maps loaded) |');
   });
+
+  it('renders user caller attribution for external hotspots, allocators, and findings', () => {
+    const report = {
+      meta: { ...baseMeta, profileKinds: ['cpu', 'memory'] },
+      profiles: {
+        cpu: {
+          summary: {
+            totalCpuMs: 120,
+            onCpuRatio: 0.5,
+            userCodeRatio: 0.4,
+            nodeModulesRatio: 0.1,
+            builtinRatio: 0,
+            nativeRatio: 0,
+            gcRatio: 0.02,
+            idleRatio: 0.5,
+            topCategory: 'node_modules',
+            dominantBlockingKind: null,
+          },
+          hotspots: [
+            {
+              id: 'h1',
+              function: 'parsePayload',
+              file: '/repo/node_modules/pkg/index.js',
+              line: 8,
+              column: 1,
+              category: 'node_modules',
+              selfMs: 45,
+              selfPct: 37.5,
+              totalMs: 60,
+              totalPct: 50,
+              callers: [],
+              callees: [],
+              optimizationState: 'unknown',
+              userCaller: {
+                function: 'handleRequest',
+                file: '/repo/src/app.js',
+                line: 22,
+                profilePct: 37.5,
+                supportPct: 92,
+                confidence: 'high',
+                basis: 'cpu-sample-path',
+              },
+            },
+          ],
+          hotStacks: [],
+          gc: {
+            totalPauseMs: 0,
+            count: { scavenge: 0, markSweep: 0, incremental: 0, other: 0 },
+            longestPauseMs: 0,
+            pausesOver10ms: [],
+          },
+          eventLoop: {
+            maxLagMs: 0,
+            p99LagMs: 0,
+            p50LagMs: 0,
+            meanLagMs: 0,
+            sampleCount: 0,
+            stallIntervals: [],
+            available: false,
+            measurementBasis: 'none',
+            confidence: 'none',
+          },
+          quality: {
+            confidence: 'high',
+            sampleCount: 100,
+            durationMs: 1500,
+            idleRatio: 0.5,
+            samplesTimed: true,
+            durationBasis: 'timeDeltas',
+            reasons: [],
+            recommendations: [],
+          },
+          deopts: [],
+        },
+        memory: {
+          summary: { totalSampledBytes: 4096, samplingIntervalBytes: 524288 },
+          hotAllocators: [
+            {
+              id: 'a1',
+              function: 'allocate',
+              file: '/repo/node_modules/pkg/cache.js',
+              line: 12,
+              column: 1,
+              category: 'node_modules',
+              selfBytes: 2048,
+              selfPct: 50,
+              totalBytes: 3072,
+              totalPct: 75,
+              userCaller: {
+                function: 'loadCache',
+                file: '/repo/src/cache.js',
+                line: 6,
+                profilePct: 50,
+                supportPct: 100,
+                confidence: 'high',
+                basis: 'heap-sample-path',
+              },
+            },
+          ],
+          memoryUsage: {
+            available: false,
+            sampleIntervalMs: 250,
+            sampleCount: 0,
+          },
+        },
+      },
+      findings: [
+        {
+          id: 'f1',
+          profileKind: 'cpu',
+          severity: 'warning',
+          category: 'node-modules-hotspot',
+          title: 'Dependency is hot',
+          evidence: {
+            file: '/repo/node_modules/pkg/index.js',
+            line: 8,
+            function: 'parsePayload',
+            selfPct: 37.5,
+            extra: {
+              proofLevel: 'attributed-caller',
+              attributionBasis: 'sample-path',
+              attributionConfidence: 'low',
+              package: 'pkg',
+              callee: 'parsePayload',
+              calleeTotalPct: 50,
+              userCaller: {
+                function: 'handleRequest',
+                file: '/repo/src/app.js',
+                line: 22,
+                profilePct: 37.5,
+                supportPct: 45,
+                confidence: 'low',
+                basis: 'cpu-sample-path',
+              },
+            },
+          },
+          why: 'Dependency work dominates.',
+          suggestion: 'Inspect caller.',
+          references: [],
+        },
+      ],
+    };
+
+    const text = renderReport(report, { format: 'text' });
+    const markdown = renderReport(report, { format: 'markdown' });
+
+    expect(text).toContain(
+      'User caller: handleRequest (/repo/src/app.js:22) [high, support 92.0%]',
+    );
+    expect(text).toContain('User caller: loadCache (/repo/src/cache.js:6) [high, support 100.0%]');
+    expect(text).toContain('User caller: handleRequest (/repo/src/app.js:22) [low, support 45.0%]');
+    expect(markdown).toContain('User caller');
+    expect(markdown).toContain('handleRequest (/repo/src/app.js:22) [high, support 92.0%]');
+  });
 });
