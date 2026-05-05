@@ -39,15 +39,16 @@ export const sourceLocationSchema = z.object({
   name: z.string().optional(),
 });
 
-export const hotspotAttributionSchema = z.object({
-  hotspotId: z.string().min(1),
+export const userCallerAttributionSchema = z.object({
   function: z.string(),
   file: z.string(),
   line: z.number().int(),
-  samplePct: z.number(),
-  supportPct: z.number(),
-  confidence: z.enum(['low', 'high']),
+  column: z.number().int().optional(),
   source: sourceLocationSchema.optional(),
+  profilePct: z.number(),
+  supportPct: z.number(),
+  confidence: z.enum(['low', 'medium', 'high']),
+  basis: z.enum(['cpu-sample-path', 'heap-sample-path', 'async-stack', 'async-cpu-window']),
 });
 
 export const stallCorrelationSchema = z.object({
@@ -58,8 +59,8 @@ export const stallCorrelationSchema = z.object({
 export const attributionEvidenceSchema = z.object({
   proofLevel: z.enum(['direct-builtin', 'attributed-caller']),
   attributionBasis: z.enum(['sample-path', 'builtin-only']),
-  attributionConfidence: z.enum(['low', 'high']),
-  userAttribution: hotspotAttributionSchema.optional(),
+  attributionConfidence: z.enum(['low', 'medium', 'high']),
+  userCaller: userCallerAttributionSchema.optional(),
 });
 
 export const alternativeHotspotEvidenceSchema = z.object({

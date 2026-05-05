@@ -14,6 +14,7 @@ import type {
   MemorySummary,
   MemoryUsageSample,
   SourceLocation,
+  UserCallerAttribution,
 } from '../../report/types.js';
 import type { KindAnalysisContext, KindAnalysisContributor } from '../core/types.js';
 import {
@@ -88,6 +89,7 @@ export function createMemoryAnalysisContributor(
                 selfPct: hotAllocators[0].selfPct,
                 totalPct: hotAllocators[0].totalPct,
                 ...(hotAllocators[0].source ? { source: hotAllocators[0].source } : {}),
+                ...(hotAllocators[0].userCaller ? { userCaller: hotAllocators[0].userCaller } : {}),
               },
             }
           : {}),
@@ -153,12 +155,28 @@ interface AllocatorAggregate {
   package?: string;
   selfBytes: number;
   totalBytes: number;
+  userCallerBytes: Map<string, number>;
   source?: SourceLocation;
 }
 
 interface AggregateResult {
   byId: Map<string, AllocatorAggregate>;
+  callerById: Map<string, AllocatorCaller>;
   totalSelfBytes: number;
+}
+
+interface AllocatorCaller {
+  function: string;
+  file: string;
+  line: number;
+  column: number;
+  source?: SourceLocation;
+}
+
+interface ClassifiedHeapFrame extends AllocatorCaller {
+  id: string;
+  category: FrameCategory;
+  package?: string;
 }
 
 function aggregateAllocators(
@@ -167,6 +185,7 @@ function aggregateAllocators(
   sourceMaps?: SourceMapResolver,
 ): AggregateResult {
   const byId = new Map<string, AllocatorAggregate>();
+  const callerById = new Map<string, AllocatorCaller>();
   let totalSelfBytes = 0;
 
   if (sourceMaps) {
@@ -181,50 +200,85 @@ function aggregateAllocators(
 
   // Walk: post-order accumulation of subtree size into `totalBytes`, summing
   // self into the per-frame aggregate keyed by (file, function, line, column).
-  const walk = (node: RawSamplingHeapProfileNode): number => {
+  const walk = (
+    node: RawSamplingHeapProfileNode,
+    userAncestor: ClassifiedHeapFrame | undefined,
+  ): number => {
     let subtreeSize = node.selfSize;
-    for (const child of node.children) subtreeSize += walk(child);
+    const frame = classifyHeapFrame(node, cwd, sourceMaps);
+    const nextUserAncestor = frame.category === 'user' ? frame : userAncestor;
 
-    const cf = node.callFrame;
-    const classified = classifyFrame(cf.functionName || '(anonymous)', cf.url || '', cwd);
-    // V8 emits 0-indexed line/column; the rest of the report uses 1-indexed
-    // numbers (see `enrichCpuTree`), so normalize here for cross-kind keying.
-    const line = cf.lineNumber + 1;
-    const column = cf.columnNumber + 1;
-    const id = `${classified.file}:${line}:${column}:${cf.functionName || '(anonymous)'}`;
+    for (const child of node.children) subtreeSize += walk(child, nextUserAncestor);
 
-    const existing = byId.get(id);
+    const existing = byId.get(frame.id);
     if (existing) {
       existing.selfBytes += node.selfSize;
       existing.totalBytes += subtreeSize;
-      if (!existing.source && sourceMaps && cf.url) {
-        const resolved = sourceMaps.resolve(cf.url, line, column);
-        if (resolved) existing.source = resolved;
-      }
+      if (!existing.source && frame.source) existing.source = frame.source;
     } else {
       const aggregate: AllocatorAggregate = {
-        id,
-        function: cf.functionName || '(anonymous)',
-        file: classified.file,
-        line,
-        column,
-        category: classified.category,
-        ...(classified.package ? { package: classified.package } : {}),
+        id: frame.id,
+        function: frame.function,
+        file: frame.file,
+        line: frame.line,
+        column: frame.column,
+        category: frame.category,
+        ...(frame.package ? { package: frame.package } : {}),
         selfBytes: node.selfSize,
         totalBytes: subtreeSize,
+        userCallerBytes: new Map(),
       };
-      if (sourceMaps && cf.url) {
-        const resolved = sourceMaps.resolve(cf.url, line, column);
-        if (resolved) aggregate.source = resolved;
-      }
-      byId.set(id, aggregate);
+      if (frame.source) aggregate.source = frame.source;
+      byId.set(frame.id, aggregate);
+    }
+    const aggregate = byId.get(frame.id);
+    if (aggregate && frame.category !== 'user' && nextUserAncestor && node.selfSize > 0) {
+      callerById.set(nextUserAncestor.id, {
+        function: nextUserAncestor.function,
+        file: nextUserAncestor.file,
+        line: nextUserAncestor.line,
+        column: nextUserAncestor.column,
+        ...(nextUserAncestor.source ? { source: nextUserAncestor.source } : {}),
+      });
+      aggregate.userCallerBytes.set(
+        nextUserAncestor.id,
+        (aggregate.userCallerBytes.get(nextUserAncestor.id) ?? 0) + node.selfSize,
+      );
     }
     totalSelfBytes += node.selfSize;
     return subtreeSize;
   };
 
-  walk(profile.head);
-  return { byId, totalSelfBytes };
+  walk(profile.head, undefined);
+  return { byId, callerById, totalSelfBytes };
+}
+
+function classifyHeapFrame(
+  node: RawSamplingHeapProfileNode,
+  cwd: string,
+  sourceMaps?: SourceMapResolver,
+): ClassifiedHeapFrame {
+  const cf = node.callFrame;
+  const functionName = cf.functionName || '(anonymous)';
+  const classified = classifyFrame(functionName, cf.url || '', cwd);
+  // V8 emits 0-indexed line/column; the rest of the report uses 1-indexed
+  // numbers (see `enrichCpuTree`), so normalize here for cross-kind keying.
+  const line = cf.lineNumber + 1;
+  const column = cf.columnNumber + 1;
+  const frame: ClassifiedHeapFrame = {
+    id: `${classified.file}:${line}:${column}:${functionName}`,
+    function: functionName,
+    file: classified.file,
+    line,
+    column,
+    category: classified.category,
+    ...(classified.package ? { package: classified.package } : {}),
+  };
+  if (sourceMaps && cf.url) {
+    const resolved = sourceMaps.resolve(cf.url, line, column);
+    if (resolved) frame.source = resolved;
+  }
+  return frame;
 }
 
 function buildHotAllocators(
@@ -243,6 +297,7 @@ function buildHotAllocators(
     // inside the target process; the noise registry lets us drop those
     // frames so hot allocators describe the user's app, not the profiler.
     if (isNoiseCategory(agg.category) && !keepNoise) continue;
+    const userCaller = buildAllocatorUserCaller(agg, aggregates, denom);
     allocators.push({
       id: agg.id,
       function: agg.function,
@@ -256,6 +311,7 @@ function buildHotAllocators(
       totalBytes: agg.totalBytes,
       totalPct: (agg.totalBytes * 100) / denom,
       ...(agg.source ? { source: agg.source } : {}),
+      ...(userCaller ? { userCaller } : {}),
     });
   }
   // Match detector relevance: inclusive-heavy allocator parents should stay
@@ -267,6 +323,31 @@ function buildHotAllocators(
       b.totalBytes - a.totalBytes,
   );
   return allocators;
+}
+
+function buildAllocatorUserCaller(
+  agg: AllocatorAggregate,
+  aggregates: AggregateResult,
+  totalSampledBytes: number,
+): UserCallerAttribution | undefined {
+  const top = [...agg.userCallerBytes.entries()].sort((a, b) => b[1] - a[1])[0];
+  if (!top) return undefined;
+  const [callerId, attributedBytes] = top;
+  const caller = aggregates.callerById.get(callerId);
+  if (!caller) return undefined;
+  const supportPct = agg.selfBytes > 0 ? (attributedBytes * 100) / agg.selfBytes : 0;
+  const attribution: UserCallerAttribution = {
+    function: caller.function,
+    file: caller.file,
+    line: caller.line,
+    column: caller.column,
+    profilePct: (attributedBytes * 100) / totalSampledBytes,
+    supportPct,
+    confidence: supportPct >= 80 ? 'high' : supportPct >= 50 ? 'medium' : 'low',
+    basis: 'heap-sample-path',
+  };
+  if (caller.source) attribution.source = caller.source;
+  return attribution;
 }
 
 function computeSeriesStats(

@@ -56,13 +56,13 @@ const prismaHotspotDetector: KindScopedDetector<'cpu'> = {
   kindIds: ['cpu'],
   detect({ cpu }) {
     const findings = [];
-    const userAttributionById = cpu.view.hotspotAnalysis.userAttributionById;
+    const userCallerById = cpu.view.hotspotAnalysis.userCallerById;
 
     for (const hotspot of cpu.report.hotspots) {
       const isPrisma = hotspot.file.includes('node_modules/@prisma/client');
       if (!isPrisma || hotspot.totalPct < 8) continue;
 
-      const attribution = userAttributionById.get(hotspot.id);
+      const attribution = userCallerById.get(hotspot.id);
       findings.push({
         id: `prisma-hotspot:client:${hotspot.function}`,
         profileKind: 'cpu',
@@ -189,7 +189,7 @@ import {
 - `resolveAttribution(hotspot, ctx)` — walks callers to find the user-code frame responsible for invoking a builtin or dependency hotspot.
 - `buildAttributionEvidence(...)` — assembles the `evidence` object with caller file/line plus `extra`.
 - `buildAttributedFinding(...)` — one-shot helper that returns a fully-shaped `Finding`.
-- `CpuHotspotContext` — the attribution view (`fullHotspots`, `hotspotById`, `userAttributionById`) reachable from a kind-scoped detector via `kinds.cpu.view.hotspotAnalysis`.
+- `CpuHotspotContext` — the attribution view (`fullHotspots`, `hotspotById`, `userCallerById`) reachable from a kind-scoped detector via `kinds.cpu.view.hotspotAnalysis`.
 
 ## Thresholds
 

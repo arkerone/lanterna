@@ -1,5 +1,9 @@
 import { z } from 'zod';
-import { frameCategorySchema, sourceLocationSchema } from './primitives.js';
+import {
+  frameCategorySchema,
+  sourceLocationSchema,
+  userCallerAttributionSchema,
+} from './primitives.js';
 
 const memoryHotAllocatorSchema = z.object({
   id: z.string().min(1),
@@ -14,6 +18,7 @@ const memoryHotAllocatorSchema = z.object({
   totalBytes: z.number().nonnegative(),
   totalPct: z.number(),
   source: sourceLocationSchema.optional(),
+  userCaller: userCallerAttributionSchema.optional(),
 });
 
 const memoryUsageSampleSchema = z.object({
@@ -51,6 +56,7 @@ const memorySummarySchema = z.object({
       selfPct: z.number(),
       totalPct: z.number(),
       source: sourceLocationSchema.optional(),
+      userCaller: userCallerAttributionSchema.optional(),
     })
     .optional(),
   externalRatio: z.number().optional(),

@@ -13,6 +13,7 @@ import {
   sourceLocationSchema,
   stallCorrelationSchema,
   stallIntervalSchema,
+  userCallerAttributionSchema,
 } from './primitives.js';
 
 const cpuSummarySchema = z.object({
@@ -61,6 +62,7 @@ const hotspotSchema = z.object({
   callees: z.array(hotspotRefSchema),
   optimizationState: optimizationStateSchema,
   source: sourceLocationSchema.optional(),
+  userCaller: userCallerAttributionSchema.optional(),
 });
 
 const hotStackFrameSchema = z.object({

@@ -1014,6 +1014,10 @@ describe('findings – node-modules-hotspot', () => {
     assert.match(f.evidence.function, /renderPage/);
     assert.equal((f.evidence.extra as Record<string, unknown>)?.package, 'markdown-it');
     assert.equal((f.evidence.extra as Record<string, unknown>)?.proofLevel, 'attributed-caller');
+    const hotspot = report.profiles.cpu?.hotspots.find((entry) => entry.function === 'compile');
+    assert.equal(hotspot?.userCaller?.function, 'renderPage');
+    assert.equal(hotspot?.userCaller?.basis, 'cpu-sample-path');
+    assert.equal(hotspot?.userCaller?.confidence, 'high');
   });
 
   it('serializes even when the dependency callee location is unavailable', () => {

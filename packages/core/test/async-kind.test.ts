@@ -208,6 +208,61 @@ describe('async kind round-trip', () => {
     expect(attribution?.topChains[0]?.rootAsyncId).toBe(1);
     expect(attribution?.topChains[0]?.cpuPct).toBeGreaterThan(50);
     expect(attribution?.topChains[0]?.rootFrame?.function).toBe('startWork');
+    expect(attribution?.topChains[0]?.userCaller).toMatchObject({
+      function: 'startWork',
+      basis: 'async-stack',
+    });
+  });
+
+  it('uses the CPU execution frame as the async user caller when available', () => {
+    const records = [
+      withFrame(record(1, 0, 100, 0, [{ startMs: 0, endMs: 100 }]), {
+        function: 'startWork',
+        file: 'file:///app/src/app.js',
+        line: 12,
+      }),
+    ];
+    const cpuProfile = {
+      nodes: [
+        {
+          id: 1,
+          callFrame: {
+            functionName: 'executeWork',
+            scriptId: '1',
+            url: 'file:///app/src/worker.js',
+            lineNumber: 31,
+            columnNumber: 2,
+          },
+          hitCount: 0,
+          children: [],
+        },
+      ],
+      startTime: 0,
+      endTime: 100_000,
+      samples: Array.from({ length: 100 }, () => 1),
+      timeDeltas: Array.from({ length: 100 }, () => 1000),
+    };
+    const bundle = makeBundle(records);
+    bundle.kinds.cpu = { cpuProfile, deopts: [], samplesTimed: true };
+
+    const pipeline = createAnalysisPipeline({ kinds: [createAsyncProfileKind()] });
+    const result = pipeline.run(bundle, { command: ['node', 'app.js'], mode: 'spawn' });
+    const chain = result.profiles.async?.cpuAttribution.topChains[0];
+    const operation = result.profiles.async?.topOperations[0];
+    const hotFile = result.profiles.async?.hotFiles[0];
+
+    expect(chain?.executionFrame?.function).toBe('executeWork');
+    expect(chain?.userCaller).toMatchObject({
+      function: 'executeWork',
+      file: 'file:///app/src/worker.js',
+      line: 32,
+      profilePct: 100,
+      supportPct: 100,
+      confidence: 'high',
+      basis: 'async-cpu-window',
+    });
+    expect(operation?.userCaller?.basis).toBe('async-cpu-window');
+    expect(hotFile?.userCaller?.basis).toBe('async-stack');
   });
 
   it('returns unavailable cpuAttribution when CPU kind is missing', () => {
@@ -308,6 +363,7 @@ describe('async kind round-trip', () => {
       line: 12,
       score: section?.hotFiles[0]?.score,
       confidence: section?.hotFiles[0]?.confidence,
+      userCaller: section?.hotFiles[0]?.userCaller,
     });
   });
 

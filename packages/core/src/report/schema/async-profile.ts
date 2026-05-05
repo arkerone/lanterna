@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { sourceLocationSchema } from './primitives.js';
+import { sourceLocationSchema, userCallerAttributionSchema } from './primitives.js';
 
 const asyncOperationKindSchema = z.enum([
   'promise',
@@ -51,6 +51,7 @@ const asyncSummarySchema = z.object({
       score: z.number().nonnegative(),
       confidence: z.enum(['low', 'medium', 'high']),
       source: sourceLocationSchema.optional(),
+      userCaller: userCallerAttributionSchema.optional(),
     })
     .optional(),
 });
@@ -111,6 +112,7 @@ const asyncTopOperationSchema = z.object({
   cpuAmbiguousSamples: z.number().int().nonnegative().optional(),
   clockSyncUncertaintyMs: z.number().nonnegative().optional(),
   overallConfidence: z.enum(['low', 'medium', 'high']).optional(),
+  userCaller: userCallerAttributionSchema.optional(),
   initStack: z.array(asyncStackFrameSchema),
 });
 
@@ -147,6 +149,7 @@ const asyncCpuAttributionEntrySchema = z.object({
   cpuPct: z.number().nonnegative(),
   cpuMs: z.number().nonnegative(),
   contributingOperations: z.number().int().nonnegative(),
+  userCaller: userCallerAttributionSchema.optional(),
 });
 
 const asyncCpuAttributionSchema = z.object({
@@ -192,6 +195,7 @@ const asyncHotFileSchema = z.object({
   runMs: z.number().nonnegative(),
   kindBreakdown: z.partialRecord(asyncOperationKindSchema, z.number().int().nonnegative()),
   sampleAsyncIds: z.array(z.number().int()),
+  userCaller: userCallerAttributionSchema.optional(),
 });
 
 const asyncConcurrencySampleSchema = z.object({

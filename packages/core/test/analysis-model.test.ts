@@ -187,4 +187,69 @@ describe('buildHotspotAnalysis', () => {
       totalPct: 100,
     });
   });
+
+  it('materializes the nearest user caller on external hotspots', () => {
+    const profile: RawCpuProfile = {
+      startTime: 0,
+      endTime: 3_000,
+      nodes: [
+        {
+          id: 1,
+          callFrame: {
+            functionName: '(root)',
+            scriptId: '0',
+            url: '',
+            lineNumber: 0,
+            columnNumber: 0,
+          },
+          children: [2],
+        },
+        {
+          id: 2,
+          callFrame: {
+            functionName: 'handleRequest',
+            scriptId: '1',
+            url: `file://${CWD}/src/app.js`,
+            lineNumber: 19,
+            columnNumber: 4,
+          },
+          children: [3],
+        },
+        {
+          id: 3,
+          callFrame: {
+            functionName: 'parsePayload',
+            scriptId: '2',
+            url: `file://${CWD}/node_modules/parser/index.js`,
+            lineNumber: 7,
+            columnNumber: 2,
+          },
+          hitCount: 3,
+        },
+      ],
+      samples: [3, 3, 3],
+      timeDeltas: [1000, 1000, 1000],
+    };
+
+    const tree = enrichCpuTree(profile, CWD, 1000);
+    const external = buildHotspotAnalysis(profile, tree).publicHotspots.find(
+      (hotspot) => hotspot.function === 'parsePayload',
+    );
+
+    expect(external?.userCaller).toMatchObject({
+      function: 'handleRequest',
+      file: 'src/app.js',
+      line: 20,
+      profilePct: 100,
+      supportPct: 100,
+      confidence: 'high',
+      basis: 'cpu-sample-path',
+    });
+
+    const userHotspot = buildHotspotAnalysis(profile, tree).publicHotspots.find(
+      (hotspot) => hotspot.function === 'handleRequest',
+    );
+    expect(userHotspot?.category).toBe('user');
+    expect(userHotspot?.userCaller).toBeUndefined();
+  });
 });

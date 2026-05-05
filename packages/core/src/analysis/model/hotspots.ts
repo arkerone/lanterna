@@ -5,6 +5,7 @@ import type {
   HotspotRef,
   OptimizationState,
   SourceLocation,
+  UserCallerAttribution,
 } from '../../report/types.js';
 import { isNoiseCategory, shouldKeepNoiseFrames } from '../noise-filters.js';
 import type { SourceMapResolver } from '../sourcemap/resolver.js';
@@ -34,22 +35,11 @@ export interface EnrichedTree {
   sampleIntervalMs: number;
 }
 
-export interface HotspotAttribution {
-  hotspotId: string;
-  function: string;
-  file: string;
-  line: number;
-  samplePct: number;
-  supportPct: number;
-  confidence: 'low' | 'high';
-  source?: SourceLocation;
-}
-
 export interface HotspotAnalysis {
   publicHotspots: Hotspot[];
   fullHotspots: Hotspot[];
   hotspotById: Map<string, Hotspot>;
-  userAttributionById: Map<string, HotspotAttribution>;
+  userCallerById: Map<string, UserCallerAttribution>;
 }
 
 const ATTRIBUTION_HIGH_CONFIDENCE_SUPPORT_PCT = 80;
@@ -274,7 +264,7 @@ export function buildHotspotAnalysis(
   // the frame's call paths).
   const fullHotspots: Hotspot[] = [];
   const hotspotById = new Map<string, Hotspot>();
-  const userAttributionById = new Map<string, HotspotAttribution>();
+  const userCallerById = new Map<string, UserCallerAttribution>();
   const keepNoise = shouldKeepNoiseFrames();
   for (const aggregate of hotspotAggregatesByKey.values()) {
     if (aggregate.selfSamples === 0 && aggregate.totalSamples === 0) continue;
@@ -308,20 +298,22 @@ export function buildHotspotAnalysis(
     const [userAggregateKey, attributedSampleCount] = topUserAttributionEntry;
     const userHotspotAggregate = hotspotAggregatesByKey.get(userAggregateKey);
     if (!userHotspotAggregate) continue;
-    const attribution: HotspotAttribution = {
-      hotspotId: `${userHotspotAggregate.file}:${userHotspotAggregate.line}:${userHotspotAggregate.function}`,
+    const supportPct = (attributedSampleCount / totalPathSamples) * 100;
+    const userCaller: UserCallerAttribution = {
       function: userHotspotAggregate.function,
       file: userHotspotAggregate.file,
       line: userHotspotAggregate.line,
-      samplePct: (attributedSampleCount / totalSamples) * 100,
-      supportPct: (attributedSampleCount / totalPathSamples) * 100,
-      confidence:
-        (attributedSampleCount / totalPathSamples) * 100 >= ATTRIBUTION_HIGH_CONFIDENCE_SUPPORT_PCT
-          ? 'high'
-          : 'low',
+      column: userHotspotAggregate.column,
+      profilePct: (attributedSampleCount / totalSamples) * 100,
+      supportPct,
+      confidence: supportPct >= ATTRIBUTION_HIGH_CONFIDENCE_SUPPORT_PCT ? 'high' : 'low',
+      basis: 'cpu-sample-path',
     };
-    if (userHotspotAggregate.source) attribution.source = userHotspotAggregate.source;
-    userAttributionById.set(hotspot.id, attribution);
+    if (userHotspotAggregate.source) userCaller.source = userHotspotAggregate.source;
+    userCallerById.set(hotspot.id, userCaller);
+    if (hotspot.category !== 'user') {
+      hotspot.userCaller = userCaller;
+    }
   }
 
   fullHotspots.sort((left, right) => right.selfPct - left.selfPct);
@@ -332,7 +324,7 @@ export function buildHotspotAnalysis(
     publicHotspots,
     fullHotspots,
     hotspotById,
-    userAttributionById,
+    userCallerById,
   };
 }
 

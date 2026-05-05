@@ -149,6 +149,7 @@ export interface Hotspot {
   callees: HotspotRef[];
   optimizationState: OptimizationState;
   source?: SourceLocation;
+  userCaller?: UserCallerAttribution;
 }
 
 export interface HotStackFrame {
@@ -251,15 +252,18 @@ export interface DeoptEntry {
   source?: SourceLocation;
 }
 
-export interface HotspotAttributionEvidence {
-  hotspotId: string;
+export interface UserCallerAttribution {
   function: string;
   file: string;
   line: number;
-  samplePct: number;
-  supportPct: number;
-  confidence: 'low' | 'high';
+  column?: number;
   source?: SourceLocation;
+  /** Percent of the whole profile attributed to this user caller. */
+  profilePct: number;
+  /** Percent of the external frame's cost explained by this caller. */
+  supportPct: number;
+  confidence: 'low' | 'medium' | 'high';
+  basis: 'cpu-sample-path' | 'heap-sample-path' | 'async-stack' | 'async-cpu-window';
 }
 
 export interface StallCorrelation {
@@ -280,8 +284,8 @@ export interface AlternativeHotspotEvidence {
 export interface AttributionEvidence {
   proofLevel: Extract<FindingProofLevel, 'direct-builtin' | 'attributed-caller'>;
   attributionBasis: 'sample-path' | 'builtin-only';
-  attributionConfidence: HotspotAttributionEvidence['confidence'] | 'low';
-  userAttribution?: HotspotAttributionEvidence;
+  attributionConfidence: 'low' | 'medium' | 'high';
+  userCaller?: UserCallerAttribution;
 }
 
 export interface BlockingIoEvidenceExtra extends AttributionEvidence {
@@ -484,6 +488,7 @@ export interface MemoryHotAllocator {
   totalBytes: number;
   totalPct: number;
   source?: SourceLocation;
+  userCaller?: UserCallerAttribution;
 }
 
 export type HeapSnapshotSuspectedPattern =
@@ -536,6 +541,7 @@ export interface MemorySummary {
     selfPct: number;
     totalPct: number;
     source?: SourceLocation;
+    userCaller?: UserCallerAttribution;
   };
   /** `external` over `heapUsed`, averaged across the series. */
   externalRatio?: number;
@@ -604,6 +610,7 @@ export interface AsyncSummary {
     score: number;
     confidence: ProfileConfidence;
     source?: SourceLocation;
+    userCaller?: UserCallerAttribution;
   };
 }
 
@@ -656,6 +663,7 @@ export interface AsyncTopOperation {
   cpuAmbiguousSamples?: number;
   clockSyncUncertaintyMs?: number;
   overallConfidence?: ProfileConfidence;
+  userCaller?: UserCallerAttribution;
   /** Top frames at init, filtered to user code (capped). */
   initStack: AsyncStackFrameReport[];
 }
@@ -697,6 +705,7 @@ export interface AsyncCpuAttributionEntry {
   cpuMs: number;
   /** Number of resources in the chain that contributed. */
   contributingOperations: number;
+  userCaller?: UserCallerAttribution;
 }
 
 export interface AsyncCpuAttribution {
@@ -744,6 +753,7 @@ export interface AsyncHotFile {
   runMs: number;
   kindBreakdown: Partial<Record<AsyncOperationKindReport, number>>;
   sampleAsyncIds: number[];
+  userCaller?: UserCallerAttribution;
 }
 
 export interface AsyncConcurrencyTimelineSample {

@@ -56,6 +56,8 @@ Total sampled bytes, top allocator, and stats per memory metric (`rss`, `heapUse
 
 Frames ranked by `selfBytes` / `totalBytes` with file/line, frame `category`, and `selfPct` / `totalPct`. Same classification rules as CPU hotspots — `lanterna` self-noise is filtered out.
 
+External allocators may include `userCaller` when the heap sampling path contains a user-code ancestor. `profilePct` is based on sampled bytes across the whole memory profile, while `supportPct` is the share of that allocator's sampled bytes explained by the caller. Low-confidence callers are useful breadcrumbs, not automatic patch locations.
+
 ### `memoryUsage`
 
 Compact metadata: `sampleCount`, first/last sample timestamps. Raw samples are present only when `--include-memory-samples` is set.
