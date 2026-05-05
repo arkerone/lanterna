@@ -147,7 +147,9 @@ export class AgentReportRenderer implements ReportRenderer {
           this.renderAsyncKindReview(lines, report);
           break;
         default:
-          lines.push('- Custom kind: inspect the matching profile section by declared kind id.');
+          lines.push(
+            '- Custom kind: inspect the declared profile kind and report shape without assuming a built-in section key.',
+          );
       }
     });
   }

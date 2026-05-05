@@ -972,6 +972,117 @@ describe('renderReport', () => {
     expect(output).toContain('4. `src/routes.ts`');
   });
 
+  it('renders async top operation user callers as inspection targets', () => {
+    const output = renderReport(
+      {
+        meta: { ...baseMeta, profileKinds: ['async'] },
+        profiles: {
+          async: {
+            summary: {
+              available: true,
+              collectedVia: 'async-hooks',
+              totalOperations: 1,
+              byKind: { tcp: 1 },
+              orphanCount: 0,
+              recordsDropped: 0,
+            },
+            quality: {
+              confidence: 'high',
+              instrumentationMode: 'safe',
+              attachPartialCapture: false,
+              operationCount: 1,
+              sampledStackRatio: 1,
+              initStackCoverageRatio: 1,
+              cdpAsyncStackCoverageRatio: 0,
+              recordsDropped: 0,
+              maxRecords: 10000,
+              runWindowCount: 1,
+              cpuAttributionCoveragePct: 0,
+              cpuAmbiguousSamples: 0,
+              clockSyncUncertaintyMs: 1,
+              reasons: [],
+              recommendations: [],
+            },
+            hotFiles: [],
+            topOperations: [
+              {
+                asyncId: 42,
+                kind: 'tcp',
+                rawType: 'TCPWRAP',
+                durationMs: 1200,
+                runMs: 25,
+                runCount: 2,
+                initAtMs: 10,
+                triggerAsyncId: 1,
+                orphan: false,
+                primaryFrame: {
+                  function: 'sendWire',
+                  file: '/repo/node_modules/mongodb/lib/cmap/connection.js',
+                  line: 255,
+                  column: 7,
+                },
+                userCaller: {
+                  function: 'loadUsers',
+                  file: '/repo/dist/users.js',
+                  line: 9,
+                  source: { file: 'src/users.ts', line: 27 },
+                  profilePct: 12,
+                  supportPct: 88,
+                  confidence: 'high',
+                  basis: 'async-stack',
+                },
+                initStack: [],
+              },
+            ],
+            chains: [],
+            orphans: [],
+            concurrencyTimeline: [],
+            filteredCounts: {},
+            cdpAsyncContexts: [],
+            cpuAttribution: {
+              available: false,
+              reason: 'cpu kind absent',
+              attributedCpuPct: 0,
+              totalCpuMs: 0,
+              cpuAttributedSamples: 0,
+              cpuAmbiguousSamples: 0,
+              clockSyncUncertaintyMs: 1,
+              topChains: [],
+            },
+          },
+        },
+        findings: [],
+      },
+      { format: 'agent' },
+    );
+
+    expect(output).toContain(
+      '- Operation 1: tcp#42 at /repo/node_modules/mongodb/lib/cmap/connection.js:255; user caller loadUsers (src/users.ts:27 (/repo/dist/users.js:9)) [high, support 88.0%]',
+    );
+    expect(output).toContain('1. `src/users.ts`');
+    expect(output).not.toContain('1. `/repo/node_modules/mongodb/lib/cmap/connection.js`');
+  });
+
+  it('keeps custom profile kinds generic in agent kind review', () => {
+    const output = renderReport(
+      {
+        meta: { ...baseMeta, profileKinds: ['custom-profiler'] },
+        profiles: {},
+        findings: [],
+      },
+      { format: 'agent' },
+    );
+
+    expect(output).toContain('## Kind Review');
+    expect(output).toContain('### custom-profiler');
+    expect(output).toContain(
+      '- Custom kind: inspect the declared profile kind and report shape without assuming a built-in section key.',
+    );
+    expect(output).not.toContain('### cpu');
+    expect(output).not.toContain('### memory');
+    expect(output).not.toContain('### async');
+  });
+
   it('keeps virtual source-map paths out of files to read first', () => {
     const output = renderReport(
       {
