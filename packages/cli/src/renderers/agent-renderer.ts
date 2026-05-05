@@ -1,4 +1,13 @@
-import type { Finding, LanternaReport, UserCallerAttribution } from '@lanterna-profiler/core';
+import type {
+  AsyncCpuAttributionEntry,
+  AsyncHotFile,
+  AsyncProfileReport,
+  AsyncStackFrameReport,
+  AsyncTopOperation,
+  Finding,
+  LanternaReport,
+  UserCallerAttribution,
+} from '@lanterna-profiler/core';
 import {
   formatCommand,
   formatFrameLocation,
@@ -24,9 +33,11 @@ export class AgentReportRenderer implements ReportRenderer {
     lines.push('');
     this.renderEvidencePack(lines, report.findings ?? []);
     lines.push('');
-    this.renderFilesToReadFirst(lines, report.findings ?? []);
-    lines.push('');
     this.renderDecisionRules(lines, report);
+    lines.push('');
+    this.renderKindReview(lines, report);
+    lines.push('');
+    this.renderFilesToReadFirst(lines, report);
     lines.push('');
     this.renderNextCommands(lines, report);
     return `${lines.join('\n').trimEnd()}\n`;
@@ -113,12 +124,147 @@ export class AgentReportRenderer implements ReportRenderer {
     });
   }
 
-  private renderFilesToReadFirst(lines: string[], findings: Finding[]): void {
+  private renderKindReview(lines: string[], report: LanternaReport): void {
+    lines.push('## Kind Review');
+    lines.push('');
+    const kinds = report.meta?.profileKinds ?? [];
+    if (kinds.length === 0) {
+      lines.push('No profile kinds declared.');
+      return;
+    }
+    kinds.forEach((kind, index) => {
+      if (index > 0) lines.push('');
+      lines.push(`### ${kind}`);
+      lines.push('');
+      switch (kind) {
+        case 'cpu':
+          this.renderCpuKindReview(lines, report);
+          break;
+        case 'memory':
+          this.renderMemoryKindReview(lines, report);
+          break;
+        case 'async':
+          this.renderAsyncKindReview(lines, report);
+          break;
+        default:
+          lines.push('- Custom kind: inspect the matching profile section by declared kind id.');
+      }
+    });
+  }
+
+  private renderCpuKindReview(lines: string[], report: LanternaReport): void {
+    const cpu = report.profiles?.cpu;
+    if (!cpu) {
+      lines.push('- Section: absent');
+      return;
+    }
+    lines.push(`- Quality: ${cpu.quality?.confidence ?? 'unknown'}`);
+    if (cpu.summary?.topUserHotspot) {
+      lines.push(`- Top user hotspot: ${formatFrameSummary(cpu.summary.topUserHotspot)}`);
+    }
+    for (const [index, hotspot] of (cpu.hotspots ?? []).slice(0, 5).entries()) {
+      lines.push(
+        `- Hotspot ${index + 1}: ${formatFrameSummary(hotspot)}${formatCallerSuffix(hotspot.userCaller)}`,
+      );
+    }
+    for (const [index, stack] of (cpu.hotStacks ?? []).slice(0, 3).entries()) {
+      const frame = stack.frames.find((candidate) => Boolean(candidate.source)) ?? stack.frames[0];
+      if (frame) {
+        lines.push(
+          `- Hot stack ${index + 1}: ${formatFrameSummary(frame)} at ${formatPct(stack.weightPct)} weight`,
+        );
+      }
+    }
+    for (const [index, cluster] of (cpu.hotStackClusters ?? []).slice(0, 3).entries()) {
+      lines.push(
+        `- Hot stack cluster ${index + 1}: ${formatFrameSummary(cluster.anchor)} at ${formatPct(
+          cluster.weightPct,
+        )} weight`,
+      );
+    }
+  }
+
+  private renderMemoryKindReview(lines: string[], report: LanternaReport): void {
+    const memory = report.profiles?.memory;
+    if (!memory) {
+      lines.push('- Section: absent');
+      return;
+    }
+    const usage = memory.memoryUsage;
+    lines.push(
+      `- Memory usage: ${
+        usage?.available
+          ? `available, ${usage.sampleCount} samples every ${formatMs(usage.sampleIntervalMs)}`
+          : 'unavailable'
+      }`,
+    );
+    if (memory.summary?.topAllocator) {
+      lines.push(
+        `- Top allocator: ${formatFrameSummary(memory.summary.topAllocator)}${formatCallerSuffix(
+          memory.summary.topAllocator.userCaller,
+        )}`,
+      );
+    }
+    for (const [index, allocator] of (memory.hotAllocators ?? []).slice(0, 5).entries()) {
+      lines.push(
+        `- Allocator ${index + 1}: ${formatFrameSummary(allocator)}${formatCallerSuffix(
+          allocator.userCaller,
+        )}`,
+      );
+    }
+    if (memory.heapSnapshotAnalysis) {
+      const snapshot = memory.heapSnapshotAnalysis;
+      lines.push(`- Heap snapshot analysis: ${snapshot.available ? 'available' : 'unavailable'}`);
+      if (snapshot.summary.topGrowingConstructor) {
+        lines.push(`- Top growing constructor: ${snapshot.summary.topGrowingConstructor}`);
+      }
+      if (snapshot.warnings.length > 0) {
+        lines.push(`- Heap snapshot warnings: ${formatCaveats(snapshot.warnings)}`);
+      }
+    }
+  }
+
+  private renderAsyncKindReview(lines: string[], report: LanternaReport): void {
+    const asyncProfile = report.profiles?.async;
+    if (!asyncProfile) {
+      lines.push('- Section: absent');
+      return;
+    }
+    lines.push(`- Quality: ${asyncProfile.quality?.confidence ?? 'unknown'}`);
+    lines.push(
+      `- Summary: ${asyncProfile.summary.available ? 'available' : 'unavailable'}, ${
+        asyncProfile.summary.totalOperations
+      } operations, ${asyncProfile.summary.recordsDropped} records dropped`,
+    );
+    if (asyncProfile.summary.topAsyncHotFile) {
+      lines.push(
+        `- Top async hot file: ${formatFrameSummary(asyncProfile.summary.topAsyncHotFile)}${formatCallerSuffix(
+          asyncProfile.summary.topAsyncHotFile.userCaller,
+        )}`,
+      );
+    }
+    for (const [index, operation] of (asyncProfile.topOperations ?? []).slice(0, 5).entries()) {
+      lines.push(`- Operation ${index + 1}: ${formatAsyncOperation(operation)}`);
+    }
+    for (const [index, hotFile] of (asyncProfile.hotFiles ?? []).slice(0, 5).entries()) {
+      lines.push(`- Hot file ${index + 1}: ${formatAsyncHotFile(hotFile)}`);
+    }
+    for (const [index, chain] of (asyncProfile.cpuAttribution?.topChains ?? [])
+      .slice(0, 5)
+      .entries()) {
+      lines.push(`- CPU chain ${index + 1}: ${formatAsyncCpuChain(chain)}`);
+    }
+  }
+
+  private renderFilesToReadFirst(lines: string[], report: LanternaReport): void {
     lines.push('## Files To Read First');
     lines.push('');
-    const files = dedupe(findings.map((finding) => preferredFile(finding)).filter(isNonEmpty));
+    const files = dedupe([
+      ...(report.findings ?? []).map((finding) => preferredFile(finding)).filter(isNonEmpty),
+      ...aggregateFilesToRead(report),
+    ]);
     if (files.length === 0) {
-      lines.push('No editable user source files identified from findings.');
+      lines.push('No editable user source files identified from findings or aggregates.');
       return;
     }
     files.forEach((file, index) => {
@@ -132,7 +278,7 @@ export class AgentReportRenderer implements ReportRenderer {
     const findings = report.findings ?? [];
     if (findings.length === 0) {
       lines.push(
-        '- No findings: inspect profile summary or rerun only if the signal gate is degraded.',
+        '- No findings: inspect Kind Review summaries before targeted JSON reads or reruns.',
       );
       return;
     }
@@ -196,6 +342,19 @@ function degradingSignalCaveats(report: LanternaReport): string[] {
   const caveats: string[] = [];
   const sourceMaps = integrity?.sourceMaps;
   if (report.profiles?.cpu?.quality?.confidence === 'low') caveats.push('CPU confidence low');
+  if (report.profiles?.memory?.memoryUsage?.available === false) {
+    caveats.push('memory usage series unavailable');
+  }
+  const heapSnapshotWarnings = report.profiles?.memory?.heapSnapshotAnalysis?.warnings ?? [];
+  if (heapSnapshotWarnings.length > 0) {
+    caveats.push(`heap snapshot warnings: ${formatCaveats(heapSnapshotWarnings)}`);
+  }
+  const asyncProfile = report.profiles?.async;
+  if (asyncProfile?.quality?.confidence === 'low') caveats.push('async confidence low');
+  if (asyncProfile?.summary?.available === false) caveats.push('async summary unavailable');
+  if ((asyncProfile?.quality?.recordsDropped ?? 0) > 0) {
+    caveats.push(`${asyncProfile?.quality?.recordsDropped ?? 0} async records dropped`);
+  }
   if (sourceMaps?.enabled && sourceMaps.coverage < 0.7)
     caveats.push('source-map coverage below 70%');
   if (integrity?.eventLoopTimed === false) caveats.push('event-loop timing unavailable');
@@ -246,12 +405,138 @@ function generatedLocation(finding: Finding): string {
 }
 
 function preferredFile(finding: Finding): string | undefined {
-  const evidenceFile = finding.evidence.source?.file ?? finding.evidence.file;
-  if (isEditableUserFile(evidenceFile)) return evidenceFile;
+  const evidenceFile = preferredEditableFileFromFrame(finding.evidence);
+  if (evidenceFile) return evidenceFile;
   const userCaller = userCallerFromEvidenceExtra(finding.evidence.extra);
-  const userCallerFile = userCaller?.source?.file ?? userCaller?.file;
-  if (isEditableUserFile(userCallerFile)) return userCallerFile;
-  return undefined;
+  return preferredEditableFileFromFrame(userCaller);
+}
+
+function aggregateFilesToRead(report: LanternaReport): string[] {
+  const files: string[] = [];
+  const cpu = report.profiles?.cpu;
+  if (cpu) {
+    pushEditableFrameFile(files, cpu.summary?.topUserHotspot);
+    for (const hotspot of cpu.hotspots ?? []) {
+      pushEditableFrameFile(files, hotspot);
+      pushEditableFrameFile(files, hotspot.userCaller);
+    }
+    for (const stack of cpu.hotStacks ?? []) {
+      for (const frame of stack.frames) pushEditableFrameFile(files, frame);
+    }
+    for (const cluster of cpu.hotStackClusters ?? []) pushEditableFrameFile(files, cluster.anchor);
+  }
+
+  const memory = report.profiles?.memory;
+  if (memory) {
+    pushEditableFrameFile(files, memory.summary?.topAllocator);
+    pushEditableFrameFile(files, memory.summary?.topAllocator?.userCaller);
+    for (const allocator of memory.hotAllocators ?? []) {
+      pushEditableFrameFile(files, allocator);
+      pushEditableFrameFile(files, allocator.userCaller);
+    }
+  }
+
+  const asyncProfile = report.profiles?.async;
+  if (asyncProfile) collectAsyncFiles(files, asyncProfile);
+
+  return dedupe(files);
+}
+
+function collectAsyncFiles(files: string[], asyncProfile: AsyncProfileReport): void {
+  pushEditableFrameFile(files, asyncProfile.summary.topAsyncHotFile);
+  pushEditableFrameFile(files, asyncProfile.summary.topAsyncHotFile?.userCaller);
+  for (const operation of asyncProfile.topOperations ?? []) {
+    pushEditableFrameFile(files, operation.userCaller);
+    for (const frame of asyncOperationFrames(operation)) pushEditableFrameFile(files, frame);
+  }
+  for (const hotFile of asyncProfile.hotFiles ?? []) {
+    pushEditableFrameFile(files, hotFile.primaryFrame);
+    pushEditableFrameFile(files, hotFile.userCaller);
+  }
+  for (const chain of asyncProfile.cpuAttribution?.topChains ?? []) {
+    pushEditableFrameFile(files, chain.rootFrame);
+    pushEditableFrameFile(files, chain.executionFrame);
+    pushEditableFrameFile(files, chain.userCaller);
+  }
+}
+
+function pushEditableFrameFile(
+  files: string[],
+  frame: { file: string; line: number; source?: { file: string; line: number } } | undefined,
+): void {
+  const file = preferredEditableFileFromFrame(frame);
+  if (file) files.push(file);
+}
+
+function preferredEditableFileFromFrame(
+  frame: { file: string; line: number; source?: { file: string; line: number } } | undefined,
+): string | undefined {
+  if (!frame) return undefined;
+  if (frame.source) {
+    return isEditableUserFile(frame.source.file) ? frame.source.file : undefined;
+  }
+  return isEditableUserFile(frame.file) ? frame.file : undefined;
+}
+
+function formatFrameSummary(frame: {
+  function: string;
+  file: string;
+  line: number;
+  source?: { file: string; line: number };
+}): string {
+  return `${frame.function} at ${formatFrameLocation(frame)}`;
+}
+
+function formatCallerSuffix(caller: UserCallerAttribution | undefined): string {
+  if (!caller) return '';
+  return `; user caller ${formatUserCaller(caller)}`;
+}
+
+function formatAsyncOperation(operation: AsyncTopOperation): string {
+  const frame = preferredAsyncOperationFrame(operation);
+  const frameSummary = frame ? ` at ${formatFrameLocation(frame)}` : '';
+  return `${operation.kind}#${operation.asyncId}${frameSummary}${formatCallerSuffix(operation.userCaller)}`;
+}
+
+function formatAsyncHotFile(hotFile: AsyncHotFile): string {
+  return `${formatFrameSummary(hotFile.primaryFrame)}${formatCallerSuffix(hotFile.userCaller)}`;
+}
+
+function formatAsyncCpuChain(chain: AsyncCpuAttributionEntry): string {
+  const frame = chain.executionFrame ?? chain.rootFrame;
+  const frameSummary = frame ? ` at ${formatFrameLocation(frame)}` : '';
+  return `${chain.rootKind}${frameSummary} at ${formatPct(chain.cpuPct)} CPU${formatCallerSuffix(
+    chain.userCaller,
+  )}`;
+}
+
+function preferredAsyncOperationFrame(
+  operation: AsyncTopOperation,
+): AsyncStackFrameReport | undefined {
+  return (
+    operation.primaryFrame ??
+    operation.awaitFrame ??
+    operation.executionFrame ??
+    operation.cdpAsyncContextFrame ??
+    operation.initFrame ??
+    operation.creationFrame ??
+    operation.promiseRegistrationFrame ??
+    operation.promiseHandlerFrame
+  );
+}
+
+function asyncOperationFrames(operation: AsyncTopOperation): AsyncStackFrameReport[] {
+  return [
+    operation.initFrame,
+    operation.primaryFrame,
+    operation.awaitFrame,
+    operation.executionFrame,
+    operation.cdpAsyncContextFrame,
+    operation.creationFrame,
+    operation.promiseRegistrationFrame,
+    operation.promiseHandlerFrame,
+    ...operation.initStack,
+  ].filter((frame): frame is AsyncStackFrameReport => Boolean(frame));
 }
 
 function formatImpact(finding: Finding): string {
@@ -311,7 +596,7 @@ function isNonEmpty(value: string | undefined): value is string {
 
 function isEditableUserFile(value: string | undefined): value is string {
   if (!isNonEmpty(value)) return false;
-  return !isDependencyOrRuntimePath(value);
+  return !isDependencyOrRuntimePath(value) && !isVirtualSourcePath(value);
 }
 
 function isDependencyOrRuntimePath(file: string): boolean {
@@ -323,6 +608,16 @@ function isDependencyOrRuntimePath(file: string): boolean {
     file.includes('/pnpm-store/') ||
     file.includes('/.pnpm/') ||
     file.includes('/caches/pnpm-store/')
+  );
+}
+
+function isVirtualSourcePath(file: string): boolean {
+  return (
+    file.startsWith('webpack://') ||
+    file.startsWith('vite:/') ||
+    file.startsWith('vite://') ||
+    file.startsWith('rollup://') ||
+    file.startsWith('parcel://')
   );
 }
 

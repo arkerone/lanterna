@@ -586,14 +586,19 @@ describe('renderReport', () => {
     expect(output).toContain('- Observed: slopeBytesPerSec=2048');
     expect(output).toContain('- Thresholds: slopeBytesPerSec=1024');
     expect(output).toContain('- Remediation: cache; notes=Bound cache entries.');
-    expect(output).toContain('## Files To Read First');
-    expect(output).toContain('1. `src/cache.ts`');
-    expect(output).toContain('2. `/repo/dist/hot.js`');
-    expect(output).toContain('3. `src/worker.ts`');
     expect(output).toContain('## Decision Rules');
     expect(output).toContain('- f1: actionable');
     expect(output).toContain('- f2: hypothesis');
     expect(output).toContain('- f3: rerun required');
+    expect(output).toContain('## Kind Review');
+    expect(output).toContain('### cpu');
+    expect(output).toContain('- Quality: low');
+    expect(output).toContain('### memory');
+    expect(output).toContain('- Memory usage: available, 8 samples every 250ms');
+    expect(output).toContain('## Files To Read First');
+    expect(output).toContain('1. `src/cache.ts`');
+    expect(output).toContain('2. `/repo/dist/hot.js`');
+    expect(output).toContain('3. `src/worker.ts`');
     expect(output).toContain('## Next Commands');
     expect(output).toContain('lanterna run --duration 5s --output report.json -- node server.js');
     expect(output).not.toContain('## Async');
@@ -623,9 +628,421 @@ describe('renderReport', () => {
     );
 
     expect(output).toContain('## Action Queue\n\nNo findings.');
+    expect(output).toContain('## Kind Review');
+    expect(output).toContain('### cpu');
     expect(output).toContain('## Next Commands\n\nNo rerun required by report signal.');
     expect(output).not.toContain('## Memory');
     expect(output).not.toContain('## Async');
+  });
+
+  it('renders kind review summaries and uses aggregate files when findings are absent', () => {
+    const output = renderReport(
+      {
+        meta: {
+          ...baseMeta,
+          profileKinds: ['cpu', 'memory', 'async'],
+          captureIntegrity: {
+            ...baseMeta.captureIntegrity,
+            sourceMaps: {
+              enabled: true,
+              framesResolved: 1,
+              framesUnresolved: 3,
+              coverage: 0.25,
+              mapsLoaded: 1,
+              failures: [],
+            },
+          },
+        },
+        profiles: {
+          cpu: {
+            summary: {
+              totalCpuMs: 120,
+              onCpuRatio: 0.5,
+              userCodeRatio: 0.4,
+              nodeModulesRatio: 0.1,
+              builtinRatio: 0,
+              nativeRatio: 0,
+              gcRatio: 0.02,
+              idleRatio: 0.5,
+              topCategory: 'node_modules',
+              dominantBlockingKind: null,
+              topUserHotspot: {
+                id: 'h1',
+                function: 'handler',
+                file: '/repo/dist/server.js',
+                line: 12,
+                selfPct: 37.5,
+                totalPct: 50,
+                source: { file: 'src/server.ts', line: 42 },
+              },
+            },
+            hotspots: [
+              {
+                id: 'h1',
+                function: 'parsePayload',
+                file: '/repo/node_modules/pkg/index.js',
+                line: 8,
+                column: 1,
+                category: 'node_modules',
+                selfMs: 45,
+                selfPct: 37.5,
+                totalMs: 60,
+                totalPct: 50,
+                callers: [],
+                callees: [],
+                optimizationState: 'unknown',
+                userCaller: {
+                  function: 'handler',
+                  file: '/repo/dist/server.js',
+                  line: 12,
+                  source: { file: 'src/server.ts', line: 42 },
+                  profilePct: 37.5,
+                  supportPct: 92,
+                  confidence: 'high',
+                  basis: 'cpu-sample-path',
+                },
+              },
+            ],
+            hotStacks: [
+              {
+                weightPct: 25,
+                frames: [
+                  {
+                    function: 'handler',
+                    file: '/repo/dist/server.js',
+                    line: 12,
+                    category: 'user',
+                    source: { file: 'src/server.ts', line: 42 },
+                  },
+                ],
+              },
+            ],
+            hotStackClusters: [
+              {
+                anchor: {
+                  function: 'handler',
+                  file: '/repo/dist/server.js',
+                  line: 12,
+                  source: { file: 'src/server.ts', line: 42 },
+                },
+                weightPct: 25,
+                stackCount: 1,
+                memberIndices: [0],
+              },
+            ],
+            gc: {
+              totalPauseMs: 0,
+              count: { scavenge: 0, markSweep: 0, incremental: 0, other: 0 },
+              longestPauseMs: 0,
+              pausesOver10ms: [],
+            },
+            eventLoop: {
+              maxLagMs: 0,
+              p99LagMs: 0,
+              p50LagMs: 0,
+              meanLagMs: 0,
+              sampleCount: 0,
+              stallIntervals: [],
+              available: true,
+              measurementBasis: 'histogram',
+              confidence: 'high',
+            },
+            quality: {
+              confidence: 'high',
+              sampleCount: 100,
+              durationMs: 1500,
+              idleRatio: 0.5,
+              samplesTimed: true,
+              durationBasis: 'timeDeltas',
+              reasons: [],
+              recommendations: [],
+            },
+            deopts: [],
+          },
+          memory: {
+            summary: {
+              totalSampledBytes: 4096,
+              samplingIntervalBytes: 524288,
+              topAllocator: {
+                function: 'Buffer.alloc',
+                file: 'node:buffer',
+                line: 10,
+                selfPct: 60,
+                totalPct: 70,
+                userCaller: {
+                  function: 'loadCache',
+                  file: '/repo/dist/cache.js',
+                  line: 6,
+                  source: { file: 'src/cache.ts', line: 18 },
+                  profilePct: 60,
+                  supportPct: 100,
+                  confidence: 'high',
+                  basis: 'heap-sample-path',
+                },
+              },
+            },
+            hotAllocators: [
+              {
+                id: 'a1',
+                function: 'allocate',
+                file: '/repo/node_modules/pkg/cache.js',
+                line: 12,
+                column: 1,
+                category: 'node_modules',
+                selfBytes: 2048,
+                selfPct: 50,
+                totalBytes: 3072,
+                totalPct: 75,
+                userCaller: {
+                  function: 'loadCache',
+                  file: '/repo/dist/cache.js',
+                  line: 6,
+                  source: { file: 'src/cache.ts', line: 18 },
+                  profilePct: 50,
+                  supportPct: 100,
+                  confidence: 'high',
+                  basis: 'heap-sample-path',
+                },
+              },
+            ],
+            memoryUsage: {
+              available: true,
+              sampleIntervalMs: 250,
+              sampleCount: 4,
+            },
+          },
+          async: {
+            summary: {
+              available: true,
+              collectedVia: 'async-hooks',
+              totalOperations: 5,
+              byKind: { promise: 5 },
+              orphanCount: 0,
+              recordsDropped: 0,
+              topAsyncHotFile: {
+                function: 'loadUsers',
+                file: '/repo/dist/users.js',
+                line: 9,
+                source: { file: 'src/users.ts', line: 27 },
+                score: 80,
+                confidence: 'high',
+                userCaller: {
+                  function: 'route',
+                  file: '/repo/dist/routes.js',
+                  line: 3,
+                  source: { file: 'src/routes.ts', line: 11 },
+                  profilePct: 20,
+                  supportPct: 85,
+                  confidence: 'high',
+                  basis: 'async-stack',
+                },
+              },
+            },
+            quality: {
+              confidence: 'high',
+              instrumentationMode: 'safe',
+              attachPartialCapture: false,
+              operationCount: 5,
+              sampledStackRatio: 1,
+              initStackCoverageRatio: 1,
+              cdpAsyncStackCoverageRatio: 0,
+              recordsDropped: 0,
+              maxRecords: 10000,
+              runWindowCount: 2,
+              cpuAttributionCoveragePct: 80,
+              cpuAmbiguousSamples: 0,
+              clockSyncUncertaintyMs: 1,
+              reasons: [],
+              recommendations: [],
+            },
+            hotFiles: [
+              {
+                file: '/repo/dist/users.js',
+                score: 80,
+                confidence: 'high',
+                primaryFrame: {
+                  function: 'loadUsers',
+                  file: '/repo/dist/users.js',
+                  line: 9,
+                  column: 1,
+                  source: { file: 'src/users.ts', line: 27 },
+                },
+                operationCount: 5,
+                totalDurationMs: 100,
+                orphanCount: 0,
+                maxOrphanAgeMs: 0,
+                maxChainDepth: 2,
+                cpuPct: 20,
+                runMs: 40,
+                kindBreakdown: { promise: 5 },
+                sampleAsyncIds: [1],
+                userCaller: {
+                  function: 'route',
+                  file: '/repo/dist/routes.js',
+                  line: 3,
+                  source: { file: 'src/routes.ts', line: 11 },
+                  profilePct: 20,
+                  supportPct: 85,
+                  confidence: 'high',
+                  basis: 'async-stack',
+                },
+              },
+            ],
+            topOperations: [
+              {
+                asyncId: 1,
+                kind: 'promise',
+                rawType: 'PROMISE',
+                durationMs: 100,
+                runMs: 40,
+                runCount: 1,
+                initAtMs: 0,
+                triggerAsyncId: 0,
+                orphan: false,
+                primaryFrame: {
+                  function: 'loadUsers',
+                  file: '/repo/dist/users.js',
+                  line: 9,
+                  column: 1,
+                  source: { file: 'src/users.ts', line: 27 },
+                },
+                initStack: [],
+              },
+            ],
+            chains: [],
+            orphans: [],
+            concurrencyTimeline: [],
+            filteredCounts: {},
+            cdpAsyncContexts: [],
+            cpuAttribution: {
+              available: true,
+              attributedCpuPct: 20,
+              totalCpuMs: 40,
+              cpuAttributedSamples: 4,
+              cpuAmbiguousSamples: 0,
+              clockSyncUncertaintyMs: 1,
+              topChains: [
+                {
+                  rootAsyncId: 1,
+                  rootKind: 'promise',
+                  cpuPct: 20,
+                  cpuMs: 40,
+                  contributingOperations: 1,
+                  userCaller: {
+                    function: 'route',
+                    file: '/repo/dist/routes.js',
+                    line: 3,
+                    source: { file: 'src/routes.ts', line: 11 },
+                    profilePct: 20,
+                    supportPct: 85,
+                    confidence: 'medium',
+                    basis: 'async-cpu-window',
+                  },
+                },
+              ],
+            },
+          },
+        },
+        findings: [],
+      },
+      { format: 'agent' },
+    );
+
+    expect(output).toContain('- Degrading caveats: source-map coverage below 70%');
+    expect(output).toContain('## Action Queue\n\nNo findings.');
+    expect(output).toContain('## Kind Review');
+    expect(output).toContain(
+      '- Top user hotspot: handler at src/server.ts:42 (/repo/dist/server.js:12)',
+    );
+    expect(output).toContain(
+      '- Hotspot 1: parsePayload at /repo/node_modules/pkg/index.js:8; user caller handler (src/server.ts:42 (/repo/dist/server.js:12)) [high, support 92.0%]',
+    );
+    expect(output).toContain(
+      '- Top allocator: Buffer.alloc at node:buffer:10; user caller loadCache (src/cache.ts:18 (/repo/dist/cache.js:6)) [high, support 100.0%]',
+    );
+    expect(output).toContain(
+      '- Top async hot file: loadUsers at src/users.ts:27 (/repo/dist/users.js:9); user caller route (src/routes.ts:11 (/repo/dist/routes.js:3)) [high, support 85.0%]',
+    );
+    expect(output).toContain(
+      '- CPU chain 1: promise at 20.0% CPU; user caller route (src/routes.ts:11 (/repo/dist/routes.js:3)) [medium, support 85.0%]',
+    );
+    expect(output).toContain('1. `src/server.ts`');
+    expect(output).toContain('2. `src/cache.ts`');
+    expect(output).toContain('3. `src/users.ts`');
+    expect(output).toContain('4. `src/routes.ts`');
+  });
+
+  it('keeps virtual source-map paths out of files to read first', () => {
+    const output = renderReport(
+      {
+        meta: baseMeta,
+        profiles: {
+          cpu: {
+            summary: {
+              totalCpuMs: 120,
+              onCpuRatio: 0.5,
+              userCodeRatio: 0.4,
+              nodeModulesRatio: 0.1,
+              builtinRatio: 0,
+              nativeRatio: 0,
+              gcRatio: 0.02,
+              idleRatio: 0.5,
+              topCategory: 'user',
+              dominantBlockingKind: null,
+              topUserHotspot: {
+                id: 'h1',
+                function: 'handler',
+                file: '/repo/dist/server.js',
+                line: 12,
+                selfPct: 37.5,
+                totalPct: 50,
+                source: { file: 'webpack://app/src/server.ts', line: 42 },
+              },
+            },
+            hotspots: [],
+            hotStacks: [],
+            gc: {
+              totalPauseMs: 0,
+              count: { scavenge: 0, markSweep: 0, incremental: 0, other: 0 },
+              longestPauseMs: 0,
+              pausesOver10ms: [],
+            },
+            eventLoop: {
+              maxLagMs: 0,
+              p99LagMs: 0,
+              p50LagMs: 0,
+              meanLagMs: 0,
+              sampleCount: 0,
+              stallIntervals: [],
+              available: true,
+              measurementBasis: 'histogram',
+              confidence: 'high',
+            },
+            quality: {
+              confidence: 'high',
+              sampleCount: 100,
+              durationMs: 1500,
+              idleRatio: 0.5,
+              samplesTimed: true,
+              durationBasis: 'timeDeltas',
+              reasons: [],
+              recommendations: [],
+            },
+            deopts: [],
+          },
+        },
+        findings: [],
+      },
+      { format: 'agent' },
+    );
+
+    expect(output).toContain(
+      '- Top user hotspot: handler at webpack://app/src/server.ts:42 (/repo/dist/server.js:12)',
+    );
+    expect(output).toContain(
+      'No editable user source files identified from findings or aggregates.',
+    );
+    expect(output).not.toContain('1. `webpack://app/src/server.ts`');
   });
 
   it('does not list dependency frames as files to patch in agent reports', () => {
@@ -666,7 +1083,9 @@ describe('renderReport', () => {
 
     expect(output).toContain(`- Source: \`${dependencyFile}:255\``);
     expect(output).toContain('Do not patch the dependency file directly');
-    expect(output).toContain('No editable user source files identified from findings.');
+    expect(output).toContain(
+      'No editable user source files identified from findings or aggregates.',
+    );
     expect(output).not.toContain(`1. \`${dependencyFile}\``);
   });
 
