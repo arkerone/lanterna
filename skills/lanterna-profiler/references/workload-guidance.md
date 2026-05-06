@@ -35,13 +35,14 @@ TOKEN=<token> npx -y autocannon -c 25 -d 30 \
   http://localhost:3000/api/search
 ```
 
-Lanterna with autocannon (two-step capture + render):
+Lanterna with autocannon (two-step capture + render; set `$LANTERNA` per the SKILL prefix block):
 
 ```bash
-TOKEN=<token> lanterna run --duration 30s --wait-for-url http://localhost:3000/health \
+LANTERNA="$(command -v lanterna >/dev/null 2>&1 && echo lanterna || echo 'npx -y @lanterna-profiler/cli')"
+TOKEN=<token> $LANTERNA run --duration 30s --wait-for-url http://localhost:3000/health \
   --workload 'npx -y autocannon -c 25 -d 30 -H "authorization: Bearer '"$TOKEN"'" http://localhost:3000/api/search?q=test' \
   --format json --output report.json -- node server.js
-lanterna report report.json --format agent --output report.agent.md
+$LANTERNA report report.json --format agent --output report.agent.md
 ```
 
 Autocannon is weak for login flows, weighted route mixes, changing payloads, or setup/teardown-heavy scenarios. Use artillery or an existing load script for those.
@@ -72,13 +73,13 @@ scenarios:
             limit: 50
 ```
 
-Lanterna with artillery (two-step capture + render):
+Lanterna with artillery (two-step capture + render; reuse `$LANTERNA` from the autocannon snippet above or re-run the prefix line):
 
 ```bash
-TOKEN=<token> lanterna run --duration 35s --wait-for-url http://localhost:3000/health \
+TOKEN=<token> $LANTERNA run --duration 35s --wait-for-url http://localhost:3000/health \
   --workload "npx -y artillery run load.yml" \
   --format json --output report.json -- node server.js
-lanterna report report.json --format agent --output report.agent.md
+$LANTERNA report report.json --format agent --output report.agent.md
 ```
 
 ## Validation

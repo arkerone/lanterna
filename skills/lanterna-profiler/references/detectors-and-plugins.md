@@ -106,12 +106,13 @@ A plugin may export:
 
 Use `kinds` when a plugin ships a new profile kind or a kind pre-wired with built-in detectors. Use the default export for cross-cutting analyzers or extra rules.
 
-CLI examples (still capture in JSON, then render the agent contract):
+CLI examples (still capture in JSON, then render the agent contract; set `$LANTERNA` per the SKILL prefix block):
 
 ```bash
-lanterna run --detectors @acme/lanterna-kinds-heap --kind heap --format json --output report.json -- node app.js
-lanterna run --detectors ./scripts/lanterna-plugin.mjs --kind cpu --format json --output report.json -- node app.js
-lanterna report report.json --format agent --output report.agent.md
+LANTERNA="$(command -v lanterna >/dev/null 2>&1 && echo lanterna || echo 'npx -y @lanterna-profiler/cli')"
+$LANTERNA run --detectors @acme/lanterna-kinds-heap --kind heap --format json --output report.json -- node app.js
+$LANTERNA run --detectors ./scripts/lanterna-plugin.mjs --kind cpu --format json --output report.json -- node app.js
+$LANTERNA report report.json --format agent --output report.agent.md
 ```
 
 Unknown kind ids fail before capture with `unknown profile kind(s): <ids>. Available kinds: ...`.

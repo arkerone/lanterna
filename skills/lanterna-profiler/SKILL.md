@@ -9,7 +9,7 @@ Lanterna produces agent-facing Node.js profiling reports. Your job is not to sum
 
 ## Core Rules
 
-- The `report.agent.md` contract is the primary evidence source. Always capture in JSON, then render the agent contract: `lanterna report report.json --format agent --output report.agent.md`. Keep `report.json` on disk so you can retrieve fields not rendered by the agent format (full retainer paths, source-map failures, complete memory series). Never analyse from raw JSON, `--format text`, or `--format markdown` — JSON is a fallback for targeted field lookup, not the analysis surface.
+- The `report.agent.md` contract is the primary evidence source. Always capture in JSON, then render the agent contract: `$LANTERNA report report.json --format agent --output report.agent.md` (set `$LANTERNA` per the [Lanterna Capture & Rerun Commands](#lanterna-capture--rerun-commands) prefix). Keep `report.json` on disk so you can retrieve fields not rendered by the agent format (full retainer paths, source-map failures, complete memory series). Never analyse from raw JSON, `--format text`, or `--format markdown` — JSON is a fallback for targeted field lookup, not the analysis surface.
 - Do not claim a root cause without evidence from the report and, when code is available, confirmation from relevant source files.
 - Every recommendation must cite a concrete report observation, code observation, or explicitly be labeled as a hypothesis.
 - If the signal is weak, mostly idle, blocked by caveats, or not representative, stop diagnosis and ask for a rerun with a suitable workload.
@@ -19,7 +19,8 @@ Lanterna produces agent-facing Node.js profiling reports. Your job is not to sum
 
 0. **No report yet? Capture first.**
    - If the user only provided a target (command, PID, inspector URL) without a report, drive a capture before diagnosing. See [Lanterna Capture & Rerun Commands](#lanterna-capture--rerun-commands).
-   - Before running anything, ask the user for any missing input — never silently choose: target (`run -- <cmd>` / `attach --pid` / `attach --inspect-url`), duration, representative workload, readiness URL for HTTP servers, and the kinds to capture (`cpu`, optionally `memory`, optionally `async`).
+   - **Default kinds — pick from the symptom, do not ask blindly.** Start with `cpu`. Add `memory` when the symptom is a leak, OOM, sustained RSS/heap growth, off-heap Buffer pressure, or allocation-heavy hot path. Add `async` when the symptom is long awaits, deep async chains, orphan resources, or concurrency shape. Add `--heap-snapshot-analysis` only for retainer / leak retention investigations. Confirm the selection with the user only when the symptom is genuinely ambiguous between CPU, memory, and async.
+   - Ask the user for the inputs you cannot infer: target (`run -- <cmd>` / `attach --pid` / `attach --inspect-url`) and duration are always needed; for HTTP servers also ask for a representative `--workload` and a `--wait-for-url` readiness URL. CLI scripts, batch jobs, queue consumers, and cron tasks usually do not need an external workload — the target itself drives the load.
    - After capture, the contract output is `report.agent.md`. Only then enter step 1.
 
 1. **Clarify the performance question**
@@ -59,33 +60,34 @@ Lanterna produces agent-facing Node.js profiling reports. Your job is not to sum
 
 ## Lanterna Capture & Rerun Commands
 
-Resolve the Lanterna prefix first:
+Resolve the Lanterna prefix as a shell variable so every command below works whether `lanterna` is installed globally or not:
+
 ```bash
-command -v lanterna >/dev/null 2>&1 && echo lanterna || echo "npx -y @lanterna-profiler/cli"
+LANTERNA="$(command -v lanterna >/dev/null 2>&1 && echo lanterna || echo 'npx -y @lanterna-profiler/cli')"
 ```
 
-Use `lanterna` if installed, otherwise substitute `npx -y @lanterna-profiler/cli`. `run` requires `--` before the target command; `attach` never takes `--`. Every capture is a two-step flow: **(1) capture to `report.json`**, **(2) render the agent contract**. Keep both files on disk — the `.agent.md` drives the investigation, the `.json` stays available for targeted field lookup.
+Use `$LANTERNA` in every capture and render command. `run` requires `--` before the target command; `attach` never takes `--`. Every capture is a two-step flow: **(1) capture to `report.json`**, **(2) render the agent contract**. Keep both files on disk — the `.agent.md` drives the investigation, the `.json` stays available for targeted field lookup.
 
 ```bash
 # Step 1 — capture (pick one)
 
 # CPU only, HTTP server with readiness gate and load
-lanterna run --duration 30s --wait-for-url <health-url> --workload "<representative-load-command>" --format json --output report.json -- node server.js
+$LANTERNA run --duration 30s --wait-for-url <health-url> --workload "<representative-load-command>" --format json --output report.json -- node server.js
 
 # CPU + memory together (enables alloc-in-hot-path correlation)
-lanterna run --kind cpu --kind memory --duration 60s --wait-for-url <health-url> --workload "<representative-load-command>" --format json --output report.json -- node server.js
+$LANTERNA run --kind cpu --kind memory --duration 60s --wait-for-url <health-url> --workload "<representative-load-command>" --format json --output report.json -- node server.js
 
 # Memory + heap snapshots (retention/leak investigation)
-lanterna run --kind memory --heap-snapshot-analysis --heap-snapshot-dir .lanterna-heaps --duration 120s --workload "<steady-state-load>" --format json --output report.json -- node server.js
+$LANTERNA run --kind memory --heap-snapshot-analysis --heap-snapshot-dir .lanterna-heaps --duration 120s --workload "<steady-state-load>" --format json --output report.json -- node server.js
 
 # CPU + async (await gaps, deep chains, orphan resources)
-lanterna run --kind cpu --kind async --async-instrumentation safe --duration 30s --workload "<scenario-with-await-gap>" --format json --output report.json -- node server.js
+$LANTERNA run --kind cpu --kind async --async-instrumentation safe --duration 30s --workload "<scenario-with-await-gap>" --format json --output report.json -- node server.js
 
 # Attach to a running PID (attach defaults to --format json, kept explicit for clarity)
-lanterna attach --pid <pid> --duration 30s --format json --output report.json
+$LANTERNA attach --pid <pid> --duration 30s --format json --output report.json
 
 # Step 2 — render the agent contract (mandatory, every time)
-lanterna report report.json --format agent --output report.agent.md
+$LANTERNA report report.json --format agent --output report.agent.md
 ```
 
 If the user already has a `report.json`, skip step 1 and run step 2 directly.
@@ -100,10 +102,11 @@ Use [analysis-output.md](references/analysis-output.md) for substantive answers.
 
 Stop and ask instead of diagnosing when:
 
-- no agent report, runnable command, PID, inspector URL, or target workload is available;
+- there is neither an agent report nor a target to capture (no command, PID, or inspector URL);
+- the target is an HTTP server and no representative workload can be supplied — for CLI scripts, batch jobs, queue consumers, or cron tasks this clause does not apply because the target drives its own load;
 - the target is not Node.js;
 - the report has blocking caveats;
-- the capture is mostly idle or workload is non-representative;
+- the capture is mostly idle or the chosen workload is non-representative for the symptom;
 - the user asks for a patch but the relevant source files have not been read;
 - the finding is only `hypothesis` or `rerun`;
 - source-map locations are virtual or generated and no editable source has been confirmed.

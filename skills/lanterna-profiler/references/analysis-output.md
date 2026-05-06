@@ -2,7 +2,7 @@
 
 Use this when answering from a Lanterna agent report. The answer should expose the investigation state: symptom, signal quality, hypotheses, evidence, confidence, and the next measurement. Do not turn the report into a generic summary.
 
-Start from `lanterna report report.json --format agent --output report.agent.md`. Read frontmatter, `## Findings`, each `## Finding N`, every present `## Kind Review`, `## Files To Read First`, and `## Next Steps`. Read implicated source files before making source-backed recommendations. Use the JSON only for a targeted field missing from the agent report (full retainer paths, source-map failures, complete memory series).
+Start from `$LANTERNA report report.json --format agent --output report.agent.md` (set `$LANTERNA` per the SKILL prefix block). Read frontmatter, `## Findings`, each `## Finding N`, every present `## Kind Review`, `## Files To Read First`, and `## Next Steps`. Read implicated source files before making source-backed recommendations. Use the JSON only for a targeted field missing from the agent report (full retainer paths, source-map failures, complete memory series).
 
 ## Choosing The Form
 
