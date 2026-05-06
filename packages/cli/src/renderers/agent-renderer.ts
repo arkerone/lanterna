@@ -16,6 +16,41 @@ type Frame = {
   source?: { file: string; line: number };
 };
 
+type ReadTargetSource = 'finding' | 'cpu' | 'memory' | 'async';
+type ReadTargetDecision = 'read-first' | 'inspect-lead' | 'supporting-context';
+type ReadTargetReason =
+  | 'finding-location'
+  | 'generated-output-fallback'
+  | 'user-caller'
+  | 'dependency-hotspot-caller'
+  | 'runtime-hotspot-caller'
+  | 'top-cpu-hotspot'
+  | 'hot-stack-cluster'
+  | 'memory-allocator'
+  | 'top-async-hot-file'
+  | 'top-async-hot-file-caller'
+  | 'long-async-operation'
+  | 'long-async-operation-caller'
+  | 'async-hot-file'
+  | 'async-hot-file-caller'
+  | 'async-cpu-attribution-root'
+  | 'async-cpu-attribution'
+  | 'async-cpu-attribution-caller';
+
+type ReadTarget = {
+  location: string;
+  file: string;
+  generatedOutput: boolean;
+  reason: ReadTargetReason;
+  source: ReadTargetSource;
+  signal: string;
+  decision: ReadTargetDecision;
+  rank: number;
+};
+
+const NON_EDITABLE_RUNTIME_FUNCTIONS = new Set(['init', 'runMicrotasks', 'writeBuffer']);
+const MOSTLY_IDLE_CPU_RATIO = 0.9;
+
 export class AgentReportRenderer implements ReportRenderer {
   readonly format: RenderableFormat = 'agent';
 
@@ -30,7 +65,7 @@ export class AgentReportRenderer implements ReportRenderer {
     lines.push('');
     appendFilesToReadFirst(lines, report);
     lines.push('');
-    appendNextCommands(lines, report);
+    appendNextSteps(lines, report);
     return `${lines.join('\n').trimEnd()}\n`;
   }
 }
@@ -186,12 +221,12 @@ function appendCpuKindReview(lines: string[], report: LanternaReport): void {
     return;
   }
   lines.push(`- quality: ${cpu.quality?.confidence ?? 'unknown'}`);
-  if (cpu.summary?.topUserHotspot) {
+  if (isRenderableReviewFrame(cpu.summary?.topUserHotspot)) {
     lines.push(
       `- top_user_hotspot: ${frameLabel(cpu.summary.topUserHotspot)} at ${frameLocation(cpu.summary.topUserHotspot)}`,
     );
   }
-  const hotspots = (cpu.hotspots ?? []).slice(0, 5);
+  const hotspots = (cpu.hotspots ?? []).filter(isRenderableReviewFrame).slice(0, 5);
   if (hotspots.length > 0) {
     lines.push('- hotspots:');
     appendIndentedTable(
@@ -208,23 +243,22 @@ function appendCpuKindReview(lines: string[], report: LanternaReport): void {
     );
   }
   const stacks = (cpu.hotStacks ?? []).slice(0, 3);
-  if (stacks.length > 0) {
+  const stackRows = stacks.flatMap((stack, i) => {
+    const frame =
+      stack.frames.find((f) => Boolean(f.source) && isRenderableReviewFrame(f)) ??
+      stack.frames.find(isRenderableReviewFrame);
+    if (!frame) return [];
+    return [
+      [String(i + 1), frame.function ?? '—', frameLocation(frame), formatPct(stack.weightPct)],
+    ];
+  });
+  if (stackRows.length > 0) {
     lines.push('- hot_stacks:');
-    appendIndentedTable(
-      lines,
-      ['#', 'anchor', 'location', 'weight%'],
-      stacks.map((stack, i) => {
-        const frame = stack.frames.find((f) => Boolean(f.source)) ?? stack.frames[0];
-        return [
-          String(i + 1),
-          frame?.function ?? '—',
-          frame ? frameLocation(frame) : '—',
-          formatPct(stack.weightPct),
-        ];
-      }),
-    );
+    appendIndentedTable(lines, ['#', 'anchor', 'location', 'weight%'], stackRows);
   }
-  const clusters = (cpu.hotStackClusters ?? []).slice(0, 3);
+  const clusters = (cpu.hotStackClusters ?? [])
+    .filter((cluster) => isRenderableReviewFrame(cluster.anchor))
+    .slice(0, 3);
   if (clusters.length > 0) {
     lines.push('- hot_stack_clusters:');
     appendIndentedTable(
@@ -254,12 +288,12 @@ function appendMemoryKindReview(lines: string[], report: LanternaReport): void {
         : 'unavailable'
     }`,
   );
-  if (memory.summary?.topAllocator) {
+  if (isRenderableReviewFrame(memory.summary?.topAllocator)) {
     lines.push(
       `- top_allocator: ${frameLabel(memory.summary.topAllocator)} at ${frameLocation(memory.summary.topAllocator)}${userCallerSuffix(memory.summary.topAllocator.userCaller)}`,
     );
   }
-  const allocators = (memory.hotAllocators ?? []).slice(0, 5);
+  const allocators = (memory.hotAllocators ?? []).filter(isRenderableReviewFrame).slice(0, 5);
   if (allocators.length > 0) {
     lines.push('- allocators:');
     appendIndentedTable(
@@ -297,31 +331,36 @@ function appendAsyncKindReview(lines: string[], report: LanternaReport): void {
   lines.push(
     `- summary: ${asyncProfile.summary.available ? 'available' : 'unavailable'} — ${asyncProfile.summary.totalOperations} ops, ${asyncProfile.summary.recordsDropped} dropped`,
   );
-  if (asyncProfile.summary.topAsyncHotFile) {
+  if (isRenderableReviewFrame(asyncProfile.summary.topAsyncHotFile)) {
     lines.push(
       `- top_async_hot_file: ${frameLabel(asyncProfile.summary.topAsyncHotFile)} at ${frameLocation(asyncProfile.summary.topAsyncHotFile)}${userCallerSuffix(asyncProfile.summary.topAsyncHotFile.userCaller)}`,
     );
   }
-  const ops = (asyncProfile.topOperations ?? []).slice(0, 5);
-  if (ops.length > 0) {
+  const operationRows = (asyncProfile.topOperations ?? []).flatMap((op, i) => {
+    const frame = preferredAsyncOperationFrame(op);
+    if (!isRenderableReviewFrame(frame) && !isRenderableReviewFrame(op.userCaller)) return [];
+    return [
+      [
+        String(i + 1),
+        op.kind,
+        String(op.asyncId),
+        isRenderableReviewFrame(frame) ? frameLocation(frame) : '—',
+        formatScalarOrDash(op.durationMs),
+        userCallerCell(op.userCaller),
+      ],
+    ];
+  });
+  if (operationRows.length > 0) {
     lines.push('- top_operations:');
     appendIndentedTable(
       lines,
       ['#', 'kind', 'asyncId', 'location', 'duration_ms', 'user_caller'],
-      ops.map((op, i) => {
-        const frame = preferredAsyncOperationFrame(op);
-        return [
-          String(i + 1),
-          op.kind,
-          String(op.asyncId),
-          frame ? frameLocation(frame) : '—',
-          formatScalarOrDash(op.durationMs),
-          userCallerCell(op.userCaller),
-        ];
-      }),
+      operationRows.slice(0, 5),
     );
   }
-  const hotFiles = (asyncProfile.hotFiles ?? []).slice(0, 5);
+  const hotFiles = (asyncProfile.hotFiles ?? [])
+    .filter((hotFile) => isRenderableReviewFrame(hotFile.primaryFrame))
+    .slice(0, 5);
   if (hotFiles.length > 0) {
     lines.push('- hot_files:');
     appendIndentedTable(
@@ -336,70 +375,100 @@ function appendAsyncKindReview(lines: string[], report: LanternaReport): void {
       ]),
     );
   }
-  const chains = (asyncProfile.cpuAttribution?.topChains ?? []).slice(0, 5);
-  if (chains.length > 0) {
+  const chainRows = (asyncProfile.cpuAttribution?.topChains ?? []).flatMap((chain, i) => {
+    const frame = chain.executionFrame ?? chain.rootFrame;
+    if (!isRenderableReviewFrame(frame) && !isRenderableReviewFrame(chain.userCaller)) return [];
+    return [
+      [
+        String(i + 1),
+        chain.rootKind,
+        isRenderableReviewFrame(frame) ? frameLocation(frame) : '—',
+        formatPct(chain.cpuPct),
+        userCallerCell(chain.userCaller),
+      ],
+    ];
+  });
+  if (chainRows.length > 0) {
     lines.push('- cpu_attribution:');
     appendIndentedTable(
       lines,
       ['#', 'root_kind', 'location', 'cpu%', 'user_caller'],
-      chains.map((chain, i) => {
-        const frame = chain.executionFrame ?? chain.rootFrame;
-        return [
-          String(i + 1),
-          chain.rootKind,
-          frame ? frameLocation(frame) : '—',
-          formatPct(chain.cpuPct),
-          userCallerCell(chain.userCaller),
-        ];
-      }),
+      chainRows.slice(0, 5),
     );
   }
 }
 
 // ---------------------------------------------------------------------------
-// Files To Read First + Next Commands.
+// Files To Read First + Next Steps.
 // ---------------------------------------------------------------------------
 
 function appendFilesToReadFirst(lines: string[], report: LanternaReport): void {
   lines.push('## Files To Read First');
   lines.push('');
-  const files = dedupe([
-    ...(report.findings ?? []).map(preferredFile).filter(isNonEmpty),
-    ...aggregateFilesToRead(report),
-  ]);
-  if (files.length === 0) {
+  const targets = collectReadTargets(report);
+  if (targets.length === 0) {
     lines.push('_no editable user source files identified from findings or aggregates_');
     return;
   }
-  files.forEach((file, index) => {
-    lines.push(`${index + 1}. \`${escapeBackticks(file)}\``);
-  });
+  appendTable(
+    lines,
+    ['location', 'reason', 'source', 'signal', 'decision'],
+    targets.map((target) => [
+      target.location,
+      formatReadTargetReason(target.reason),
+      target.source,
+      target.signal,
+      target.decision,
+    ]),
+  );
 }
 
-function appendNextCommands(lines: string[], report: LanternaReport): void {
-  lines.push('## Next Commands');
+function appendNextSteps(lines: string[], report: LanternaReport): void {
+  lines.push('## Next Steps');
   lines.push('');
   if (!hasInsufficientSignal(report)) {
-    lines.push('_no rerun required by report signal_');
+    lines.push('- The capture signal is sufficient; no rerun is required by this report.');
+    lines.push(
+      '- Read the files listed in `## Files To Read First`, then validate the hot path against the finding details and Kind Review tables.',
+    );
+    lines.push(
+      '- If the source does not explain the hotspot, trace callers and callees named in the Kind Review before changing code.',
+    );
     return;
   }
   const command = report.meta?.command;
   const duration = recommendedDuration(report);
+  lines.push(
+    '- Signal is degraded; collect a new capture under representative load before patching from this report.',
+  );
   if (command && command.length > 0 && report.meta?.mode === 'spawn') {
     lines.push(
-      `- \`lanterna run --duration ${duration} --output report.json -- ${escapeBackticks(formatCommand(command))}\``,
+      `- Rerun Lanterna: \`lanterna run --duration ${duration} --output report.json -- ${escapeBackticks(formatCommand(command))}\``,
     );
-    lines.push('- `lanterna report report.json --format agent --output report.agent.md`');
+    lines.push(
+      '- Confirm the readiness URL and representative workload before rerunning if this command starts an HTTP server.',
+    );
+    lines.push(
+      '- After capture, render the agent report: `lanterna report report.json --format agent --output report.agent.md`',
+    );
     return;
   }
   if (report.meta?.mode === 'attach' && report.meta.pid) {
     lines.push(
-      `- \`lanterna attach --pid ${report.meta.pid} --duration ${duration} --output report.json\``,
+      '- Confirm the representative application workload before rerunning an attach capture; do not infer an HTTP benchmark target from this report.',
     );
-    lines.push('- `lanterna report report.json --format agent --output report.agent.md`');
+    lines.push(
+      `- Rerun Lanterna: \`lanterna attach --pid ${report.meta.pid} --duration ${duration} --output report.json\``,
+    );
+    lines.push(
+      '- After capture, render the agent report: `lanterna report report.json --format agent --output report.agent.md`',
+    );
     return;
   }
-  lines.push('_rerun recommended, but report does not contain enough launch context_');
+  lines.push('- Rerun is recommended, but the report does not contain enough launch context.');
+  lines.push(
+    '- Ask for the target command or PID, duration, readiness signal, and representative workload.',
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -421,6 +490,15 @@ function degradingSignalCaveats(report: LanternaReport): string[] {
   const caveats: string[] = [];
   const sourceMaps = integrity?.sourceMaps;
   if (report.profiles?.cpu?.quality?.confidence === 'low') caveats.push('CPU confidence low');
+  const idleRatio =
+    report.profiles?.cpu?.quality?.idleRatio ?? report.profiles?.cpu?.summary?.idleRatio;
+  if (
+    typeof idleRatio === 'number' &&
+    Number.isFinite(idleRatio) &&
+    idleRatio >= MOSTLY_IDLE_CPU_RATIO
+  ) {
+    caveats.push(`CPU profile mostly idle (${formatPct(idleRatio * 100)})`);
+  }
   if (report.profiles?.memory?.memoryUsage?.available === false) {
     caveats.push('memory usage series unavailable');
   }
@@ -519,72 +597,385 @@ function formatUserCallerCompact(caller: UserCallerAttribution): string {
   return `${caller.function ?? '—'} at ${frameLocation(caller)} (${caller.confidence}, ${caller.basis}, support ${formatPct(caller.supportPct)})`;
 }
 
-function preferredFile(finding: Finding): string | undefined {
-  const evidenceFile = preferredEditableFileFromFrame(finding.evidence);
-  if (evidenceFile) return evidenceFile;
-  const userCaller = userCallerFromEvidenceExtra(finding.evidence.extra);
-  return preferredEditableFileFromFrame(userCaller);
+function collectReadTargets(report: LanternaReport): ReadTarget[] {
+  const targets: ReadTarget[] = [];
+  collectFindingReadTargets(targets, report.findings ?? []);
+  collectAggregateReadTargets(targets, report);
+  return dedupeReadTargets(targets)
+    .sort((a, b) => a.rank - b.rank || a.location.localeCompare(b.location))
+    .slice(0, 10);
 }
 
-function aggregateFilesToRead(report: LanternaReport): string[] {
-  const files: string[] = [];
+function collectFindingReadTargets(targets: ReadTarget[], findings: Finding[]): void {
+  findings.forEach((finding, index) => {
+    const signal = formatImpact(finding);
+    const findingDecision = decisionForFinding(finding);
+    const evidenceTarget = readTargetFrame(finding.evidence);
+    if (evidenceTarget) {
+      const findingIsActionable =
+        findingDecision === 'actionable' && !evidenceTarget.generatedOutput;
+      targets.push({
+        ...evidenceTarget,
+        reason: evidenceTarget.generatedOutput ? 'generated-output-fallback' : 'finding-location',
+        source: 'finding',
+        signal,
+        decision: findingIsActionable ? 'read-first' : 'inspect-lead',
+        rank: findingIsActionable ? index : 100 + index,
+      });
+      return;
+    }
+    const userCaller = userCallerFromEvidenceExtra(finding.evidence.extra);
+    const userCallerTarget = readTargetFrame(userCaller);
+    if (!userCallerTarget) return;
+    targets.push({
+      ...userCallerTarget,
+      reason: reasonForExternalUserCaller(finding.evidence),
+      source: 'finding',
+      signal,
+      decision:
+        findingDecision === 'actionable' && userCaller?.confidence === 'high'
+          ? 'read-first'
+          : 'inspect-lead',
+      rank:
+        findingDecision === 'actionable' && userCaller?.confidence === 'high' ? index : 100 + index,
+    });
+  });
+}
+
+function collectAggregateReadTargets(targets: ReadTarget[], report: LanternaReport): void {
   const cpu = report.profiles?.cpu;
   if (cpu) {
-    pushEditableFrameFile(files, cpu.summary?.topUserHotspot);
+    pushReadTarget(targets, cpu.summary?.topUserHotspot, {
+      reason: 'top-cpu-hotspot',
+      source: 'cpu',
+      signal: signalFromPctFrame(cpu.summary?.topUserHotspot),
+      decision: 'inspect-lead',
+      rank: 200,
+    });
     for (const hotspot of cpu.hotspots ?? []) {
-      pushEditableFrameFile(files, hotspot);
-      pushEditableFrameFile(files, hotspot.userCaller);
+      const userCaller = readTargetFrame(hotspot.userCaller);
+      if (userCaller && isExternalOrRuntimeFrame(hotspot)) {
+        targets.push({
+          ...userCaller,
+          reason: reasonForExternalUserCaller(hotspot),
+          source: 'cpu',
+          signal: signalFromPctFrame(hotspot),
+          decision: hotspot.userCaller?.confidence === 'high' ? 'read-first' : 'inspect-lead',
+          rank: hotspot.userCaller?.confidence === 'high' ? 210 : 230,
+        });
+      } else {
+        pushReadTarget(targets, hotspot, {
+          reason: 'top-cpu-hotspot',
+          source: 'cpu',
+          signal: signalFromPctFrame(hotspot),
+          decision: 'inspect-lead',
+          rank: 220,
+        });
+      }
     }
     for (const stack of cpu.hotStacks ?? []) {
-      for (const frame of stack.frames) pushEditableFrameFile(files, frame);
+      const frame = stack.frames.find((candidate) => Boolean(readTargetFrame(candidate)));
+      pushReadTarget(targets, frame, {
+        reason: 'hot-stack-cluster',
+        source: 'cpu',
+        signal: signalFromWeight(stack.weightPct),
+        decision: 'supporting-context',
+        rank: 240,
+      });
     }
     for (const cluster of cpu.hotStackClusters ?? []) {
-      pushEditableFrameFile(files, cluster.anchor);
+      pushReadTarget(targets, cluster.anchor, {
+        reason: 'hot-stack-cluster',
+        source: 'cpu',
+        signal: signalFromWeight(cluster.weightPct),
+        decision: 'supporting-context',
+        rank: 250,
+      });
     }
   }
   const memory = report.profiles?.memory;
   if (memory) {
-    pushEditableFrameFile(files, memory.summary?.topAllocator);
-    pushEditableFrameFile(files, memory.summary?.topAllocator?.userCaller);
+    collectAllocatorReadTarget(targets, memory.summary?.topAllocator, 300);
     for (const allocator of memory.hotAllocators ?? []) {
-      pushEditableFrameFile(files, allocator);
-      pushEditableFrameFile(files, allocator.userCaller);
+      collectAllocatorReadTarget(targets, allocator, 310);
     }
   }
   const asyncProfile = report.profiles?.async;
-  if (asyncProfile) collectAsyncFiles(files, asyncProfile);
-  return dedupe(files);
+  if (asyncProfile) collectAsyncReadTargets(targets, asyncProfile);
 }
 
-function collectAsyncFiles(files: string[], asyncProfile: AsyncProfileReport): void {
-  pushEditableFrameFile(files, asyncProfile.summary.topAsyncHotFile);
-  pushEditableFrameFile(files, asyncProfile.summary.topAsyncHotFile?.userCaller);
+function collectAllocatorReadTarget(
+  targets: ReadTarget[],
+  frame: (Frame & { userCaller?: UserCallerAttribution; selfPct?: number }) | undefined,
+  rank: number,
+): void {
+  if (!frame) return;
+  const userCaller = readTargetFrame(frame.userCaller);
+  if (userCaller && isExternalOrRuntimeFrame(frame)) {
+    targets.push({
+      ...userCaller,
+      reason: 'memory-allocator',
+      source: 'memory',
+      signal: signalFromPctFrame(frame),
+      decision: frame.userCaller?.confidence === 'high' ? 'read-first' : 'inspect-lead',
+      rank,
+    });
+    return;
+  }
+  pushReadTarget(targets, frame, {
+    reason: 'memory-allocator',
+    source: 'memory',
+    signal: signalFromPctFrame(frame),
+    decision: 'inspect-lead',
+    rank,
+  });
+}
+
+function collectAsyncReadTargets(targets: ReadTarget[], asyncProfile: AsyncProfileReport): void {
+  collectAsyncFrameReadTarget(targets, asyncProfile.summary.topAsyncHotFile, {
+    reason: 'top-async-hot-file',
+    signal: signalFromAsyncScore(asyncProfile.summary.topAsyncHotFile),
+    rank: 400,
+  });
+  collectAsyncFrameReadTarget(targets, asyncProfile.summary.topAsyncHotFile?.userCaller, {
+    reason: 'top-async-hot-file-caller',
+    signal: signalFromAsyncScore(asyncProfile.summary.topAsyncHotFile),
+    rank: 410,
+  });
   for (const operation of asyncProfile.topOperations ?? []) {
-    pushEditableFrameFile(files, operation.userCaller);
-    for (const frame of asyncOperationFrames(operation)) pushEditableFrameFile(files, frame);
+    const userCaller = readTargetFrame(operation.userCaller);
+    if (userCaller) {
+      targets.push({
+        ...userCaller,
+        reason: 'long-async-operation-caller',
+        source: 'async',
+        signal: signalFromDuration(operation.durationMs),
+        decision: operation.userCaller?.confidence === 'high' ? 'read-first' : 'inspect-lead',
+        rank: 420,
+      });
+    } else {
+      for (const frame of asyncOperationFrames(operation)) {
+        if (
+          pushReadTarget(targets, frame, {
+            reason: 'long-async-operation',
+            source: 'async',
+            signal: signalFromDuration(operation.durationMs),
+            decision: 'inspect-lead',
+            rank: 430,
+          })
+        )
+          break;
+      }
+    }
   }
   for (const hotFile of asyncProfile.hotFiles ?? []) {
-    pushEditableFrameFile(files, hotFile.primaryFrame);
-    pushEditableFrameFile(files, hotFile.userCaller);
+    collectAsyncFrameReadTarget(targets, hotFile.primaryFrame, {
+      reason: 'async-hot-file',
+      signal: signalFromAsyncHotFile(hotFile),
+      rank: 440,
+    });
+    collectAsyncFrameReadTarget(targets, hotFile.userCaller, {
+      reason: 'async-hot-file-caller',
+      signal: signalFromAsyncHotFile(hotFile),
+      rank: 450,
+    });
   }
   for (const chain of asyncProfile.cpuAttribution?.topChains ?? []) {
-    pushEditableFrameFile(files, chain.rootFrame);
-    pushEditableFrameFile(files, chain.executionFrame);
-    pushEditableFrameFile(files, chain.userCaller);
+    collectAsyncFrameReadTarget(targets, chain.rootFrame, {
+      reason: 'async-cpu-attribution-root',
+      signal: signalFromCpuPct(chain.cpuPct),
+      rank: 460,
+    });
+    collectAsyncFrameReadTarget(targets, chain.executionFrame, {
+      reason: 'async-cpu-attribution',
+      signal: signalFromCpuPct(chain.cpuPct),
+      rank: 470,
+    });
+    collectAsyncFrameReadTarget(targets, chain.userCaller, {
+      reason: 'async-cpu-attribution-caller',
+      signal: signalFromCpuPct(chain.cpuPct),
+      rank: 480,
+    });
   }
 }
 
-function pushEditableFrameFile(files: string[], frame: Frame | undefined): void {
-  const file = preferredEditableFileFromFrame(frame);
-  if (file) files.push(file);
+function collectAsyncFrameReadTarget(
+  targets: ReadTarget[],
+  frame: Frame | undefined,
+  attrs: { reason: ReadTargetReason; signal: string; rank: number },
+): void {
+  pushReadTarget(targets, frame, {
+    reason: attrs.reason,
+    source: 'async',
+    signal: attrs.signal,
+    decision: 'inspect-lead',
+    rank: attrs.rank,
+  });
 }
 
-function preferredEditableFileFromFrame(frame: Frame | undefined): string | undefined {
-  if (!frame) return undefined;
-  if (frame.source) {
-    return isEditableUserFile(frame.source.file) ? frame.source.file : undefined;
+function pushReadTarget(
+  targets: ReadTarget[],
+  frame: Frame | undefined,
+  attrs: Omit<ReadTarget, 'file' | 'location' | 'generatedOutput'>,
+): boolean {
+  const target = readTargetFrame(frame);
+  if (!target) return false;
+  targets.push({ ...target, ...attrs });
+  return true;
+}
+
+function readTargetFrame(
+  frame: Frame | undefined,
+): Pick<ReadTarget, 'file' | 'location' | 'generatedOutput'> | undefined {
+  if (!frame || isPseudoFrameFunction(frame.function)) return undefined;
+  if (frame.source && isEditableUserFile(frame.source.file)) {
+    return {
+      file: frame.source.file,
+      location: `${frame.source.file}:${frame.source.line}`,
+      generatedOutput: false,
+    };
   }
-  return isEditableUserFile(frame.file) ? frame.file : undefined;
+  if (!isEditableUserFile(frame.file)) return undefined;
+  return {
+    file: frame.file,
+    location: `${frame.file}:${frame.line}`,
+    generatedOutput: isGeneratedOutputPath(frame.file),
+  };
+}
+
+function dedupeReadTargets(targets: ReadTarget[]): ReadTarget[] {
+  const byLocation = new Map<string, ReadTarget>();
+  for (const target of targets) {
+    const existing = byLocation.get(target.location);
+    if (!existing || compareReadTargetPriority(target, existing) < 0) {
+      byLocation.set(target.location, target);
+    }
+  }
+  return [...byLocation.values()];
+}
+
+function compareReadTargetPriority(a: ReadTarget, b: ReadTarget): number {
+  const decisionDelta = decisionRank(a.decision) - decisionRank(b.decision);
+  if (decisionDelta !== 0) return decisionDelta;
+  return a.rank - b.rank;
+}
+
+function decisionRank(decision: ReadTargetDecision): number {
+  switch (decision) {
+    case 'read-first':
+      return 0;
+    case 'inspect-lead':
+      return 1;
+    case 'supporting-context':
+      return 2;
+  }
+}
+
+function formatReadTargetReason(reason: ReadTargetReason): string {
+  switch (reason) {
+    case 'finding-location':
+      return 'finding location';
+    case 'generated-output-fallback':
+      return 'generated output fallback';
+    case 'user-caller':
+      return 'user caller';
+    case 'dependency-hotspot-caller':
+      return 'user caller for dependency hotspot';
+    case 'runtime-hotspot-caller':
+      return 'user caller for runtime hotspot';
+    case 'top-cpu-hotspot':
+      return 'top CPU hotspot';
+    case 'hot-stack-cluster':
+      return 'hot stack cluster';
+    case 'memory-allocator':
+      return 'memory allocator';
+    case 'top-async-hot-file':
+      return 'top async hot file';
+    case 'top-async-hot-file-caller':
+      return 'top async hot file caller';
+    case 'long-async-operation':
+      return 'long async operation';
+    case 'long-async-operation-caller':
+      return 'long async operation caller';
+    case 'async-hot-file':
+      return 'async hot file';
+    case 'async-hot-file-caller':
+      return 'async hot file caller';
+    case 'async-cpu-attribution-root':
+      return 'async CPU attribution root';
+    case 'async-cpu-attribution':
+      return 'async CPU attribution';
+    case 'async-cpu-attribution-caller':
+      return 'async CPU attribution caller';
+  }
+}
+
+function reasonForExternalUserCaller(frame: Frame): ReadTargetReason {
+  if (isDependencyPath(frame.file)) return 'dependency-hotspot-caller';
+  if (isExternalOrRuntimeFrame(frame)) return 'runtime-hotspot-caller';
+  return 'user-caller';
+}
+
+function isExternalOrRuntimeFrame(frame: Frame): boolean {
+  return (
+    isDependencyOrRuntimePath(frame.file) ||
+    isVirtualSourcePath(frame.file) ||
+    isPseudoFile(frame.file) ||
+    isPseudoFrameFunction(frame.function)
+  );
+}
+
+function isRenderableReviewFrame(frame: Frame | undefined): frame is Frame {
+  if (!frame) return false;
+  return !isPseudoFile(frame.file) && !isPseudoFrameFunction(frame.function);
+}
+
+function signalFromPctFrame(frame: (Frame & { selfPct?: number }) | undefined): string {
+  if (typeof frame?.selfPct === 'number' && Number.isFinite(frame.selfPct)) {
+    return `${formatPct(frame.selfPct)} self`;
+  }
+  return '—';
+}
+
+function signalFromWeight(weightPct: number | undefined): string {
+  if (typeof weightPct === 'number' && Number.isFinite(weightPct)) {
+    return `${formatPct(weightPct)} stack weight`;
+  }
+  return '—';
+}
+
+function signalFromDuration(durationMs: number | undefined): string {
+  if (typeof durationMs === 'number' && Number.isFinite(durationMs)) return formatMs(durationMs);
+  return '—';
+}
+
+function signalFromCpuPct(cpuPct: number | undefined): string {
+  if (typeof cpuPct === 'number' && Number.isFinite(cpuPct)) return `${formatPct(cpuPct)} CPU`;
+  return '—';
+}
+
+function signalFromAsyncScore(frame: (Frame & { score?: number }) | undefined): string {
+  if (typeof frame?.score === 'number' && Number.isFinite(frame.score)) {
+    return `score ${formatRawNumber(frame.score)}`;
+  }
+  return '—';
+}
+
+function signalFromAsyncHotFile(hotFile: {
+  cpuPct?: number;
+  totalDurationMs?: number;
+  score?: number;
+}): string {
+  if (typeof hotFile.cpuPct === 'number' && Number.isFinite(hotFile.cpuPct)) {
+    return `${formatPct(hotFile.cpuPct)} CPU`;
+  }
+  if (typeof hotFile.totalDurationMs === 'number' && Number.isFinite(hotFile.totalDurationMs)) {
+    return `${formatMs(hotFile.totalDurationMs)} total`;
+  }
+  if (typeof hotFile.score === 'number' && Number.isFinite(hotFile.score)) {
+    return `score ${formatRawNumber(hotFile.score)}`;
+  }
+  return '—';
 }
 
 function preferredAsyncOperationFrame(op: AsyncTopOperation): AsyncStackFrameReport | undefined {
@@ -660,24 +1051,62 @@ function recommendedDuration(report: LanternaReport): string {
   return `${Math.max(5, Math.ceil(current / 1000))}s`;
 }
 
-function dedupe(values: string[]): string[] {
-  return [...new Set(values)];
-}
-
 function isNonEmpty(value: string | undefined): value is string {
   return typeof value === 'string' && value.length > 0;
 }
 
 function isEditableUserFile(value: string | undefined): value is string {
   if (!isNonEmpty(value)) return false;
-  return !isDependencyOrRuntimePath(value) && !isVirtualSourcePath(value);
+  return !isPseudoFile(value) && !isDependencyOrRuntimePath(value) && !isVirtualSourcePath(value);
+}
+
+function isGeneratedOutputPath(file: string): boolean {
+  const normalized = file.replaceAll('\\', '/');
+  return /(^|\/)(dist|build|out|coverage|\.next|\.nuxt|\.svelte-kit|\.vite)(\/|$)/.test(normalized);
+}
+
+function isPseudoFile(file: string): boolean {
+  const trimmed = normalizeFrameLabel(file);
+  return (
+    isMissingFrameLabel(trimmed) ||
+    isParenthesizedRuntimeLabel(trimmed) ||
+    isAngleBracketRuntimeLabel(trimmed)
+  );
+}
+
+function isPseudoFrameFunction(value: string | undefined): boolean {
+  const label = normalizeFrameLabel(value);
+  if (isMissingFrameLabel(label)) return false;
+  return isParenthesizedRuntimeLabel(label) || NON_EDITABLE_RUNTIME_FUNCTIONS.has(label);
+}
+
+function normalizeFrameLabel(value: string | undefined): string {
+  return value?.trim() ?? '';
+}
+
+function isMissingFrameLabel(value: string): boolean {
+  return value.length === 0;
+}
+
+function isParenthesizedRuntimeLabel(value: string): boolean {
+  return value.startsWith('(') && value.endsWith(')');
+}
+
+function isAngleBracketRuntimeLabel(value: string): boolean {
+  return value.startsWith('<') && value.endsWith('>');
 }
 
 function isDependencyOrRuntimePath(file: string): boolean {
   return (
+    isDependencyPath(file) ||
     file.startsWith('node:') ||
     file.startsWith('native ') ||
-    file === 'native' ||
+    file === 'native'
+  );
+}
+
+function isDependencyPath(file: string): boolean {
+  return (
     file.includes('/node_modules/') ||
     file.includes('/pnpm-store/') ||
     file.includes('/.pnpm/') ||
