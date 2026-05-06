@@ -1,6 +1,4 @@
 import type {
-  AsyncCpuAttributionEntry,
-  AsyncHotFile,
   AsyncProfileReport,
   AsyncStackFrameReport,
   AsyncTopOperation,
