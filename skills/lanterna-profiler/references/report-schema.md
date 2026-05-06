@@ -2,7 +2,7 @@
 
 Use this only for targeted JSON field lookup after reading the agent report. For CPU-specific interpretation, see [cpu-profiling.md](cpu-profiling.md).
 
-For agent analysis, run `lanterna report <file> --format agent --output report.agent.md` first and read that output in skill order. Do not start with `--format text`, `--format markdown`, or raw JSON. The JSON paths below are a schema dictionary for targeted clarification only when the agent report omits a field you need. The agent format renders the contract sections: frontmatter, frontmatter, `## Findings` table, `## Finding N` blocks, `Findings.decision` column, `Kind Review`, and `Files To Read First`.
+For agent analysis, run `lanterna report <file> --format agent --output report.agent.md` first and read that output in skill order. Do not start with `--format text`, `--format markdown`, or raw JSON. The JSON paths below are a schema dictionary for targeted clarification only when the agent report omits a field you need. The agent format renders the contract sections: frontmatter, `## Findings` table, `## Finding N` blocks, `Findings.decision` column, `Kind Review`, `Files To Read First`, and `Next Steps`.
 
 ## Top-Level Shape
 
@@ -211,7 +211,7 @@ Rules:
 
 - Read the agent report's `Source` and `Generated fallback` before proposing code changes.
 - In agent reports, `## Findings` table may include `User caller: <fn> (<location>) [confidence, support X%]`. Use that location before dependency/runtime frames, but only treat high-confidence user callers as potentially actionable.
-- `Files To Read First` excludes `node_modules`, `node:`, pnpm store, and runtime locations unless an editable user-code `userCaller` location is available.
+- `Files To Read First` is a table of `location`, `reason`, `source`, `signal`, and `decision`. It excludes `node_modules`, `node:`, pnpm store, virtual source-map paths, pseudo-files, and runtime locations unless an editable user-code `userCaller` location is available. Generated output folders such as `dist/`, `build/`, `out/`, `.next/`, `.nuxt/`, `.svelte-kit/`, `.vite/`, and `coverage/` are rendered as `generated output fallback` with `decision = inspect-lead`, not `read-first`. Treat `read-first` as the source-reading queue, `inspect-lead` as a confirmation lead, and `supporting-context` as surrounding evidence. Reasons distinguish finding locations, dependency callers, runtime callers, CPU hotspots/stacks, memory allocators, and async leads such as `top async hot file`, `long async operation`, and `async CPU attribution`.
 - Use `confidence`, `proofLevel`, `measurements`, and `priority`, not severity alone.
 - Use `confidence`, `proofLevel`, `priority.actionConfidence`, `sourceMaps.coverage`, and `userCaller.confidence` together: high can be actionable; medium/low user callers are inspection leads; missing or unknown proof with non-high confidence means rerun.
 - Unknown categories are extension findings, not schema violations.

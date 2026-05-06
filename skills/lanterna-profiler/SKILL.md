@@ -83,11 +83,14 @@ degrading_caveats: ["..."]            # weaken signal but don't block
 - scalar context lines + nested tables for hotspots / allocators / operations / chains
 
 ## Files To Read First
-1. `<editable user file>`
-…
+| location | reason | source | signal | decision |
+| -------- | ------ | ------ | ------ | -------- |
+| src/auth.ts:42 | finding location | finding | 320ms | read-first |
+| src/routes.ts:18 | user caller for dependency hotspot | cpu | 37.5% self | inspect-lead |
 
-## Next Commands
-- `<rerun command>`  OR  _no rerun required by report signal_
+## Next Steps
+- The capture signal is sufficient; no rerun is required by this report.
+- Read the files listed in `## Files To Read First`, then validate the hot path.
 ```
 
 ## How to read it
@@ -104,8 +107,8 @@ Read in this order, every time:
    - `user_caller` is the closest user-code frame on the sampled path. Treat its `(confidence)` as gating: only `high` callers are direct patch locations; `medium`/`low` are inspection leads.
    - `location` line with `(fallback …)` shows the generated file as well — keep it visible when source-map coverage is low.
 4. **`## Kind Review — <kind>`** for every kind listed in frontmatter `kinds`, including reports with no findings. The Kind Review tables (hotspots, allocators, top_operations, hot_files, cpu_attribution) carry the broader picture even when no detector fired.
-5. **`## Files To Read First`.** Open these before suggesting changes. Read the cited functions; trace callers when the location is in `node_modules`, a Node builtin, or a native frame.
-6. **`## Next Commands`.** If non-empty, the report itself is asking for a better capture. Run those commands before patching.
+5. **`## Files To Read First`.** Open the table's `location` entries before suggesting changes. `decision = read-first` is the primary source-reading queue; `inspect-lead` needs confirmation before patching; `supporting-context` explains the surrounding path. Runtime, dependency, pnpm store, virtual source-map, and pseudo-frame locations are intentionally excluded unless there is an editable user-code `userCaller`. Generated output folders (`dist/`, `build/`, `.next/`, etc.) are `inspect-lead` fallbacks, not direct patch targets. Use `reason` and `signal` to understand whether the row came from a finding, dependency/runtime caller, CPU stack, memory allocator, or async lead.
+6. **`## Next Steps`.** Follow the checklist. If the signal is degraded or mostly idle, collect a new capture under representative load before patching. The agent renderer treats CPU idle ratio ≥ 90% as mostly idle. For `attach`, confirm the application workload before rerunning; do not invent an HTTP benchmark target.
 
 The report is self-contained. Consult the raw JSON only for a specific field that the agent report does not render (e.g. `meta.captureIntegrity.sourceMaps.failures[]`, full memory series, heap snapshot retainer paths). Never let JSON spelunking talk you into a stronger conclusion than the agent report supports.
 
@@ -136,6 +139,7 @@ Stop and ask, do not improvise, when:
 - skip a `## Kind Review — <kind>` section for a kind that appears in frontmatter `kinds`;
 - reorder findings by intuition instead of following the `## Findings` table;
 - patch when `decision` is `hypothesis` or `rerun`;
+- patch from a `Files To Read First` row whose `decision` is `inspect-lead` or `supporting-context` without confirming it in source;
 - treat `medium` or `low` `user_caller` confidence as a patch location;
 - claim event-loop causality when `degrading_caveats` includes `event-loop timing unavailable`;
 - quote a virtual `source.file` (`webpack://`, `vite:/…`) as a fix location without confirming the path resolves on disk — these are bundler labels, not files;

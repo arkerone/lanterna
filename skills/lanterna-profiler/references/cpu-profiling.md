@@ -14,7 +14,7 @@ Use this when interpreting the built-in CPU profile kind. The current built-in k
 
 ## Report Paths
 
-These are targeted JSON lookup paths. For analysis, read the agent report first and use its frontmatter, `## Findings` table, `## Finding N` blocks, `Findings.decision` column, `Kind Review`, and `Files To Read First` sections as the contract.
+These are targeted JSON lookup paths. For analysis, read the agent report first and use its frontmatter, `## Findings` table, `## Finding N` blocks, `Findings.decision` column, `Kind Review`, `Files To Read First`, and `Next Steps` sections as the contract.
 
 - `profiles.cpu.summary`: on-CPU ratio, idle ratio, category ratios, top user hotspot.
 - `profiles.cpu.hotspots[]`: aggregated frames by `(file, function, line)`.
@@ -43,7 +43,7 @@ Before prescribing, check the report frontmatter. If it omits a needed CPU detai
 - `meta.captureIntegrity.heartbeatDropped`
 - `meta.captureIntegrity.kinds.cpu.samplesTimed`
 
-When the needed signal is degraded, say so explicitly and avoid strong causal language.
+When the needed signal is degraded, say so explicitly and avoid strong causal language. If the agent frontmatter reports `CPU profile mostly idle (...)`, follow `## Next Steps` and rerun under representative load before treating CPU hotspots as representative. The agent renderer emits this caveat at CPU idle ratio ≥ 90%.
 
 ## Event Loop
 
@@ -89,8 +89,10 @@ Every CPU frame may carry an optional `source` object resolved from a source map
 1. Read agent frontmatter and frontmatter.
 2. Summarize actionable findings from `## Findings` table, `## Finding N` blocks, and `Findings.decision` column.
 3. Use `## Kind Review` for top user-relevant hotspots, even when no detector fired.
-4. Summarize GC only when pauses or ratios are materially high and supported by the agent report or a targeted JSON lookup.
-5. Summarize event-loop impact only when signal quality supports it.
-6. Surface deopts only when shown by the report or confirmed via targeted JSON lookup.
+4. Use `## Files To Read First` as a table, not a plain list: `read-first` rows are the source-reading queue, `inspect-lead` rows need confirmation, and `supporting-context` rows explain the sampled stack. Generated output fallbacks (`dist/`, `build/`, `.next/`, etc.) are `inspect-lead` rows until resolved back to editable source.
+5. Follow `## Next Steps` before patching when the report asks for a better capture.
+6. Summarize GC only when pauses or ratios are materially high and supported by the agent report or a targeted JSON lookup.
+7. Summarize event-loop impact only when signal quality supports it.
+8. Surface deopts only when shown by the report or confirmed via targeted JSON lookup.
 
 If `## Findings` table has no findings, say that clearly and explain what `Kind Review` suggests instead.

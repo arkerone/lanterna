@@ -2,7 +2,7 @@
 
 Use this when answering from a Lanterna report. Keep the answer source-backed and only include sections supported by the agent report's frontmatter kinds.
 
-When creating an issue or PR summary from a report, start with `lanterna report <file> --format agent --output report.agent.md`. Read frontmatter -> `## Findings` table -> `## Finding N` blocks -> `## Kind Review` -> `## Files To Read First`, then read implicated source files before writing source-backed conclusions. Do not start from raw JSON; use JSON only for a targeted field missing from the agent report.
+When creating an issue or PR summary from a report, start with `lanterna report <file> --format agent --output report.agent.md`. Read frontmatter -> `## Findings` table -> `## Finding N` blocks -> `## Kind Review` -> `## Files To Read First` -> `## Next Steps`, then read implicated source files before writing source-backed conclusions. Do not start from raw JSON; use JSON only for a targeted field missing from the agent report.
 
 ## Recommended Shape
 
@@ -49,7 +49,7 @@ Use the `## Kind Review` section. Include only kinds present in frontmatter.
 - Do not include CPU sections unless the agent frontmatter section lists `cpu`.
 - Do not include memory sections unless the agent frontmatter section lists `memory`.
 - Do not include async sections unless the agent frontmatter section lists `async`.
-- Do not patch from a finding alone. Read the cited source first.
+- Do not patch from a finding alone. Read `Files To Read First` rows with `decision = read-first` first; confirm `inspect-lead` rows before editing.
 
 ## Short Form
 

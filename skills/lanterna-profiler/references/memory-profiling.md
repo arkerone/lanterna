@@ -33,7 +33,8 @@ Start from the agent report, not from JSON:
 1. frontmatter — memory usage availability, heap snapshot warnings, integrity and source-map caveats.
 2. `## Findings` table / `## Finding N` blocks / `Findings.decision` column — memory findings, proof level, measurements, and actionability.
 3. `Kind Review` -> `memory` — memory usage, top allocator, hot allocators, user callers, and heap snapshot summary.
-4. `Files To Read First` — editable source locations to inspect before proposing patches.
+4. `Files To Read First` — table of editable source locations to inspect before proposing patches. `read-first` rows are the primary queue; `inspect-lead` rows need confirmation; `supporting-context` rows provide surrounding evidence.
+5. `Next Steps` — rerun guidance when the report signal is degraded, mostly idle, or missing representative workload.
 
 Use the JSON shape below only when the agent report does not render a memory field you need to clarify.
 
@@ -112,7 +113,7 @@ Targeted lookup order after the agent report:
 4. `memoryUsage.firstSample` / `lastSample` — quick endpoints. Re-run with `--include-memory-samples` only when the slope alone is ambiguous and you need the full curve (e.g. step changes vs. steady growth).
 5. `heapSnapshotAnalysis` — present only with `--heap-snapshot-analysis`. Treat `available: false` plus `warnings[]` as a graceful degradation; the normal memory report still applies. Use `growthByConstructor[]` to identify growing object families and `retainerPaths[]` to inspect likely retainers. Heuristic labels are clues, not proof.
 
-`selfBytes` is bytes attributed exclusively to the frame; `totalBytes` includes its callees. Treat node\_modules / builtin frames as **symptoms**, not root causes — open the user-code caller first.
+`selfBytes` is bytes attributed exclusively to the frame; `totalBytes` includes its callees. Treat node\_modules / builtin frames as **symptoms**, not root causes — open the user-code caller first. In the agent report, `Files To Read First.reason` distinguishes allocator frames, dependency callers, runtime callers, generated output fallbacks, and supporting context. Pseudo/runtime allocator rows are filtered out of Kind Review tables unless an editable user caller can anchor the work.
 
 ## Source Positions
 
