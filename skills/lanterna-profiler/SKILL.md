@@ -108,8 +108,10 @@ Stop and ask instead of diagnosing when:
 - the report has blocking caveats;
 - the capture is mostly idle or the chosen workload is non-representative for the symptom;
 - the user asks for a patch but the relevant source files have not been read;
-- the finding is only `hypothesis` or `rerun`;
+- the finding is only `rerun` (no further diagnosis is possible without a better capture);
 - source-map locations are virtual or generated and no editable source has been confirmed.
+
+`hypothesis` is **not** a stop condition. When a finding is `hypothesis`, do not ship a patch or claim a definitive root cause, but do continue the investigation: read the cited source, follow the `user_caller`, request the missing measurement (`--kind memory`, longer duration, etc.), and report the smallest test that would confirm or falsify the lead. Stop only on `rerun` and the other clauses above.
 
 ## References
 

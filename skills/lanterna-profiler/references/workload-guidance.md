@@ -24,10 +24,11 @@ Simple GET:
 npx -y autocannon -c 50 -d 30 http://localhost:3000/api/search?q=test
 ```
 
-Bearer token and JSON body:
+Bearer token and JSON body. Export `TOKEN` on its own line first so the parent shell can expand `$TOKEN` inside header arguments — an inline `TOKEN=<value> npx ...` only sets the variable for the child process, after the parent has already expanded the literal `$TOKEN`:
 
 ```bash
-TOKEN=<token> npx -y autocannon -c 25 -d 30 \
+export TOKEN=<token>
+npx -y autocannon -c 25 -d 30 \
   -m POST \
   -H "authorization: Bearer $TOKEN" \
   -H "content-type: application/json" \
@@ -35,12 +36,13 @@ TOKEN=<token> npx -y autocannon -c 25 -d 30 \
   http://localhost:3000/api/search
 ```
 
-Lanterna with autocannon (two-step capture + render; set `$LANTERNA` per the SKILL prefix block):
+Lanterna with autocannon (two-step capture + render; set `$LANTERNA` per the SKILL prefix block, and export `TOKEN` first for the same reason):
 
 ```bash
 LANTERNA="$(command -v lanterna >/dev/null 2>&1 && echo lanterna || echo 'npx -y @lanterna-profiler/cli')"
-TOKEN=<token> $LANTERNA run --duration 30s --wait-for-url http://localhost:3000/health \
-  --workload 'npx -y autocannon -c 25 -d 30 -H "authorization: Bearer '"$TOKEN"'" http://localhost:3000/api/search?q=test' \
+export TOKEN=<token>
+$LANTERNA run --duration 30s --wait-for-url http://localhost:3000/health \
+  --workload "npx -y autocannon -c 25 -d 30 -H 'authorization: Bearer $TOKEN' http://localhost:3000/api/search?q=test" \
   --format json --output report.json -- node server.js
 $LANTERNA report report.json --format agent --output report.agent.md
 ```
@@ -73,10 +75,11 @@ scenarios:
             limit: 50
 ```
 
-Lanterna with artillery (two-step capture + render; reuse `$LANTERNA` from the autocannon snippet above or re-run the prefix line):
+Lanterna with artillery (two-step capture + render; reuse `$LANTERNA` from the autocannon snippet above or re-run the prefix line; export `TOKEN` first so artillery's `{{ $processEnvironment.TOKEN }}` resolves):
 
 ```bash
-TOKEN=<token> $LANTERNA run --duration 35s --wait-for-url http://localhost:3000/health \
+export TOKEN=<token>
+$LANTERNA run --duration 35s --wait-for-url http://localhost:3000/health \
   --workload "npx -y artillery run load.yml" \
   --format json --output report.json -- node server.js
 $LANTERNA report report.json --format agent --output report.agent.md
