@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { renderReport } from '../src/renderers/index.js';
 
@@ -588,11 +589,30 @@ describe('renderReport', () => {
     expect(output).toContain('## Kind Review — memory');
     expect(output).toContain('- memory_usage: 8 samples every 250ms');
     expect(output).toContain('## Files To Read First');
-    expect(output).toContain('1. `src/cache.ts`');
-    expect(output).toContain('2. `/repo/dist/hot.js`');
-    expect(output).toContain('3. `src/worker.ts`');
-    expect(output).toContain('## Next Commands');
-    expect(output).toContain('lanterna run --duration 5s --output report.json -- node server.js');
+    const filesSection = sectionText(output, 'Files To Read First');
+    expect(filesSection).toContain('| location');
+    expect(filesSection).toMatch(
+      /\| src\/cache\.ts:21 +\| finding location +\| finding \| 12ms +\| read-first +\|/,
+    );
+    expect(filesSection).toMatch(
+      /\| \/repo\/dist\/hot\.js:3 +\| generated output fallback \| finding \| 12\.0% self \| inspect-lead \|/,
+    );
+    expect(filesSection).toMatch(
+      /\| src\/worker\.ts:31 +\| finding location +\| finding \| 8\.00% self \| inspect-lead \|/,
+    );
+    expect(output).toContain('## Next Steps');
+    expect(output).toContain(
+      '- Signal is degraded; collect a new capture under representative load before patching from this report.',
+    );
+    expect(output).toContain(
+      '- Rerun Lanterna: `lanterna run --duration 5s --output report.json -- node server.js`',
+    );
+    expect(output).toContain(
+      '- Confirm the readiness URL and representative workload before rerunning if this command starts an HTTP server.',
+    );
+    expect(output).toContain(
+      '- After capture, render the agent report: `lanterna report report.json --format agent --output report.agent.md`',
+    );
     expect(output).not.toContain('## Kind Review — async');
   });
 
@@ -621,7 +641,13 @@ describe('renderReport', () => {
 
     expect(output).toContain('## Findings\n\n_no findings_');
     expect(output).toContain('## Kind Review — cpu');
-    expect(output).toContain('## Next Commands\n\n_no rerun required by report signal_');
+    expect(output).toContain('## Next Steps');
+    expect(output).toContain(
+      '- The capture signal is sufficient; no rerun is required by this report.',
+    );
+    expect(output).toContain(
+      '- Read the files listed in `## Files To Read First`, then validate the hot path against the finding details and Kind Review tables.',
+    );
     expect(output).not.toContain('## Kind Review — memory');
     expect(output).not.toContain('## Kind Review — async');
   });
@@ -953,10 +979,11 @@ describe('renderReport', () => {
       '- top_async_hot_file: loadUsers at src/users.ts:27 — user_caller route at src/routes.ts:11 (high, async-stack, support 85.0%)',
     );
     expect(output).toMatch(/\| 1 \| promise +\|.*src\/routes\.ts:11 \(medium\)/);
-    expect(output).toContain('1. `src/server.ts`');
-    expect(output).toContain('2. `src/cache.ts`');
-    expect(output).toContain('3. `src/users.ts`');
-    expect(output).toContain('4. `src/routes.ts`');
+    const filesSection = sectionText(output, 'Files To Read First');
+    expect(filesSection).toMatch(/\| src\/server\.ts:42 \| user caller for dependency hotspot/);
+    expect(filesSection).toMatch(/\| src\/cache\.ts:18 +\| memory allocator/);
+    expect(filesSection).toMatch(/\| src\/users\.ts:27 +\| top async hot file/);
+    expect(filesSection).toMatch(/\| src\/routes\.ts:11 \| top async hot file caller/);
   });
 
   it('renders async top operation user callers as inspection targets', () => {
@@ -1046,8 +1073,9 @@ describe('renderReport', () => {
     expect(output).toMatch(
       /\| 1 \| tcp +\| 42 +\| \/repo\/node_modules\/mongodb\/lib\/cmap\/connection\.js:255 \| 1200 +\| src\/users\.ts:27 \(high\) \|/,
     );
-    expect(output).toContain('1. `src/users.ts`');
-    expect(output).not.toContain('1. `/repo/node_modules/mongodb/lib/cmap/connection.js`');
+    const filesSection = sectionText(output, 'Files To Read First');
+    expect(filesSection).toMatch(/\| src\/users\.ts:27 \| long async operation caller/);
+    expect(filesSection).not.toContain('/repo/node_modules/mongodb/lib/cmap/connection.js');
   });
 
   it('keeps custom profile kinds generic in agent kind review', () => {
@@ -1134,10 +1162,9 @@ describe('renderReport', () => {
     );
 
     expect(output).toContain('- top_user_hotspot: handler at webpack://app/src/server.ts:42');
-    expect(output).toContain(
-      '_no editable user source files identified from findings or aggregates_',
-    );
-    expect(output).not.toContain('1. `webpack://app/src/server.ts`');
+    const filesSection = sectionText(output, 'Files To Read First');
+    expect(filesSection).toContain('/repo/dist/server.js:12');
+    expect(filesSection).not.toContain('webpack://app/src/server.ts:42');
   });
 
   it('does not list dependency frames as files to patch in agent reports', () => {
@@ -1181,7 +1208,7 @@ describe('renderReport', () => {
     expect(output).toContain(
       '_no editable user source files identified from findings or aggregates_',
     );
-    expect(output).not.toContain(`1. \`${dependencyFile}\``);
+    expect(sectionText(output, 'Files To Read First')).not.toContain(dependencyFile);
   });
 
   it('uses high-confidence user callers as agent inspection targets for external findings', () => {
@@ -1235,8 +1262,10 @@ describe('renderReport', () => {
       '- user_caller: handleRequest at src/app.ts:44 (high, cpu-sample-path, support 92.0%)',
     );
     expect(output).toMatch(/\| 1 +\| f1 +\|.*\| actionable +\|/);
-    expect(output).toContain('1. `src/app.ts`');
-    expect(output).not.toContain(`1. \`${dependencyFile}\``);
+    expect(output).toContain(
+      '| src/app.ts:44 | user caller for dependency hotspot | finding | 37.5% self | read-first |',
+    );
+    expect(sectionText(output, 'Files To Read First')).not.toContain(dependencyFile);
   });
 
   it('keeps medium-confidence user callers as agent inspection leads', () => {
@@ -1288,5 +1317,871 @@ describe('renderReport', () => {
       '- user_caller: handleRequest at /repo/src/app.js:22 (medium, async-cpu-window, support 70.0%)',
     );
     expect(output).toMatch(/\| 1 +\| f1 +\|.*\| hypothesis +\|/);
+    expect(output).toContain(
+      '| /repo/src/app.js:22 | user caller for dependency hotspot | finding | 37.5% self | inspect-lead |',
+    );
+  });
+
+  it('labels user callers for runtime hotspots separately from dependency hotspots', () => {
+    const output = renderReport(
+      {
+        meta: baseMeta,
+        profiles: {},
+        findings: [
+          {
+            id: 'f1',
+            profileKind: 'cpu',
+            severity: 'warning',
+            category: 'blocking-io:fs.readFileSync',
+            title: 'Sync IO on hot path',
+            evidence: {
+              file: 'node:fs',
+              line: 1,
+              function: 'readFileSync',
+              selfPct: 18,
+              extra: {
+                proofLevel: 'direct-sample',
+                userCaller: {
+                  function: 'loadConfig',
+                  file: '/repo/src/config.js',
+                  line: 8,
+                  profilePct: 18,
+                  supportPct: 95,
+                  confidence: 'high',
+                  basis: 'cpu-sample-path',
+                },
+              },
+            },
+            priority: { score: 90, actionConfidence: 'high' },
+            confidence: 'high',
+            proofLevel: 'direct-sample',
+            why: 'Synchronous IO blocked the main thread.',
+            suggestion: 'Move IO out of the hot path.',
+            references: [],
+          },
+        ],
+      },
+      { format: 'agent' },
+    );
+
+    expect(sectionText(output, 'Files To Read First')).toContain(
+      '| /repo/src/config.js:8 | user caller for runtime hotspot | finding | 18.0% self | read-first |',
+    );
+  });
+
+  it('filters pseudo runtime frames out of agent read targets', () => {
+    const output = renderReport(
+      {
+        meta: baseMeta,
+        profiles: {
+          cpu: {
+            quality: {
+              confidence: 'high',
+              sampleCount: 100,
+              durationMs: 1500,
+              idleRatio: 0.3,
+              samplesTimed: true,
+              durationBasis: 'timeDeltas',
+              reasons: [],
+              recommendations: [],
+            },
+            summary: {
+              totalCpuMs: 120,
+              onCpuRatio: 0.7,
+              userCodeRatio: 0.4,
+              nodeModulesRatio: 0.1,
+              builtinRatio: 0,
+              nativeRatio: 0,
+              gcRatio: 0.02,
+              idleRatio: 0.3,
+              topCategory: 'user',
+              dominantBlockingKind: null,
+              topUserHotspot: {
+                id: 'h1',
+                function: '(program)',
+                file: '(program)',
+                line: 0,
+                selfPct: 30,
+                totalPct: 30,
+              },
+            },
+            hotspots: [
+              {
+                id: 'idle',
+                function: '(idle)',
+                file: '(idle)',
+                line: 0,
+                column: 0,
+                category: 'idle',
+                selfMs: 20,
+                selfPct: 20,
+                totalMs: 20,
+                totalPct: 20,
+                callers: [],
+                callees: [],
+                optimizationState: 'unknown',
+              },
+              {
+                id: 'microtasks',
+                function: 'runMicrotasks',
+                file: '',
+                line: 0,
+                column: 0,
+                category: 'runtime',
+                selfMs: 15,
+                selfPct: 15,
+                totalMs: 15,
+                totalPct: 15,
+                callers: [],
+                callees: [],
+                optimizationState: 'unknown',
+              },
+            ],
+            hotStacks: [
+              {
+                weightPct: 25,
+                frames: [
+                  { function: '(garbage collector)', file: '(garbage collector)', line: 0 },
+                  { function: 'writeBuffer', file: 'node:internal/streams/writable', line: 300 },
+                  { function: 'handler', file: '/repo/src/server.js', line: 12 },
+                ],
+              },
+            ],
+            hotStackClusters: [],
+            gc: {
+              totalPauseMs: 0,
+              count: { scavenge: 0, markSweep: 0, incremental: 0, other: 0 },
+              longestPauseMs: 0,
+              pausesOver10ms: [],
+            },
+            eventLoop: {
+              maxLagMs: 0,
+              p99LagMs: 0,
+              p50LagMs: 0,
+              meanLagMs: 0,
+              sampleCount: 0,
+              stallIntervals: [],
+              available: true,
+              measurementBasis: 'histogram',
+              confidence: 'high',
+            },
+            deopts: [],
+          },
+        },
+        findings: [],
+      },
+      { format: 'agent' },
+    );
+
+    const filesSection = sectionText(output, 'Files To Read First');
+    const kindReviewSection = sectionText(output, 'Kind Review — cpu');
+    expect(filesSection).toMatch(/\| \/repo\/src\/server\.js:12 \| hot stack cluster/);
+    expect(filesSection).not.toContain('(idle):0');
+    expect(filesSection).not.toContain('(program):0');
+    expect(filesSection).not.toContain('(garbage collector):0');
+    expect(filesSection).not.toContain('node:internal/streams/writable:300');
+    expect(kindReviewSection).not.toContain('(idle):0');
+    expect(kindReviewSection).not.toContain('(program):0');
+    expect(kindReviewSection).not.toContain('(garbage collector):0');
+    expect(kindReviewSection).toContain('handler');
+  });
+
+  it('recommends a representative-load rerun for mostly idle captures even when CPU confidence is high', () => {
+    const output = renderReport(
+      {
+        meta: baseMeta,
+        profiles: {
+          cpu: {
+            quality: {
+              confidence: 'high',
+              sampleCount: 400,
+              durationMs: 5000,
+              idleRatio: 0.92,
+              samplesTimed: true,
+              durationBasis: 'timeDeltas',
+              reasons: [],
+              recommendations: [],
+            },
+            summary: {
+              totalCpuMs: 40,
+              onCpuRatio: 0.08,
+              userCodeRatio: 0.02,
+              nodeModulesRatio: 0,
+              builtinRatio: 0,
+              nativeRatio: 0,
+              gcRatio: 0,
+              idleRatio: 0.92,
+              topCategory: 'idle',
+              dominantBlockingKind: null,
+            },
+          },
+        },
+        findings: [],
+      },
+      { format: 'agent' },
+    );
+
+    expect(output).toContain('degrading_caveats: ["CPU profile mostly idle (92.0%)"]');
+    expect(output).toContain('## Next Steps');
+    expect(output).toContain(
+      '- Signal is degraded; collect a new capture under representative load before patching from this report.',
+    );
+  });
+
+  it('renders specific async read-target reasons and signals', () => {
+    const output = renderReport(
+      {
+        meta: { ...baseMeta, profileKinds: ['async'] },
+        profiles: {
+          async: {
+            summary: {
+              available: true,
+              collectedVia: 'async-hooks',
+              totalOperations: 1,
+              byKind: { promise: 1 },
+              orphanCount: 0,
+              recordsDropped: 0,
+              topAsyncHotFile: {
+                function: 'loadUsers',
+                file: '/repo/dist/users.js',
+                line: 9,
+                source: { file: 'src/users.ts', line: 27 },
+                score: 80,
+                confidence: 'high',
+              },
+            },
+            quality: {
+              confidence: 'high',
+              instrumentationMode: 'safe',
+              attachPartialCapture: false,
+              operationCount: 1,
+              sampledStackRatio: 1,
+              initStackCoverageRatio: 1,
+              cdpAsyncStackCoverageRatio: 0,
+              recordsDropped: 0,
+              maxRecords: 10000,
+              runWindowCount: 1,
+              cpuAttributionCoveragePct: 60,
+              cpuAmbiguousSamples: 0,
+              clockSyncUncertaintyMs: 1,
+              reasons: [],
+              recommendations: [],
+            },
+            hotFiles: [
+              {
+                file: '/repo/dist/users.js',
+                score: 80,
+                confidence: 'high',
+                primaryFrame: {
+                  function: 'loadUsers',
+                  file: '/repo/dist/users.js',
+                  line: 9,
+                  source: { file: 'src/users.ts', line: 27 },
+                },
+                operationCount: 5,
+                totalDurationMs: 1200,
+                orphanCount: 0,
+                maxOrphanAgeMs: 0,
+                maxChainDepth: 2,
+                cpuPct: 22,
+                runMs: 90,
+                kindBreakdown: { promise: 5 },
+                sampleAsyncIds: [1],
+              },
+            ],
+            topOperations: [
+              {
+                asyncId: 1,
+                kind: 'promise',
+                rawType: 'PROMISE',
+                durationMs: 1200,
+                runMs: 90,
+                runCount: 1,
+                initAtMs: 0,
+                triggerAsyncId: 0,
+                orphan: false,
+                primaryFrame: {
+                  function: 'loadUsers',
+                  file: '/repo/dist/users.js',
+                  line: 9,
+                  source: { file: 'src/users.ts', line: 27 },
+                },
+                initStack: [],
+              },
+            ],
+            chains: [],
+            orphans: [],
+            concurrencyTimeline: [],
+            filteredCounts: {},
+            cdpAsyncContexts: [],
+            cpuAttribution: {
+              available: true,
+              attributedCpuPct: 22,
+              totalCpuMs: 90,
+              cpuAttributedSamples: 9,
+              cpuAmbiguousSamples: 0,
+              clockSyncUncertaintyMs: 1,
+              topChains: [
+                {
+                  rootAsyncId: 1,
+                  rootKind: 'promise',
+                  cpuPct: 22,
+                  cpuMs: 90,
+                  contributingOperations: 1,
+                  executionFrame: {
+                    function: 'serializeUsers',
+                    file: '/repo/dist/serializer.js',
+                    line: 14,
+                    source: { file: 'src/serializer.ts', line: 31 },
+                  },
+                },
+              ],
+            },
+          },
+        },
+        findings: [],
+      },
+      { format: 'agent' },
+    );
+
+    const filesSection = sectionText(output, 'Files To Read First');
+    expect(filesSection).toMatch(
+      /\| src\/users\.ts:27 +\| top async hot file +\| async +\| score 80 +\| inspect-lead \|/,
+    );
+    expect(filesSection).toMatch(
+      /\| src\/serializer\.ts:31 \| async CPU attribution \| async +\| 22\.0% CPU \| inspect-lead \|/,
+    );
+  });
+
+  it('keeps the agent read-target table ordered, deduplicated, and capped', () => {
+    const findings = Array.from({ length: 12 }, (_, index) => ({
+      id: `f${index}`,
+      profileKind: 'cpu',
+      severity: 'warning' as const,
+      category: 'cpu-hotspot',
+      title: `Hot function ${index}`,
+      evidence: {
+        file: index === 0 ? '/repo/src/shared.js' : `/repo/src/file-${index}.js`,
+        line: index === 0 ? 10 : index + 10,
+        function: `hot${index}`,
+        selfPct: 30 - index,
+      },
+      priority: {
+        score: 100 - index,
+        actionConfidence: index === 1 ? ('low' as const) : ('high' as const),
+      },
+      confidence: index === 1 ? ('low' as const) : ('high' as const),
+      proofLevel: index === 1 ? 'trace-only' : 'direct-sample',
+      why: 'CPU was sampled here.',
+      suggestion: 'Inspect the source.',
+      references: [],
+    }));
+
+    const output = renderReport(
+      {
+        meta: baseMeta,
+        profiles: {
+          cpu: {
+            quality: {
+              confidence: 'high',
+              sampleCount: 300,
+              durationMs: 5000,
+              idleRatio: 0.2,
+              samplesTimed: true,
+              durationBasis: 'timeDeltas',
+              reasons: [],
+              recommendations: [],
+            },
+            summary: {
+              totalCpuMs: 300,
+              onCpuRatio: 0.8,
+              userCodeRatio: 0.7,
+              nodeModulesRatio: 0,
+              builtinRatio: 0,
+              nativeRatio: 0,
+              gcRatio: 0,
+              idleRatio: 0.2,
+              topCategory: 'user',
+              dominantBlockingKind: null,
+              topUserHotspot: {
+                id: 'shared',
+                function: 'shared',
+                file: '/repo/src/shared.js',
+                line: 10,
+                selfPct: 5,
+                totalPct: 5,
+              },
+            },
+            hotspots: [],
+            hotStacks: [],
+            deopts: [],
+          },
+        },
+        findings,
+      },
+      { format: 'agent' },
+    );
+
+    const filesSection = sectionText(output, 'Files To Read First');
+    expect(tableBodyRows(filesSection)).toHaveLength(10);
+    expect(filesSection.match(/\/repo\/src\/shared\.js:10/g)).toHaveLength(1);
+    expect(tableBodyRows(filesSection)[0]).toContain('/repo/src/shared.js:10');
+    expect(tableBodyRows(filesSection)[0]).toContain('read-first');
+    expect(filesSection).not.toContain('/repo/src/file-1.js:11');
+    expect(filesSection).not.toContain('/repo/src/file-11.js:21');
+  });
+
+  it('keeps generated output fallbacks as inspection leads instead of read-first targets', () => {
+    const output = renderReport(
+      {
+        meta: baseMeta,
+        profiles: {},
+        findings: [
+          {
+            id: 'f1',
+            profileKind: 'cpu',
+            severity: 'warning',
+            category: 'cpu-hotspot',
+            title: 'Generated bundle is hot',
+            evidence: {
+              file: '/repo/dist/server.js',
+              line: 40,
+              function: 'handler',
+              selfPct: 22,
+              source: { file: 'webpack://app/src/server.ts', line: 12 },
+            },
+            priority: { score: 90, actionConfidence: 'high' },
+            confidence: 'high',
+            proofLevel: 'direct-sample',
+            why: 'The generated bundle frame was hot.',
+            suggestion: 'Resolve the original source before editing.',
+            references: [],
+          },
+        ],
+      },
+      { format: 'agent' },
+    );
+
+    expect(sectionText(output, 'Files To Read First')).toContain(
+      '| /repo/dist/server.js:40 | generated output fallback | finding | 22.0% self | inspect-lead |',
+    );
+    expect(sectionText(output, 'Files To Read First')).not.toContain('webpack://app/src/server.ts');
+  });
+
+  it('filters pseudo runtime frames from memory and async kind review tables', () => {
+    const output = renderReport(
+      {
+        meta: { ...baseMeta, profileKinds: ['memory', 'async'] },
+        profiles: {
+          memory: {
+            summary: {
+              totalSampledBytes: 4096,
+              samplingIntervalBytes: 524288,
+              topAllocator: {
+                function: '(garbage collector)',
+                file: '(garbage collector)',
+                line: 0,
+                selfPct: 60,
+                totalPct: 60,
+              },
+            },
+            hotAllocators: [
+              {
+                id: 'runtime',
+                function: '(program)',
+                file: '(program)',
+                line: 0,
+                column: 0,
+                category: 'runtime',
+                selfBytes: 2048,
+                selfPct: 50,
+                totalBytes: 2048,
+                totalPct: 50,
+              },
+              {
+                id: 'user',
+                function: 'allocate',
+                file: '/repo/src/cache.js',
+                line: 7,
+                column: 1,
+                category: 'user',
+                selfBytes: 1024,
+                selfPct: 25,
+                totalBytes: 1024,
+                totalPct: 25,
+              },
+            ],
+            memoryUsage: {
+              available: true,
+              sampleIntervalMs: 250,
+              sampleCount: 4,
+            },
+          },
+          async: {
+            summary: {
+              available: true,
+              collectedVia: 'async-hooks',
+              totalOperations: 2,
+              byKind: { promise: 2 },
+              orphanCount: 0,
+              recordsDropped: 0,
+              topAsyncHotFile: {
+                function: '(program)',
+                file: '(program)',
+                line: 0,
+                score: 80,
+                confidence: 'high',
+              },
+            },
+            quality: {
+              confidence: 'high',
+              instrumentationMode: 'safe',
+              attachPartialCapture: false,
+              operationCount: 2,
+              sampledStackRatio: 1,
+              initStackCoverageRatio: 1,
+              cdpAsyncStackCoverageRatio: 0,
+              recordsDropped: 0,
+              maxRecords: 10000,
+              runWindowCount: 1,
+              cpuAttributionCoveragePct: 0,
+              cpuAmbiguousSamples: 0,
+              clockSyncUncertaintyMs: 1,
+              reasons: [],
+              recommendations: [],
+            },
+            topOperations: [
+              {
+                asyncId: 1,
+                kind: 'promise',
+                rawType: 'PROMISE',
+                durationMs: 100,
+                runMs: 1,
+                runCount: 1,
+                initAtMs: 0,
+                triggerAsyncId: 0,
+                orphan: false,
+                primaryFrame: { function: 'runMicrotasks', file: '', line: 0 },
+                initStack: [],
+              },
+              {
+                asyncId: 2,
+                kind: 'promise',
+                rawType: 'PROMISE',
+                durationMs: 200,
+                runMs: 2,
+                runCount: 1,
+                initAtMs: 0,
+                triggerAsyncId: 0,
+                orphan: false,
+                primaryFrame: { function: 'loadUsers', file: '/repo/src/users.js', line: 20 },
+                initStack: [],
+              },
+            ],
+            hotFiles: [],
+            chains: [],
+            orphans: [],
+            concurrencyTimeline: [],
+            filteredCounts: {},
+            cdpAsyncContexts: [],
+            cpuAttribution: {
+              available: false,
+              reason: 'cpu kind absent',
+              attributedCpuPct: 0,
+              totalCpuMs: 0,
+              cpuAttributedSamples: 0,
+              cpuAmbiguousSamples: 0,
+              clockSyncUncertaintyMs: 1,
+              topChains: [],
+            },
+          },
+        },
+        findings: [],
+      },
+      { format: 'agent' },
+    );
+
+    expect(sectionText(output, 'Kind Review — memory')).not.toContain('(program):0');
+    expect(sectionText(output, 'Kind Review — memory')).not.toContain('(garbage collector):0');
+    expect(sectionText(output, 'Kind Review — memory')).toContain('/repo/src/cache.js:7');
+    expect(sectionText(output, 'Kind Review — async')).not.toContain('(program):0');
+    expect(sectionText(output, 'Kind Review — async')).not.toContain('runMicrotasks');
+    expect(sectionText(output, 'Kind Review — async')).toContain('/repo/src/users.js:20');
+  });
+
+  it('matches the full agent markdown example fixture', () => {
+    const output = renderReport(agentFixtureReport(), { format: 'agent' });
+    const expected = readFileSync(new URL('./fixtures/report.agent.md', import.meta.url), 'utf8');
+    const docsExample = readFileSync(
+      new URL('../../../docs/examples/report.agent.md', import.meta.url),
+      'utf8',
+    );
+
+    expect(output).toBe(expected);
+    expect(docsExample).toBe(expected);
+  });
+
+  it('asks attach users to confirm representative workload instead of inventing HTTP load', () => {
+    const output = renderReport(
+      {
+        meta: { ...baseMeta, mode: 'attach', command: undefined, pid: 4242 },
+        profiles: {
+          cpu: {
+            quality: {
+              confidence: 'low',
+              sampleCount: 20,
+              durationMs: 1000,
+              idleRatio: 0.95,
+              samplesTimed: true,
+              durationBasis: 'timeDeltas',
+              reasons: ['profile mostly idle'],
+              recommendations: [],
+            },
+          },
+        },
+        findings: [],
+      },
+      { format: 'agent' },
+    );
+
+    expect(output).toContain('## Next Steps');
+    expect(output).toContain(
+      '- Confirm the representative application workload before rerunning an attach capture; do not infer an HTTP benchmark target from this report.',
+    );
+    expect(output).toContain(
+      '- Rerun Lanterna: `lanterna attach --pid 4242 --duration 5s --output report.json`',
+    );
+    expect(output).toContain(
+      '- After capture, render the agent report: `lanterna report report.json --format agent --output report.agent.md`',
+    );
+    expect(output).not.toContain('autocannon');
   });
 });
+
+function sectionText(output: string, title: string): string {
+  const start = output.indexOf(`## ${title}`);
+  if (start === -1) return '';
+  const next = output.indexOf('\n## ', start + 1);
+  return next === -1 ? output.slice(start) : output.slice(start, next);
+}
+
+function tableBodyRows(section: string): string[] {
+  return section
+    .split('\n')
+    .filter(
+      (line) => line.startsWith('| ') && !line.includes('---') && !line.startsWith('| location'),
+    );
+}
+
+function agentFixtureReport() {
+  return {
+    meta: {
+      ...baseMeta,
+      durationMs: 5000,
+      profileKinds: ['cpu', 'memory', 'async'],
+      captureIntegrity: {
+        ...baseMeta.captureIntegrity,
+        sourceMaps: {
+          enabled: true,
+          framesResolved: 3,
+          framesUnresolved: 1,
+          coverage: 0.75,
+          mapsLoaded: 1,
+          failures: [],
+        },
+      },
+    },
+    profiles: {
+      cpu: {
+        quality: {
+          confidence: 'high',
+          sampleCount: 300,
+          durationMs: 5000,
+          idleRatio: 0.25,
+          samplesTimed: true,
+          durationBasis: 'timeDeltas',
+          reasons: [],
+          recommendations: [],
+        },
+        summary: {
+          totalCpuMs: 300,
+          onCpuRatio: 0.75,
+          userCodeRatio: 0.45,
+          nodeModulesRatio: 0.2,
+          builtinRatio: 0,
+          nativeRatio: 0,
+          gcRatio: 0.05,
+          idleRatio: 0.25,
+          topCategory: 'node_modules',
+          dominantBlockingKind: null,
+          topUserHotspot: {
+            id: 'handler',
+            function: 'handleRequest',
+            file: '/repo/dist/server.js',
+            line: 12,
+            source: { file: 'src/server.ts', line: 42 },
+            selfPct: 18,
+            totalPct: 30,
+          },
+        },
+        hotspots: [
+          {
+            id: 'dep',
+            function: 'parsePayload',
+            file: '/repo/node_modules/pkg/index.js',
+            line: 8,
+            column: 1,
+            category: 'node_modules',
+            selfMs: 120,
+            selfPct: 24,
+            totalMs: 150,
+            totalPct: 30,
+            callers: [],
+            callees: [],
+            optimizationState: 'unknown',
+            userCaller: {
+              function: 'handleRequest',
+              file: '/repo/dist/server.js',
+              line: 12,
+              source: { file: 'src/server.ts', line: 42 },
+              profilePct: 24,
+              supportPct: 91,
+              confidence: 'high',
+              basis: 'cpu-sample-path',
+            },
+          },
+        ],
+        hotStacks: [
+          {
+            weightPct: 22,
+            frames: [
+              {
+                function: 'handleRequest',
+                file: '/repo/dist/server.js',
+                line: 12,
+                source: { file: 'src/server.ts', line: 42 },
+              },
+            ],
+          },
+        ],
+        hotStackClusters: [],
+        deopts: [],
+      },
+      memory: {
+        summary: {
+          totalSampledBytes: 4096,
+          samplingIntervalBytes: 524288,
+          topAllocator: {
+            function: 'Buffer.alloc',
+            file: 'node:buffer',
+            line: 10,
+            selfPct: 35,
+            totalPct: 40,
+            userCaller: {
+              function: 'loadCache',
+              file: '/repo/dist/cache.js',
+              line: 6,
+              source: { file: 'src/cache.ts', line: 18 },
+              profilePct: 35,
+              supportPct: 88,
+              confidence: 'high',
+              basis: 'heap-sample-path',
+            },
+          },
+        },
+        hotAllocators: [],
+        memoryUsage: {
+          available: true,
+          sampleIntervalMs: 250,
+          sampleCount: 10,
+        },
+      },
+      async: {
+        summary: {
+          available: true,
+          collectedVia: 'async-hooks',
+          totalOperations: 1,
+          byKind: { promise: 1 },
+          orphanCount: 0,
+          recordsDropped: 0,
+          topAsyncHotFile: {
+            function: 'loadUsers',
+            file: '/repo/dist/users.js',
+            line: 9,
+            source: { file: 'src/users.ts', line: 27 },
+            score: 80,
+            confidence: 'high',
+          },
+        },
+        quality: {
+          confidence: 'high',
+          instrumentationMode: 'safe',
+          attachPartialCapture: false,
+          operationCount: 1,
+          sampledStackRatio: 1,
+          initStackCoverageRatio: 1,
+          cdpAsyncStackCoverageRatio: 0,
+          recordsDropped: 0,
+          maxRecords: 10000,
+          runWindowCount: 1,
+          cpuAttributionCoveragePct: 15,
+          cpuAmbiguousSamples: 0,
+          clockSyncUncertaintyMs: 1,
+          reasons: [],
+          recommendations: [],
+        },
+        topOperations: [],
+        hotFiles: [],
+        chains: [],
+        orphans: [],
+        concurrencyTimeline: [],
+        filteredCounts: {},
+        cdpAsyncContexts: [],
+        cpuAttribution: {
+          available: false,
+          reason: 'cpu attribution absent',
+          attributedCpuPct: 0,
+          totalCpuMs: 0,
+          cpuAttributedSamples: 0,
+          cpuAmbiguousSamples: 0,
+          clockSyncUncertaintyMs: 1,
+          topChains: [],
+        },
+      },
+    },
+    findings: [
+      {
+        id: 'node-modules-hotspot:pkg',
+        profileKind: 'cpu',
+        severity: 'warning',
+        category: 'node-modules-hotspot',
+        title: 'Dependency work dominates CPU',
+        evidence: {
+          file: '/repo/node_modules/pkg/index.js',
+          line: 8,
+          function: 'parsePayload',
+          selfPct: 24,
+          extra: {
+            proofLevel: 'direct-sample',
+            userCaller: {
+              function: 'handleRequest',
+              file: '/repo/dist/server.js',
+              line: 12,
+              source: { file: 'src/server.ts', line: 42 },
+              profilePct: 24,
+              supportPct: 91,
+              confidence: 'high',
+              basis: 'cpu-sample-path',
+            },
+          },
+        },
+        priority: { score: 88, actionConfidence: 'high', impactEstimateMs: 120 },
+        confidence: 'high',
+        proofLevel: 'direct-sample',
+        why: 'The dependency is repeatedly sampled through user code.',
+        suggestion: 'Inspect the caller and reduce input size or call frequency.',
+        references: [],
+      },
+    ],
+  };
+}
