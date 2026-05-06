@@ -1,6 +1,8 @@
 # Memory Profiling Reference
 
-Use this for capture and interpretation when the user is investigating memory growth, leaks, OOM kills, Buffer / off-heap pressure, or "this endpoint allocates too much". For CPU-specific interpretation, see [cpu-profiling.md](cpu-profiling.md). For the overall report shape, see [report-schema.md](report-schema.md).
+Use this for capture and interpretation when the user is investigating memory growth, leaks, OOM kills, Buffer / off-heap pressure, or "this endpoint allocates too much". This reference supports an interactive investigation — read the agent report first, then return here to disambiguate the memory signal (allocation churn vs leak, JS heap vs off-heap, slope vs noise) before patching.
+
+For CPU-specific interpretation, see [cpu-profiling.md](cpu-profiling.md). For the overall report shape, see [report-schema.md](report-schema.md).
 
 ## When to capture memory
 
