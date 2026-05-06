@@ -35,7 +35,7 @@ Attach reports can still be useful for new resources created during the capture 
 
 ## Report Paths
 
-These are targeted JSON lookup paths. For analysis, read the agent report first and use its `Signal Gate`, `Action Queue`, `Evidence Pack`, `Decision Rules`, `Kind Review`, and `Files To Read First` sections as the contract.
+These are targeted JSON lookup paths. For analysis, read the agent report first and use its frontmatter, `## Findings` table, `## Finding N` blocks, `Findings.decision` column, `Kind Review`, and `Files To Read First` sections as the contract.
 
 - `profiles.async.summary`: availability, counts, top kinds, collectedVia, instrumentation mode.
 - `profiles.async.quality`: confidence, reasons, recommendations, dropped records, `attachPartialCapture`, CDP stack coverage.
@@ -49,7 +49,7 @@ These are targeted JSON lookup paths. For analysis, read the agent report first 
 
 ## Quality Gate
 
-Before prescribing, check the agent report's `Signal Gate` and async `Kind Review`. If the rendered report omits a needed async detail, use these targeted JSON paths:
+Before prescribing, check the report frontmatter and async `Kind Review`. If the rendered report omits a needed async detail, use these targeted JSON paths:
 
 - `profiles.async.quality.confidence`
 - `profiles.async.quality.reasons[]`
@@ -78,7 +78,7 @@ Async findings usually include:
 - `hot-async-context` / async CPU attribution findings when combined with CPU data.
 - `microtask-flood` when microtask or TickObject volume dominates and microtasks were included.
 
-Prefer findings that the agent `Decision Rules` marks actionable, with high confidence, clear rendered `Source` / generated fallback, and corroborating records or chains. For orphan resources, inspect whether the resource is intentionally long-lived before patching.
+Prefer findings that the `Findings.decision` column marks actionable, with high confidence, clear rendered `Source` / generated fallback, and corroborating records or chains. For orphan resources, inspect whether the resource is intentionally long-lived before patching.
 
 ## Source Positions
 

@@ -2,7 +2,7 @@
 
 Use this only for targeted JSON field lookup after reading the agent report. For CPU-specific interpretation, see [cpu-profiling.md](cpu-profiling.md).
 
-For agent analysis, run `lanterna report <file> --format agent --output report.agent.md` first and read that output in skill order. Do not start with `--format text`, `--format markdown`, or raw JSON. The JSON paths below are a schema dictionary for targeted clarification only when the agent report omits a field you need. The agent format renders the contract sections: `Capture`, `Signal Gate`, `Action Queue`, `Evidence Pack`, `Decision Rules`, `Kind Review`, and `Files To Read First`.
+For agent analysis, run `lanterna report <file> --format agent --output report.agent.md` first and read that output in skill order. Do not start with `--format text`, `--format markdown`, or raw JSON. The JSON paths below are a schema dictionary for targeted clarification only when the agent report omits a field you need. The agent format renders the contract sections: frontmatter, frontmatter, `## Findings` table, `## Finding N` blocks, `Findings.decision` column, `Kind Review`, and `Files To Read First`.
 
 ## Top-Level Shape
 
@@ -186,7 +186,7 @@ Do not treat unknown profile sections as invalid; third-party kinds may add new 
 
 ## `findings[]`
 
-Findings are rendered in the agent report's `Action Queue` and are sorted by action priority.
+Findings are rendered in the `## Findings` table and are sorted by action priority.
 
 Common fields:
 
@@ -210,7 +210,7 @@ Common fields:
 Rules:
 
 - Read the agent report's `Source` and `Generated fallback` before proposing code changes.
-- In agent reports, `Action Queue` may include `User caller: <fn> (<location>) [confidence, support X%]`. Use that location before dependency/runtime frames, but only treat high-confidence user callers as potentially actionable.
+- In agent reports, `## Findings` table may include `User caller: <fn> (<location>) [confidence, support X%]`. Use that location before dependency/runtime frames, but only treat high-confidence user callers as potentially actionable.
 - `Files To Read First` excludes `node_modules`, `node:`, pnpm store, and runtime locations unless an editable user-code `userCaller` location is available.
 - Use `confidence`, `proofLevel`, `measurements`, and `priority`, not severity alone.
 - Use `confidence`, `proofLevel`, `priority.actionConfidence`, `sourceMaps.coverage`, and `userCaller.confidence` together: high can be actionable; medium/low user callers are inspection leads; missing or unknown proof with non-high confidence means rerun.
@@ -219,7 +219,7 @@ Rules:
 
 ## CPU Quality
 
-The agent report's `Signal Gate` is the first place to check before drawing conclusions from CPU data. Use `profiles.cpu.quality` only as the targeted JSON path behind that rendered gate.
+The report frontmatter is the first place to check before drawing conclusions from CPU data. Use `profiles.cpu.quality` only as the targeted JSON path behind that rendered gate.
 
 | Field | Meaning |
 |---|---|

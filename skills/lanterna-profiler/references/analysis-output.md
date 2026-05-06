@@ -1,8 +1,8 @@
 # Analysis Output Reference
 
-Use this when answering from a Lanterna report. Keep the answer source-backed and only include sections supported by the agent report's `Capture` kinds.
+Use this when answering from a Lanterna report. Keep the answer source-backed and only include sections supported by the agent report's frontmatter kinds.
 
-When creating an issue or PR summary from a report, start with `lanterna report <file> --format agent --output report.agent.md`. Read `Capture` -> `Signal Gate` -> `Action Queue` -> `Evidence Pack` -> `Decision Rules` -> `Kind Review` -> `Files To Read First`, then read implicated source files before writing source-backed conclusions. Do not start from raw JSON; use JSON only for a targeted field missing from the agent report.
+When creating an issue or PR summary from a report, start with `lanterna report <file> --format agent --output report.agent.md`. Read frontmatter -> `## Findings` table -> `## Finding N` blocks -> `## Kind Review` -> `## Files To Read First`, then read implicated source files before writing source-backed conclusions. Do not start from raw JSON; use JSON only for a targeted field missing from the agent report.
 
 ## Recommended Shape
 
@@ -10,13 +10,15 @@ When creating an issue or PR summary from a report, start with `lanterna report 
 ## Lanterna Profile - <command or pid> (<durationMs>ms, kinds: <profileKinds>)
 
 ### Quality
-CPU confidence: <agent Signal Gate CPU quality> - <agent caveats or "no quality warnings">
-Integrity caveats: <agent Signal Gate integrity issues or "none">
+CPU confidence: <frontmatter cpu_quality> - <frontmatter degrading_caveats or "no quality warnings">
+Integrity caveats: <frontmatter integrity + blocking_caveats or "none">
+Source maps: <frontmatter sourcemap_coverage or "disabled">
+
 
 ### Summary
-CPU: <agent Kind Review CPU summary and top hotspot>
-Memory: <agent Kind Review memory usage/top allocator>
-Async: <agent Kind Review async quality/top operation/hot file/cpu chain>
+CPU: <`## Kind Review` CPU summary and top hotspot>
+Memory: <`## Kind Review` memory usage/top allocator>
+Async: <`## Kind Review` async quality/top operation/hot file/cpu chain>
 
 ### Findings
 #### [<SEVERITY>] <title>
@@ -24,13 +26,13 @@ Confidence: <finding.confidence> | proof: <finding.proofLevel>
 Location: <agent Source with generated fallback> in `<function>`
 User caller: <agent User caller line with confidence/support/basis when rendered, or "none">
 Decision: <actionable | hypothesis | rerun required>
-Evidence: <agent Evidence Pack measurements, thresholds, proof fields, and sampled percentages>
+Evidence: <`Finding N` block: observed, thresholds, impact, sampled percentages>
 Caveats: <source-map coverage, degraded signal, medium/low userCaller, missing proof, or "none">
 Why: <why this matters in this run>
 Fix: <concrete remediation or confidence caveat>
 
 ### Kind Review Leads
-Use the agent `Kind Review` section. Include only kinds present in `Capture`.
+Use the `## Kind Review` section. Include only kinds present in frontmatter.
 
 ### GC / Event Loop / Deopts / Memory Series / Async
 <only claims supported by available report signals>
@@ -44,9 +46,9 @@ Use the agent `Kind Review` section. Include only kinds present in `Capture`.
 - Treat `userCaller.confidence === "high"` as potentially actionable only when the finding, proof level, and signal gate are also actionable. Treat `medium` and `low` user callers as inspection leads.
 - Cite evidence and caveats together: measurements, thresholds, support percentage, proof level, source-map coverage, and any integrity degradation.
 - Say "hypothesis" for `trace-only`, `heuristic`, weak correlation, or low profile confidence.
-- Do not include CPU sections unless the agent `Capture` section lists `cpu`.
-- Do not include memory sections unless the agent `Capture` section lists `memory`.
-- Do not include async sections unless the agent `Capture` section lists `async`.
+- Do not include CPU sections unless the agent frontmatter section lists `cpu`.
+- Do not include memory sections unless the agent frontmatter section lists `memory`.
+- Do not include async sections unless the agent frontmatter section lists `async`.
 - Do not patch from a finding alone. Read the cited source first.
 
 ## Short Form

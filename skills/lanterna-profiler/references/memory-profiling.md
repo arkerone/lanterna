@@ -30,8 +30,8 @@ Stop conditions specific to memory:
 
 Start from the agent report, not from JSON:
 
-1. `Signal Gate` — memory usage availability, heap snapshot warnings, integrity and source-map caveats.
-2. `Action Queue` / `Evidence Pack` / `Decision Rules` — memory findings, proof level, measurements, and actionability.
+1. frontmatter — memory usage availability, heap snapshot warnings, integrity and source-map caveats.
+2. `## Findings` table / `## Finding N` blocks / `Findings.decision` column — memory findings, proof level, measurements, and actionability.
 3. `Kind Review` -> `memory` — memory usage, top allocator, hot allocators, user callers, and heap snapshot summary.
 4. `Files To Read First` — editable source locations to inspect before proposing patches.
 
@@ -140,7 +140,7 @@ Each memory finding's `evidence.extra` carries the raw counters (slope, MB delta
 
 ## Targeted jq snippets
 
-Use these only after reading `report.agent.md`, and only to clarify a field not rendered by `Signal Gate`, `Kind Review`, `Action Queue`, or `Evidence Pack`.
+Use these only after reading `report.agent.md`, and only to clarify a field not rendered by frontmatter, `Kind Review`, `## Findings` table, or `## Finding N` blocks.
 
 ```bash
 # Memory summary at a glance
@@ -167,7 +167,7 @@ jq '.profiles.memory.heapSnapshotAnalysis.retainerPaths[] | {constructorName, re
 Stop and ask the user when:
 
 - The capture window is < 2 s — slope is unreliable, do not assert a leak.
-- The agent `Capture` section does not list `memory` — the user did not request memory capture; do not invent memory observations from the CPU profile.
+- The agent frontmatter section does not list `memory` — the user did not request memory capture; do not invent memory observations from the CPU profile.
 - `memoryUsage.available` is false — the preload hook didn't run (e.g. no inspector). Time-series claims are not supported; only `hotAllocators` (from the CDP-side sampling profile) remain trustworthy.
 - `heapSnapshotAnalysis.available` is false — snapshot capture or parsing failed. Read `warnings[]`, keep using `summary`, `hotAllocators`, and `memoryUsage`, and avoid retainer claims.
 - The user mentions "OOM" but `summary.rss.maxBytes` is far below the host memory limit — the run probably did not reach the failure window; ask for a longer capture or one started closer to the OOM event.

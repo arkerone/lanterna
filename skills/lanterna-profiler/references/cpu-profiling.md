@@ -9,12 +9,12 @@ Use this when interpreting the built-in CPU profile kind. The current built-in k
 - Use `--deep` only with `lanterna run`; it enables deopt tracing and can make target diagnostics noisier.
 - Attach mode cannot enable `--deep`; `profiles.cpu.deopts[]` will stay empty.
 - Use `--sample-interval <us>` below `1000` only for suspected sub-millisecond hotspots; minimum is `50`.
-- Use the agent report's `Signal Gate` as the primary confidence gate. It summarizes CPU quality, low samples, short duration, high idle ratio, untimed samples, and rerun guidance.
-- If the agent `Signal Gate` reports low CPU quality, treat findings as leads, not proof, unless corroborated by source inspection and a stronger rerun.
+- Use the report frontmatter as the primary confidence gate. It summarizes CPU quality, low samples, short duration, high idle ratio, untimed samples, and rerun guidance.
+- If the frontmatter reports low CPU quality, treat findings as leads, not proof, unless corroborated by source inspection and a stronger rerun.
 
 ## Report Paths
 
-These are targeted JSON lookup paths. For analysis, read the agent report first and use its `Signal Gate`, `Action Queue`, `Evidence Pack`, `Decision Rules`, `Kind Review`, and `Files To Read First` sections as the contract.
+These are targeted JSON lookup paths. For analysis, read the agent report first and use its frontmatter, `## Findings` table, `## Finding N` blocks, `Findings.decision` column, `Kind Review`, and `Files To Read First` sections as the contract.
 
 - `profiles.cpu.summary`: on-CPU ratio, idle ratio, category ratios, top user hotspot.
 - `profiles.cpu.hotspots[]`: aggregated frames by `(file, function, line)`.
@@ -29,7 +29,7 @@ Ratios such as `onCpuRatio` and `idleRatio` are `0..1`; multiply by 100 before p
 
 ## Signal Quality
 
-Before prescribing, check the agent report's `Signal Gate`. If it omits a needed CPU detail, use these targeted JSON paths:
+Before prescribing, check the report frontmatter. If it omits a needed CPU detail, use these targeted JSON paths:
 
 - `profiles.cpu.quality.confidence`
 - `profiles.cpu.quality.reasons[]`
@@ -57,7 +57,7 @@ Prefer `eventLoop.correlatedHotspots[]` over generic hotspot guesses. If `correl
 
 ## Findings And Priority
 
-Start with the agent report's `Action Queue`, which renders findings in priority order. Validate the ranking before prescribing:
+Start with the `## Findings` table, which renders findings in priority order. Validate the ranking before prescribing:
 
 - Prefer `finding.confidence === "high"` and `finding.proofLevel === "direct-sample"` for concrete code changes.
 - Treat `proofLevel === "correlated-window"` as strong investigation evidence, not a single-line proof.
@@ -86,11 +86,11 @@ Every CPU frame may carry an optional `source` object resolved from a source map
 
 ## Interpretation Order
 
-1. Read agent `Capture` and `Signal Gate`.
-2. Summarize actionable findings from `Action Queue`, `Evidence Pack`, and `Decision Rules`.
-3. Use agent `Kind Review` for top user-relevant hotspots, even when no detector fired.
+1. Read agent frontmatter and frontmatter.
+2. Summarize actionable findings from `## Findings` table, `## Finding N` blocks, and `Findings.decision` column.
+3. Use `## Kind Review` for top user-relevant hotspots, even when no detector fired.
 4. Summarize GC only when pauses or ratios are materially high and supported by the agent report or a targeted JSON lookup.
 5. Summarize event-loop impact only when signal quality supports it.
 6. Surface deopts only when shown by the report or confirmed via targeted JSON lookup.
 
-If `Action Queue` has no findings, say that clearly and explain what `Kind Review` suggests instead.
+If `## Findings` table has no findings, say that clearly and explain what `Kind Review` suggests instead.
