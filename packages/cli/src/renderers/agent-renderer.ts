@@ -8,319 +8,79 @@ import type {
   LanternaReport,
   UserCallerAttribution,
 } from '@lanterna-profiler/core';
-import {
-  formatCommand,
-  formatFrameLocation,
-  formatMs,
-  formatPct,
-  formatRatio,
-  formatUserCaller,
-} from './formatting.js';
+import { formatCommand, formatMs, formatPct } from './formatting.js';
 import type { RenderableFormat, ReportRenderer } from './types.js';
+
+type Frame = {
+  function?: string;
+  file: string;
+  line: number;
+  source?: { file: string; line: number };
+};
 
 export class AgentReportRenderer implements ReportRenderer {
   readonly format: RenderableFormat = 'agent';
 
   render(report: LanternaReport): string {
-    const lines: string[] = [];
-    lines.push('# Lanterna Agent Report');
-    lines.push('');
-    this.renderCapture(lines, report);
-    lines.push('');
-    this.renderSignalGate(lines, report);
-    lines.push('');
-    this.renderActionQueue(lines, report.findings ?? []);
-    lines.push('');
-    this.renderEvidencePack(lines, report.findings ?? []);
-    lines.push('');
-    this.renderDecisionRules(lines, report);
-    lines.push('');
-    this.renderKindReview(lines, report);
-    lines.push('');
-    this.renderFilesToReadFirst(lines, report);
-    lines.push('');
-    this.renderNextCommands(lines, report);
-    return `${lines.join('\n').trimEnd()}\n`;
-  }
-
-  private renderCapture(lines: string[], report: LanternaReport): void {
-    const meta = report.meta;
-    const sourceMaps = meta?.captureIntegrity?.sourceMaps;
-    lines.push('## Capture');
-    lines.push('');
-    lines.push(`- Mode: ${meta?.mode ?? 'unknown'}`);
-    lines.push(`- Command: \`${escapeBackticks(formatCommand(meta?.command))}\``);
-    lines.push(`- PID: ${formatNumber(meta?.pid)}`);
-    lines.push(`- Duration: ${formatMs(meta?.durationMs)}`);
-    lines.push(`- CWD: \`${escapeBackticks(meta?.cwd ?? 'unknown')}\``);
-    lines.push(`- Kinds: ${formatList(meta?.profileKinds)}`);
-    lines.push(`- Lanterna version: ${meta?.lanternaVersion ?? 'unknown'}`);
-    if (sourceMaps?.enabled) {
-      lines.push(
-        `- Source-map coverage: ${formatRatio(sourceMaps.coverage)} coverage (${sourceMaps.mapsLoaded} maps loaded)`,
-      );
-    } else {
-      lines.push('- Source-map coverage: disabled or unavailable');
-    }
-  }
-
-  private renderSignalGate(lines: string[], report: LanternaReport): void {
-    const cpuQuality = report.profiles?.cpu?.quality;
-    const integrity = report.meta?.captureIntegrity;
-    const blockingCaveats = blockingIntegrityCaveats(report);
-    const degradingCaveats = degradingSignalCaveats(report);
-    lines.push('## Signal Gate');
-    lines.push('');
-    lines.push(`- CPU quality: ${cpuQuality?.confidence ?? 'absent'}`);
-    lines.push(`- Integrity: ${formatIntegrity(integrity, blockingCaveats)}`);
-    lines.push(`- Blocking caveats: ${formatCaveats(blockingCaveats)}`);
-    lines.push(`- Degrading caveats: ${formatCaveats(degradingCaveats)}`);
-  }
-
-  private renderActionQueue(lines: string[], findings: Finding[]): void {
-    lines.push('## Action Queue');
-    lines.push('');
-    if (findings.length === 0) {
-      lines.push('No findings.');
-      return;
-    }
-    findings.forEach((finding, index) => {
-      lines.push(`### ${index + 1}. ${finding.title}`);
-      lines.push('');
-      lines.push(`- ID: ${finding.id}`);
-      lines.push(`- Kind: ${finding.profileKind}`);
-      lines.push(`- Priority: ${formatNumber(finding.priority?.score)}`);
-      lines.push(`- Action confidence: ${finding.priority?.actionConfidence ?? 'unknown'}`);
-      lines.push(`- Severity: ${finding.severity}`);
-      lines.push(`- Confidence: ${finding.confidence ?? 'unknown'}`);
-      lines.push(`- Proof level: ${finding.proofLevel ?? proofLevelFromExtra(finding)}`);
-      lines.push(`- Impact: ${formatImpact(finding)}`);
-      lines.push(`- Source: \`${escapeBackticks(preferredLocation(finding))}\``);
-      lines.push(`- Generated fallback: \`${escapeBackticks(generatedLocation(finding))}\``);
-      const userCaller = userCallerFromEvidenceExtra(finding.evidence.extra);
-      if (userCaller) {
-        lines.push(`- User caller: ${formatUserCaller(userCaller)}`);
-      }
-      lines.push('');
-    });
-  }
-
-  private renderEvidencePack(lines: string[], findings: Finding[]): void {
-    lines.push('## Evidence Pack');
-    lines.push('');
-    if (findings.length === 0) {
-      lines.push('No evidence items.');
-      return;
-    }
-    findings.forEach((finding, index) => {
-      lines.push(`### ${index + 1}. ${finding.id}`);
-      lines.push('');
-      lines.push(`- Observed: ${formatMeasurements(finding.measurements?.observed)}`);
-      lines.push(`- Thresholds: ${formatMeasurements(finding.measurements?.thresholds)}`);
-      lines.push(`- Why: ${finding.why}`);
-      lines.push(`- Suggestion: ${finding.suggestion}`);
-      lines.push(`- Remediation: ${formatRemediation(finding.remediation)}`);
-      lines.push('');
-    });
-  }
-
-  private renderKindReview(lines: string[], report: LanternaReport): void {
-    lines.push('## Kind Review');
-    lines.push('');
-    const kinds = report.meta?.profileKinds ?? [];
-    if (kinds.length === 0) {
-      lines.push('No profile kinds declared.');
-      return;
-    }
-    kinds.forEach((kind, index) => {
-      if (index > 0) lines.push('');
-      lines.push(`### ${kind}`);
-      lines.push('');
-      switch (kind) {
-        case 'cpu':
-          this.renderCpuKindReview(lines, report);
-          break;
-        case 'memory':
-          this.renderMemoryKindReview(lines, report);
-          break;
-        case 'async':
-          this.renderAsyncKindReview(lines, report);
-          break;
-        default:
-          lines.push(
-            '- Custom kind: inspect the declared profile kind and report shape without assuming a built-in section key.',
-          );
-      }
-    });
-  }
-
-  private renderCpuKindReview(lines: string[], report: LanternaReport): void {
-    const cpu = report.profiles?.cpu;
-    if (!cpu) {
-      lines.push('- Section: absent');
-      return;
-    }
-    lines.push(`- Quality: ${cpu.quality?.confidence ?? 'unknown'}`);
-    if (cpu.summary?.topUserHotspot) {
-      lines.push(`- Top user hotspot: ${formatFrameSummary(cpu.summary.topUserHotspot)}`);
-    }
-    for (const [index, hotspot] of (cpu.hotspots ?? []).slice(0, 5).entries()) {
-      lines.push(
-        `- Hotspot ${index + 1}: ${formatFrameSummary(hotspot)}${formatCallerSuffix(hotspot.userCaller)}`,
-      );
-    }
-    for (const [index, stack] of (cpu.hotStacks ?? []).slice(0, 3).entries()) {
-      const frame = stack.frames.find((candidate) => Boolean(candidate.source)) ?? stack.frames[0];
-      if (frame) {
-        lines.push(
-          `- Hot stack ${index + 1}: ${formatFrameSummary(frame)} at ${formatPct(stack.weightPct)} weight`,
-        );
-      }
-    }
-    for (const [index, cluster] of (cpu.hotStackClusters ?? []).slice(0, 3).entries()) {
-      lines.push(
-        `- Hot stack cluster ${index + 1}: ${formatFrameSummary(cluster.anchor)} at ${formatPct(
-          cluster.weightPct,
-        )} weight`,
-      );
-    }
-  }
-
-  private renderMemoryKindReview(lines: string[], report: LanternaReport): void {
-    const memory = report.profiles?.memory;
-    if (!memory) {
-      lines.push('- Section: absent');
-      return;
-    }
-    const usage = memory.memoryUsage;
-    lines.push(
-      `- Memory usage: ${
-        usage?.available
-          ? `available, ${usage.sampleCount} samples every ${formatMs(usage.sampleIntervalMs)}`
-          : 'unavailable'
-      }`,
-    );
-    if (memory.summary?.topAllocator) {
-      lines.push(
-        `- Top allocator: ${formatFrameSummary(memory.summary.topAllocator)}${formatCallerSuffix(
-          memory.summary.topAllocator.userCaller,
-        )}`,
-      );
-    }
-    for (const [index, allocator] of (memory.hotAllocators ?? []).slice(0, 5).entries()) {
-      lines.push(
-        `- Allocator ${index + 1}: ${formatFrameSummary(allocator)}${formatCallerSuffix(
-          allocator.userCaller,
-        )}`,
-      );
-    }
-    if (memory.heapSnapshotAnalysis) {
-      const snapshot = memory.heapSnapshotAnalysis;
-      lines.push(`- Heap snapshot analysis: ${snapshot.available ? 'available' : 'unavailable'}`);
-      if (snapshot.summary.topGrowingConstructor) {
-        lines.push(`- Top growing constructor: ${snapshot.summary.topGrowingConstructor}`);
-      }
-      if (snapshot.warnings.length > 0) {
-        lines.push(`- Heap snapshot warnings: ${formatCaveats(snapshot.warnings)}`);
-      }
-    }
-  }
-
-  private renderAsyncKindReview(lines: string[], report: LanternaReport): void {
-    const asyncProfile = report.profiles?.async;
-    if (!asyncProfile) {
-      lines.push('- Section: absent');
-      return;
-    }
-    lines.push(`- Quality: ${asyncProfile.quality?.confidence ?? 'unknown'}`);
-    lines.push(
-      `- Summary: ${asyncProfile.summary.available ? 'available' : 'unavailable'}, ${
-        asyncProfile.summary.totalOperations
-      } operations, ${asyncProfile.summary.recordsDropped} records dropped`,
-    );
-    if (asyncProfile.summary.topAsyncHotFile) {
-      lines.push(
-        `- Top async hot file: ${formatFrameSummary(asyncProfile.summary.topAsyncHotFile)}${formatCallerSuffix(
-          asyncProfile.summary.topAsyncHotFile.userCaller,
-        )}`,
-      );
-    }
-    for (const [index, operation] of (asyncProfile.topOperations ?? []).slice(0, 5).entries()) {
-      lines.push(`- Operation ${index + 1}: ${formatAsyncOperation(operation)}`);
-    }
-    for (const [index, hotFile] of (asyncProfile.hotFiles ?? []).slice(0, 5).entries()) {
-      lines.push(`- Hot file ${index + 1}: ${formatAsyncHotFile(hotFile)}`);
-    }
-    for (const [index, chain] of (asyncProfile.cpuAttribution?.topChains ?? [])
-      .slice(0, 5)
-      .entries()) {
-      lines.push(`- CPU chain ${index + 1}: ${formatAsyncCpuChain(chain)}`);
-    }
-  }
-
-  private renderFilesToReadFirst(lines: string[], report: LanternaReport): void {
-    lines.push('## Files To Read First');
-    lines.push('');
-    const files = dedupe([
-      ...(report.findings ?? []).map((finding) => preferredFile(finding)).filter(isNonEmpty),
-      ...aggregateFilesToRead(report),
-    ]);
-    if (files.length === 0) {
-      lines.push('No editable user source files identified from findings or aggregates.');
-      return;
-    }
-    files.forEach((file, index) => {
-      lines.push(`${index + 1}. \`${escapeBackticks(file)}\``);
-    });
-  }
-
-  private renderDecisionRules(lines: string[], report: LanternaReport): void {
-    lines.push('## Decision Rules');
-    lines.push('');
     const findings = report.findings ?? [];
-    if (findings.length === 0) {
-      lines.push(
-        '- No findings: inspect Kind Review summaries before targeted JSON reads or reruns.',
-      );
-      return;
-    }
-    for (const finding of findings) {
-      lines.push(`- ${finding.id}: ${decisionForFinding(finding)}`);
-    }
-  }
-
-  private renderNextCommands(lines: string[], report: LanternaReport): void {
-    lines.push('## Next Commands');
+    const lines: string[] = [];
+    appendFrontmatter(lines, report);
     lines.push('');
-    if (!hasInsufficientSignal(report)) {
-      lines.push('No rerun required by report signal.');
-      return;
-    }
-    const command = report.meta?.command;
-    const duration = recommendedDuration(report);
-    if (command && command.length > 0 && report.meta?.mode === 'spawn') {
-      lines.push(
-        `- \`lanterna run --duration ${duration} --output report.json -- ${escapeBackticks(
-          formatCommand(command),
-        )}\``,
-      );
-      lines.push('- `lanterna report report.json --format agent --output report.agent.md`');
-      return;
-    }
-    if (report.meta?.mode === 'attach' && report.meta.pid) {
-      lines.push(
-        `- \`lanterna attach --pid ${report.meta.pid} --duration ${duration} --output report.json\``,
-      );
-      lines.push('- `lanterna report report.json --format agent --output report.agent.md`');
-      return;
-    }
-    lines.push(
-      '- Rerun recommended, but report does not contain enough launch context for a command.',
-    );
+    appendFindings(lines, findings);
+    lines.push('');
+    appendKindReview(lines, report);
+    lines.push('');
+    appendFilesToReadFirst(lines, report);
+    lines.push('');
+    appendNextCommands(lines, report);
+    return `${lines.join('\n').trimEnd()}\n`;
   }
 }
 
-function formatIntegrity(
+// ---------------------------------------------------------------------------
+// Frontmatter — capture metadata + signal gate consolidated as scalars.
+// ---------------------------------------------------------------------------
+
+function appendFrontmatter(lines: string[], report: LanternaReport): void {
+  const meta = report.meta;
+  const integrity = meta?.captureIntegrity;
+  const sourceMaps = integrity?.sourceMaps;
+  const blockingCaveats = blockingIntegrityCaveats(report);
+  const degradingCaveats = degradingSignalCaveats(report);
+
+  lines.push('---');
+  lines.push(`mode: ${yamlScalar(meta?.mode ?? 'unknown')}`);
+  lines.push(`pid: ${yamlScalar(meta?.pid)}`);
+  lines.push(`command: ${yamlScalar(formatCommand(meta?.command))}`);
+  lines.push(`duration_ms: ${yamlScalar(meta?.durationMs)}`);
+  lines.push(`cwd: ${yamlScalar(meta?.cwd ?? 'unknown')}`);
+  lines.push(`kinds: ${yamlInlineList(meta?.profileKinds ?? [])}`);
+  lines.push(`lanterna_version: ${yamlScalar(meta?.lanternaVersion ?? 'unknown')}`);
+  lines.push(`cpu_quality: ${yamlScalar(report.profiles?.cpu?.quality?.confidence ?? 'absent')}`);
+  lines.push(`memory_signal: ${yamlScalar(memorySignalLabel(report.profiles?.memory))}`);
+  lines.push(
+    `async_quality: ${yamlScalar(report.profiles?.async?.quality?.confidence ?? 'absent')}`,
+  );
+  lines.push(`integrity: ${yamlScalar(integrityLabel(integrity, blockingCaveats))}`);
+  if (sourceMaps?.enabled) {
+    lines.push(`sourcemap_coverage: ${formatRatio01(sourceMaps.coverage)}`);
+    lines.push(`sourcemap_maps_loaded: ${yamlScalar(sourceMaps.mapsLoaded)}`);
+  } else {
+    lines.push('sourcemap_coverage: null');
+  }
+  lines.push(`blocking_caveats: ${yamlInlineList(blockingCaveats)}`);
+  lines.push(`degrading_caveats: ${yamlInlineList(degradingCaveats)}`);
+  lines.push('---');
+}
+
+function memorySignalLabel(memory: { memoryUsage?: { available?: boolean } } | undefined): string {
+  if (!memory) return 'absent';
+  const usage = memory.memoryUsage;
+  if (usage?.available === false) return 'usage-unavailable';
+  return 'present';
+}
+
+function integrityLabel(
   integrity: LanternaReport['meta']['captureIntegrity'] | undefined,
   blockingCaveats: readonly string[],
 ): string {
@@ -328,6 +88,325 @@ function formatIntegrity(
   if (blockingCaveats.length === 0) return 'ok';
   return 'degraded';
 }
+
+// ---------------------------------------------------------------------------
+// Findings — table summary + per-finding detail block.
+// ---------------------------------------------------------------------------
+
+function appendFindings(lines: string[], findings: Finding[]): void {
+  lines.push('## Findings');
+  lines.push('');
+  if (findings.length === 0) {
+    lines.push('_no findings_');
+    return;
+  }
+  const headers = [
+    '#',
+    'id',
+    'kind',
+    'prio',
+    'sev',
+    'conf',
+    'proof',
+    'decision',
+    'location',
+    'impact',
+  ];
+  const rows = findings.map((finding, index) => [
+    String(index + 1),
+    finding.id,
+    finding.profileKind,
+    formatScalarOrDash(finding.priority?.score),
+    finding.severity,
+    finding.confidence ?? '—',
+    finding.proofLevel ?? proofLevelFromExtra(finding) ?? '—',
+    decisionForFinding(finding),
+    preferredLocation(finding),
+    formatImpact(finding),
+  ]);
+  appendTable(lines, headers, rows);
+  lines.push('');
+  findings.forEach((finding, index) => {
+    appendFindingDetail(lines, finding, index + 1);
+    if (index < findings.length - 1) lines.push('');
+  });
+}
+
+function appendFindingDetail(lines: string[], finding: Finding, position: number): void {
+  lines.push(`## Finding ${position} — ${finding.id}`);
+  lines.push('');
+  lines.push(`- title: ${finding.title}`);
+  lines.push(`- location: ${preferredLocationWithFallback(finding)}`);
+  const userCaller = userCallerFromEvidenceExtra(finding.evidence.extra);
+  if (userCaller) lines.push(`- user_caller: ${formatUserCallerCompact(userCaller)}`);
+  lines.push(`- observed: ${formatMeasurements(finding.measurements?.observed)}`);
+  lines.push(`- thresholds: ${formatMeasurements(finding.measurements?.thresholds)}`);
+  lines.push(`- impact: ${formatImpact(finding)}`);
+  lines.push(`- why: ${finding.why}`);
+  lines.push(`- suggestion: ${finding.suggestion}`);
+  lines.push(`- remediation: ${formatRemediation(finding.remediation)}`);
+}
+
+// ---------------------------------------------------------------------------
+// Kind Review — one block per declared kind, tables for repeated entities.
+// ---------------------------------------------------------------------------
+
+function appendKindReview(lines: string[], report: LanternaReport): void {
+  const kinds = report.meta?.profileKinds ?? [];
+  if (kinds.length === 0) {
+    lines.push('## Kind Review');
+    lines.push('');
+    lines.push('_no profile kinds declared_');
+    return;
+  }
+  kinds.forEach((kind, index) => {
+    if (index > 0) lines.push('');
+    lines.push(`## Kind Review — ${kind}`);
+    lines.push('');
+    switch (kind) {
+      case 'cpu':
+        appendCpuKindReview(lines, report);
+        break;
+      case 'memory':
+        appendMemoryKindReview(lines, report);
+        break;
+      case 'async':
+        appendAsyncKindReview(lines, report);
+        break;
+      default:
+        lines.push(
+          '_custom kind: inspect the declared profile kind and report shape without assuming a built-in section key_',
+        );
+    }
+  });
+}
+
+function appendCpuKindReview(lines: string[], report: LanternaReport): void {
+  const cpu = report.profiles?.cpu;
+  if (!cpu) {
+    lines.push('_section absent_');
+    return;
+  }
+  lines.push(`- quality: ${cpu.quality?.confidence ?? 'unknown'}`);
+  if (cpu.summary?.topUserHotspot) {
+    lines.push(
+      `- top_user_hotspot: ${frameLabel(cpu.summary.topUserHotspot)} at ${frameLocation(cpu.summary.topUserHotspot)}`,
+    );
+  }
+  const hotspots = (cpu.hotspots ?? []).slice(0, 5);
+  if (hotspots.length > 0) {
+    lines.push('- hotspots:');
+    appendIndentedTable(
+      lines,
+      ['#', 'function', 'location', 'self%', 'total%', 'user_caller'],
+      hotspots.map((h, i) => [
+        String(i + 1),
+        h.function ?? '—',
+        frameLocation(h),
+        formatPct(h.selfPct),
+        formatPct(h.totalPct),
+        userCallerCell(h.userCaller),
+      ]),
+    );
+  }
+  const stacks = (cpu.hotStacks ?? []).slice(0, 3);
+  if (stacks.length > 0) {
+    lines.push('- hot_stacks:');
+    appendIndentedTable(
+      lines,
+      ['#', 'anchor', 'location', 'weight%'],
+      stacks.map((stack, i) => {
+        const frame = stack.frames.find((f) => Boolean(f.source)) ?? stack.frames[0];
+        return [
+          String(i + 1),
+          frame?.function ?? '—',
+          frame ? frameLocation(frame) : '—',
+          formatPct(stack.weightPct),
+        ];
+      }),
+    );
+  }
+  const clusters = (cpu.hotStackClusters ?? []).slice(0, 3);
+  if (clusters.length > 0) {
+    lines.push('- hot_stack_clusters:');
+    appendIndentedTable(
+      lines,
+      ['#', 'anchor', 'location', 'weight%'],
+      clusters.map((cluster, i) => [
+        String(i + 1),
+        cluster.anchor.function ?? '—',
+        frameLocation(cluster.anchor),
+        formatPct(cluster.weightPct),
+      ]),
+    );
+  }
+}
+
+function appendMemoryKindReview(lines: string[], report: LanternaReport): void {
+  const memory = report.profiles?.memory;
+  if (!memory) {
+    lines.push('_section absent_');
+    return;
+  }
+  const usage = memory.memoryUsage;
+  lines.push(
+    `- memory_usage: ${
+      usage?.available
+        ? `${usage.sampleCount} samples every ${formatMs(usage.sampleIntervalMs)}`
+        : 'unavailable'
+    }`,
+  );
+  if (memory.summary?.topAllocator) {
+    lines.push(
+      `- top_allocator: ${frameLabel(memory.summary.topAllocator)} at ${frameLocation(memory.summary.topAllocator)}${userCallerSuffix(memory.summary.topAllocator.userCaller)}`,
+    );
+  }
+  const allocators = (memory.hotAllocators ?? []).slice(0, 5);
+  if (allocators.length > 0) {
+    lines.push('- allocators:');
+    appendIndentedTable(
+      lines,
+      ['#', 'function', 'location', 'self%', 'total%', 'user_caller'],
+      allocators.map((a, i) => [
+        String(i + 1),
+        a.function ?? '—',
+        frameLocation(a),
+        formatPct(a.selfPct),
+        formatPct(a.totalPct),
+        userCallerCell(a.userCaller),
+      ]),
+    );
+  }
+  const snapshot = memory.heapSnapshotAnalysis;
+  if (snapshot) {
+    lines.push(`- heap_snapshot: ${snapshot.available ? 'available' : 'unavailable'}`);
+    if (snapshot.summary?.topGrowingConstructor) {
+      lines.push(`- top_growing_constructor: ${snapshot.summary.topGrowingConstructor}`);
+    }
+    if ((snapshot.warnings ?? []).length > 0) {
+      lines.push(`- heap_snapshot_warnings: ${snapshot.warnings.join('; ')}`);
+    }
+  }
+}
+
+function appendAsyncKindReview(lines: string[], report: LanternaReport): void {
+  const asyncProfile = report.profiles?.async;
+  if (!asyncProfile) {
+    lines.push('_section absent_');
+    return;
+  }
+  lines.push(`- quality: ${asyncProfile.quality?.confidence ?? 'unknown'}`);
+  lines.push(
+    `- summary: ${asyncProfile.summary.available ? 'available' : 'unavailable'} — ${asyncProfile.summary.totalOperations} ops, ${asyncProfile.summary.recordsDropped} dropped`,
+  );
+  if (asyncProfile.summary.topAsyncHotFile) {
+    lines.push(
+      `- top_async_hot_file: ${frameLabel(asyncProfile.summary.topAsyncHotFile)} at ${frameLocation(asyncProfile.summary.topAsyncHotFile)}${userCallerSuffix(asyncProfile.summary.topAsyncHotFile.userCaller)}`,
+    );
+  }
+  const ops = (asyncProfile.topOperations ?? []).slice(0, 5);
+  if (ops.length > 0) {
+    lines.push('- top_operations:');
+    appendIndentedTable(
+      lines,
+      ['#', 'kind', 'asyncId', 'location', 'duration_ms', 'user_caller'],
+      ops.map((op, i) => {
+        const frame = preferredAsyncOperationFrame(op);
+        return [
+          String(i + 1),
+          op.kind,
+          String(op.asyncId),
+          frame ? frameLocation(frame) : '—',
+          formatScalarOrDash(op.durationMs),
+          userCallerCell(op.userCaller),
+        ];
+      }),
+    );
+  }
+  const hotFiles = (asyncProfile.hotFiles ?? []).slice(0, 5);
+  if (hotFiles.length > 0) {
+    lines.push('- hot_files:');
+    appendIndentedTable(
+      lines,
+      ['#', 'function', 'location', 'cpu%', 'user_caller'],
+      hotFiles.map((hf, i) => [
+        String(i + 1),
+        hf.primaryFrame.function ?? '—',
+        frameLocation(hf.primaryFrame),
+        formatPct(hf.cpuPct),
+        userCallerCell(hf.userCaller),
+      ]),
+    );
+  }
+  const chains = (asyncProfile.cpuAttribution?.topChains ?? []).slice(0, 5);
+  if (chains.length > 0) {
+    lines.push('- cpu_attribution:');
+    appendIndentedTable(
+      lines,
+      ['#', 'root_kind', 'location', 'cpu%', 'user_caller'],
+      chains.map((chain, i) => {
+        const frame = chain.executionFrame ?? chain.rootFrame;
+        return [
+          String(i + 1),
+          chain.rootKind,
+          frame ? frameLocation(frame) : '—',
+          formatPct(chain.cpuPct),
+          userCallerCell(chain.userCaller),
+        ];
+      }),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Files To Read First + Next Commands.
+// ---------------------------------------------------------------------------
+
+function appendFilesToReadFirst(lines: string[], report: LanternaReport): void {
+  lines.push('## Files To Read First');
+  lines.push('');
+  const files = dedupe([
+    ...(report.findings ?? []).map(preferredFile).filter(isNonEmpty),
+    ...aggregateFilesToRead(report),
+  ]);
+  if (files.length === 0) {
+    lines.push('_no editable user source files identified from findings or aggregates_');
+    return;
+  }
+  files.forEach((file, index) => {
+    lines.push(`${index + 1}. \`${escapeBackticks(file)}\``);
+  });
+}
+
+function appendNextCommands(lines: string[], report: LanternaReport): void {
+  lines.push('## Next Commands');
+  lines.push('');
+  if (!hasInsufficientSignal(report)) {
+    lines.push('_no rerun required by report signal_');
+    return;
+  }
+  const command = report.meta?.command;
+  const duration = recommendedDuration(report);
+  if (command && command.length > 0 && report.meta?.mode === 'spawn') {
+    lines.push(
+      `- \`lanterna run --duration ${duration} --output report.json -- ${escapeBackticks(formatCommand(command))}\``,
+    );
+    lines.push('- `lanterna report report.json --format agent --output report.agent.md`');
+    return;
+  }
+  if (report.meta?.mode === 'attach' && report.meta.pid) {
+    lines.push(
+      `- \`lanterna attach --pid ${report.meta.pid} --duration ${duration} --output report.json\``,
+    );
+    lines.push('- `lanterna report report.json --format agent --output report.agent.md`');
+    return;
+  }
+  lines.push('_rerun recommended, but report does not contain enough launch context_');
+}
+
+// ---------------------------------------------------------------------------
+// Decision logic, signal gates (kept identical to previous renderer).
+// ---------------------------------------------------------------------------
 
 function blockingIntegrityCaveats(report: LanternaReport): string[] {
   const integrity = report.meta?.captureIntegrity;
@@ -349,7 +428,7 @@ function degradingSignalCaveats(report: LanternaReport): string[] {
   }
   const heapSnapshotWarnings = report.profiles?.memory?.heapSnapshotAnalysis?.warnings ?? [];
   if (heapSnapshotWarnings.length > 0) {
-    caveats.push(`heap snapshot warnings: ${formatCaveats(heapSnapshotWarnings)}`);
+    caveats.push(`heap snapshot warnings: ${heapSnapshotWarnings.join('; ')}`);
   }
   const asyncProfile = report.profiles?.async;
   if (asyncProfile?.quality?.confidence === 'low') caveats.push('async confidence low');
@@ -357,8 +436,9 @@ function degradingSignalCaveats(report: LanternaReport): string[] {
   if ((asyncProfile?.quality?.recordsDropped ?? 0) > 0) {
     caveats.push(`${asyncProfile?.quality?.recordsDropped ?? 0} async records dropped`);
   }
-  if (sourceMaps?.enabled && sourceMaps.coverage < 0.7)
+  if (sourceMaps?.enabled && sourceMaps.coverage < 0.7) {
     caveats.push('source-map coverage below 70%');
+  }
   if (integrity?.eventLoopTimed === false) caveats.push('event-loop timing unavailable');
   if (integrity?.gcTimed === false) caveats.push('GC timing unavailable');
   if ((integrity?.heartbeatDropped ?? 0) > 0) {
@@ -371,18 +451,18 @@ function hasInsufficientSignal(report: LanternaReport): boolean {
   return (
     blockingIntegrityCaveats(report).length > 0 ||
     degradingSignalCaveats(report).length > 0 ||
-    (report.findings ?? []).some((finding) => decisionForFinding(finding) === 'rerun required')
+    (report.findings ?? []).some((finding) => decisionForFinding(finding) === 'rerun')
   );
 }
 
-function decisionForFinding(finding: Finding): string {
+function decisionForFinding(finding: Finding): 'actionable' | 'hypothesis' | 'rerun' {
   if (finding.confidence === 'low') return 'hypothesis';
   if (finding.priority?.actionConfidence === 'low') return 'hypothesis';
   const userCaller = userCallerFromEvidenceExtra(finding.evidence.extra);
   if (userCaller && userCaller.confidence !== 'high') return 'hypothesis';
   const proofLevel = finding.proofLevel ?? proofLevelFromExtra(finding);
   if (proofLevel === 'heuristic' || proofLevel === 'trace-only') return 'hypothesis';
-  if (proofLevel === 'unknown' && finding.confidence !== 'high') return 'rerun required';
+  if (proofLevel === 'unknown' && finding.confidence !== 'high') return 'rerun';
   return 'actionable';
 }
 
@@ -395,15 +475,50 @@ function proofLevelFromExtra(finding: Finding): string {
   return 'unknown';
 }
 
+function userCallerFromEvidenceExtra(extra: unknown): UserCallerAttribution | undefined {
+  if (!extra || typeof extra !== 'object') return undefined;
+  return (extra as { userCaller?: UserCallerAttribution }).userCaller;
+}
+
+// ---------------------------------------------------------------------------
+// Location, files, frames helpers.
+// ---------------------------------------------------------------------------
+
 function preferredLocation(finding: Finding): string {
   if (finding.evidence.source) {
     return `${finding.evidence.source.file}:${finding.evidence.source.line}`;
   }
-  return formatFrameLocation(finding.evidence);
+  return `${finding.evidence.file}:${finding.evidence.line}`;
 }
 
-function generatedLocation(finding: Finding): string {
-  return `${finding.evidence.file}:${finding.evidence.line}`;
+function preferredLocationWithFallback(finding: Finding): string {
+  const source = finding.evidence.source;
+  const generated = `${finding.evidence.file}:${finding.evidence.line}`;
+  if (source) return `${source.file}:${source.line} (fallback ${generated})`;
+  return generated;
+}
+
+function frameLocation(frame: Frame): string {
+  if (frame.source) return `${frame.source.file}:${frame.source.line}`;
+  return `${frame.file}:${frame.line}`;
+}
+
+function frameLabel(frame: Frame): string {
+  return frame.function ?? '—';
+}
+
+function userCallerCell(caller: UserCallerAttribution | undefined): string {
+  if (!caller) return '—';
+  return `${frameLocation(caller)} (${caller.confidence})`;
+}
+
+function userCallerSuffix(caller: UserCallerAttribution | undefined): string {
+  if (!caller) return '';
+  return ` — user_caller ${formatUserCallerCompact(caller)}`;
+}
+
+function formatUserCallerCompact(caller: UserCallerAttribution): string {
+  return `${caller.function ?? '—'} at ${frameLocation(caller)} (${caller.confidence}, ${caller.basis}, support ${formatPct(caller.supportPct)})`;
 }
 
 function preferredFile(finding: Finding): string | undefined {
@@ -425,9 +540,10 @@ function aggregateFilesToRead(report: LanternaReport): string[] {
     for (const stack of cpu.hotStacks ?? []) {
       for (const frame of stack.frames) pushEditableFrameFile(files, frame);
     }
-    for (const cluster of cpu.hotStackClusters ?? []) pushEditableFrameFile(files, cluster.anchor);
+    for (const cluster of cpu.hotStackClusters ?? []) {
+      pushEditableFrameFile(files, cluster.anchor);
+    }
   }
-
   const memory = report.profiles?.memory;
   if (memory) {
     pushEditableFrameFile(files, memory.summary?.topAllocator);
@@ -437,10 +553,8 @@ function aggregateFilesToRead(report: LanternaReport): string[] {
       pushEditableFrameFile(files, allocator.userCaller);
     }
   }
-
   const asyncProfile = report.profiles?.async;
   if (asyncProfile) collectAsyncFiles(files, asyncProfile);
-
   return dedupe(files);
 }
 
@@ -462,17 +576,12 @@ function collectAsyncFiles(files: string[], asyncProfile: AsyncProfileReport): v
   }
 }
 
-function pushEditableFrameFile(
-  files: string[],
-  frame: { file: string; line: number; source?: { file: string; line: number } } | undefined,
-): void {
+function pushEditableFrameFile(files: string[], frame: Frame | undefined): void {
   const file = preferredEditableFileFromFrame(frame);
   if (file) files.push(file);
 }
 
-function preferredEditableFileFromFrame(
-  frame: { file: string; line: number; source?: { file: string; line: number } } | undefined,
-): string | undefined {
+function preferredEditableFileFromFrame(frame: Frame | undefined): string | undefined {
   if (!frame) return undefined;
   if (frame.source) {
     return isEditableUserFile(frame.source.file) ? frame.source.file : undefined;
@@ -480,66 +589,36 @@ function preferredEditableFileFromFrame(
   return isEditableUserFile(frame.file) ? frame.file : undefined;
 }
 
-function formatFrameSummary(frame: {
-  function: string;
-  file: string;
-  line: number;
-  source?: { file: string; line: number };
-}): string {
-  return `${frame.function} at ${formatFrameLocation(frame)}`;
-}
-
-function formatCallerSuffix(caller: UserCallerAttribution | undefined): string {
-  if (!caller) return '';
-  return `; user caller ${formatUserCaller(caller)}`;
-}
-
-function formatAsyncOperation(operation: AsyncTopOperation): string {
-  const frame = preferredAsyncOperationFrame(operation);
-  const frameSummary = frame ? ` at ${formatFrameLocation(frame)}` : '';
-  return `${operation.kind}#${operation.asyncId}${frameSummary}${formatCallerSuffix(operation.userCaller)}`;
-}
-
-function formatAsyncHotFile(hotFile: AsyncHotFile): string {
-  return `${formatFrameSummary(hotFile.primaryFrame)}${formatCallerSuffix(hotFile.userCaller)}`;
-}
-
-function formatAsyncCpuChain(chain: AsyncCpuAttributionEntry): string {
-  const frame = chain.executionFrame ?? chain.rootFrame;
-  const frameSummary = frame ? ` at ${formatFrameLocation(frame)}` : '';
-  return `${chain.rootKind}${frameSummary} at ${formatPct(chain.cpuPct)} CPU${formatCallerSuffix(
-    chain.userCaller,
-  )}`;
-}
-
-function preferredAsyncOperationFrame(
-  operation: AsyncTopOperation,
-): AsyncStackFrameReport | undefined {
+function preferredAsyncOperationFrame(op: AsyncTopOperation): AsyncStackFrameReport | undefined {
   return (
-    operation.primaryFrame ??
-    operation.awaitFrame ??
-    operation.executionFrame ??
-    operation.cdpAsyncContextFrame ??
-    operation.initFrame ??
-    operation.creationFrame ??
-    operation.promiseRegistrationFrame ??
-    operation.promiseHandlerFrame
+    op.primaryFrame ??
+    op.awaitFrame ??
+    op.executionFrame ??
+    op.cdpAsyncContextFrame ??
+    op.initFrame ??
+    op.creationFrame ??
+    op.promiseRegistrationFrame ??
+    op.promiseHandlerFrame
   );
 }
 
-function asyncOperationFrames(operation: AsyncTopOperation): AsyncStackFrameReport[] {
+function asyncOperationFrames(op: AsyncTopOperation): AsyncStackFrameReport[] {
   return [
-    operation.initFrame,
-    operation.primaryFrame,
-    operation.awaitFrame,
-    operation.executionFrame,
-    operation.cdpAsyncContextFrame,
-    operation.creationFrame,
-    operation.promiseRegistrationFrame,
-    operation.promiseHandlerFrame,
-    ...operation.initStack,
+    op.initFrame,
+    op.primaryFrame,
+    op.awaitFrame,
+    op.executionFrame,
+    op.cdpAsyncContextFrame,
+    op.creationFrame,
+    op.promiseRegistrationFrame,
+    op.promiseHandlerFrame,
+    ...op.initStack,
   ].filter((frame): frame is AsyncStackFrameReport => Boolean(frame));
 }
+
+// ---------------------------------------------------------------------------
+// Formatting helpers.
+// ---------------------------------------------------------------------------
 
 function formatImpact(finding: Finding): string {
   const impact = finding.priority?.impactEstimateMs;
@@ -551,34 +630,29 @@ function formatMeasurements(values: Record<string, number> | undefined): string 
   if (!values || Object.keys(values).length === 0) return 'none';
   return Object.entries(values)
     .map(([key, value]) => `${key}=${formatRawNumber(value)}`)
-    .join(', ');
+    .join(' ');
 }
 
 function formatRemediation(remediation: Finding['remediation']): string {
   if (!remediation) return 'none';
   const entries = Object.entries(remediation)
     .filter(([, value]) => value !== undefined)
-    .map(([key, value]) => (key === 'kind' ? String(value) : `${key}=${String(value)}`));
-  return entries.join('; ');
+    .map(([key, value]) => (key === 'kind' ? `kind=${String(value)}` : `${key}=${String(value)}`));
+  return entries.join(' ');
 }
 
-function formatList(values: readonly string[] | undefined): string {
-  if (!values || values.length === 0) return 'none';
-  return values.join(', ');
-}
-
-function formatCaveats(values: readonly string[]): string {
-  if (values.length === 0) return 'none';
-  return values.join('; ');
-}
-
-function formatNumber(value: number | undefined): string {
-  if (typeof value !== 'number' || !Number.isFinite(value)) return 'unknown';
+function formatScalarOrDash(value: number | undefined): string {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return '—';
   return formatRawNumber(value);
 }
 
 function formatRawNumber(value: number): string {
   if (Number.isInteger(value)) return String(value);
+  return value.toFixed(3).replace(/0+$/, '').replace(/\.$/, '');
+}
+
+function formatRatio01(value: number | undefined): string {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return 'null';
   return value.toFixed(3).replace(/0+$/, '').replace(/\.$/, '');
 }
 
@@ -627,7 +701,58 @@ function escapeBackticks(value: string): string {
   return value.replaceAll('`', '\\`');
 }
 
-function userCallerFromEvidenceExtra(extra: unknown): UserCallerAttribution | undefined {
-  if (!extra || typeof extra !== 'object') return undefined;
-  return (extra as { userCaller?: UserCallerAttribution }).userCaller;
+// ---------------------------------------------------------------------------
+// YAML + table renderers.
+// ---------------------------------------------------------------------------
+
+function yamlScalar(value: string | number | boolean | undefined | null): string {
+  if (value === undefined || value === null) return 'null';
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) return 'null';
+    return formatRawNumber(value);
+  }
+  if (typeof value === 'boolean') return String(value);
+  return yamlString(value);
+}
+
+function yamlString(value: string): string {
+  if (value === '') return '""';
+  if (/^[A-Za-z0-9_./@:-]+$/.test(value) && !/^(true|false|null|~|yes|no|on|off)$/i.test(value)) {
+    // Plain scalar safe — no special chars, not a YAML reserved keyword.
+    if (!value.startsWith('-') && !/^\d/.test(value)) return value;
+  }
+  return `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+}
+
+function yamlInlineList(values: readonly string[]): string {
+  if (values.length === 0) return '[]';
+  return `[${values.map((v) => yamlString(v)).join(', ')}]`;
+}
+
+function appendTable(lines: string[], headers: string[], rows: string[][]): void {
+  const escaped = rows.map((row) => row.map(escapeCell));
+  const widths = headers.map((h, i) =>
+    Math.max(h.length, ...escaped.map((row) => (row[i] ?? '').length)),
+  );
+  const widthAt = (i: number): number => widths[i] ?? 0;
+  lines.push(`| ${headers.map((h, i) => pad(h, widthAt(i))).join(' | ')} |`);
+  lines.push(`| ${widths.map((w) => '-'.repeat(Math.max(3, w))).join(' | ')} |`);
+  for (const row of escaped) {
+    lines.push(`| ${row.map((cell, i) => pad(cell ?? '', widthAt(i))).join(' | ')} |`);
+  }
+}
+
+function appendIndentedTable(lines: string[], headers: string[], rows: string[][]): void {
+  const buffer: string[] = [];
+  appendTable(buffer, headers, rows);
+  for (const line of buffer) lines.push(`  ${line}`);
+}
+
+function escapeCell(value: string): string {
+  return value.replaceAll('|', '\\|').replaceAll('\n', ' ');
+}
+
+function pad(value: string, width: number): string {
+  if (value.length >= width) return value;
+  return value + ' '.repeat(width - value.length);
 }
