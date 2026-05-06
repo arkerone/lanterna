@@ -1,156 +1,120 @@
 ---
 name: lanterna-profiler
-description: Use when investigating Node.js CPU bottlenecks, slow endpoints, hot paths, event-loop stalls, GC pressure, blocking sync I/O, sync crypto, deopt loops, memory leaks, sustained heap growth, large allocators, off-heap Buffer pressure, async chains and long awaits, Lanterna captures, or Lanterna profiling reports.
+description: Use when investigating Node.js performance — slow endpoints, latency regressions, CPU saturation, event-loop stalls, blocking I/O, sync crypto, GC pressure, memory leaks, sustained heap growth, OOM kills, off-heap Buffer pressure, deep async chains, long awaits, orphan async resources, startup cost, dependency hotspots, or any Lanterna profiling report.
 ---
 
 # lanterna-profiler
 
-## Overview
+Lanterna produces agent-facing Node.js profiling reports. Your job is not to summarize the report; it is to drive an interactive performance investigation until the most likely cause, missing evidence, and next measurement are clear.
 
-Lanterna captures Node.js CPU, memory, and async profiles and renders them as a deterministic agent-facing markdown report. Read that report, then read implicated source files, then propose patches. Do not guess.
+## Core Rules
 
-## Tool prefix
+- The `report.agent.md` contract is the primary evidence source. Always capture in JSON, then render the agent contract: `lanterna report report.json --format agent --output report.agent.md`. Keep `report.json` on disk so you can retrieve fields not rendered by the agent format (full retainer paths, source-map failures, complete memory series). Never analyse from raw JSON, `--format text`, or `--format markdown` — JSON is a fallback for targeted field lookup, not the analysis surface.
+- Do not claim a root cause without evidence from the report and, when code is available, confirmation from relevant source files.
+- Every recommendation must cite a concrete report observation, code observation, or explicitly be labeled as a hypothesis.
+- If the signal is weak, mostly idle, blocked by caveats, or not representative, stop diagnosis and ask for a rerun with a suitable workload.
+- If the codebase is accessible, inspect `Files To Read First` before recommending changes. If it is not accessible, ask for the exact files/functions needed.
+
+## Diagnostic Workflow
+
+0. **No report yet? Capture first.**
+   - If the user only provided a target (command, PID, inspector URL) without a report, drive a capture before diagnosing. See [Lanterna Capture & Rerun Commands](#lanterna-capture--rerun-commands).
+   - Before running anything, ask the user for any missing input — never silently choose: target (`run -- <cmd>` / `attach --pid` / `attach --inspect-url`), duration, representative workload, readiness URL for HTTP servers, and the kinds to capture (`cpu`, optionally `memory`, optionally `async`).
+   - After capture, the contract output is `report.agent.md`. Only then enter step 1.
+
+1. **Clarify the performance question**
+   - Identify the symptom: latency, throughput, CPU saturation, event-loop stalls, memory growth, OOM, GC pauses, async wait, startup, or dependency cost.
+   - Identify the user-visible impact and target baseline: endpoint/job, expected workload, duration, p95/p99/throughput/RSS target when available.
+   - If the user did not provide the symptom, ask one targeted question before deep analysis.
+
+2. **Gate the report quality**
+   - Read frontmatter first: `kinds`, `cpu_quality`, `memory_signal`, `async_quality`, `integrity`, source-map coverage, `blocking_caveats`, `degrading_caveats`.
+   - If `blocking_caveats` is non-empty, do not diagnose. Explain the blocker and request a corrected capture.
+   - If CPU idle ratio is mostly idle, sample count is low, capture is too short, or workload is not representative, request a rerun using `--workload`.
+   - If a needed kind is absent, request a new capture with the needed `--kind`.
+
+3. **Build an evidence map**
+   - Read in order, every time: frontmatter → `## Findings` table → each `## Finding N` block in table order → every present `## Kind Review` section (including kinds with no finding) → `## Files To Read First` → `## Next Steps`. Do not skip a `Kind Review` for a kind listed in frontmatter `kinds`.
+   - Use `## Files To Read First` as the source inspection queue: `read-first` rows are the primary queue, `inspect-lead` rows need confirmation, `supporting-context` rows explain surrounding evidence.
+   - Classify each lead as `proven/actionable`, `hypothesis needing source confirmation`, `hypothesis needing another measurement`, or `non-representative signal requiring rerun`.
+
+4. **Diagnose by subsystem** (see per-kind references for interpretation rules: [cpu-profiling.md](references/cpu-profiling.md), [memory-profiling.md](references/memory-profiling.md), [async-profiling.md](references/async-profiling.md))
+   - CPU: check top user hotspot, dependency/runtime hotspot with user caller, sync crypto, blocking I/O, JSON/serialization, require/import in hot path, deopt loops, and GC-correlated CPU.
+   - Event loop: only claim causality when event-loop timing is available and hotspot correlation is strong.
+   - Memory: distinguish allocation churn, JS heap growth, RSS/off-heap growth, external Buffer pressure, snapshot-retained growth, and weak short-window slopes.
+   - Async/I/O: distinguish CPU work from long awaits, deep chains, orphan resources, low concurrency, external service waits, and attach-mode partial capture.
+   - Architecture/dependency/environment: separate app code defects, dependency hotspots, architectural bottlenecks, insufficient load, machine/container limits, and capture artifacts.
+
+5. **Inspect source when available**
+   - Open `read-first` files before proposing changes.
+   - Treat `inspect-lead` as confirmation targets, not patch targets.
+   - For `node_modules`, `node:`, native, generated output, or virtual source-map frames, follow the rendered `user_caller` to editable user code.
+   - Confirm whether hot code is on the critical request/job path, repeated per request, unbounded, synchronous, allocation-heavy, or missing backpressure/concurrency control.
+
+6. **Iterate**
+   - Formulate the smallest testable hypothesis.
+   - Say what measurement would confirm or falsify it.
+   - If evidence is insufficient, provide the exact Lanterna command/workload to rerun.
+   - After any proposed fix, require validation with the same representative workload and compare before/after metrics.
+
+## Lanterna Capture & Rerun Commands
+
+Resolve the Lanterna prefix first:
+```bash
+command -v lanterna >/dev/null 2>&1 && echo lanterna || echo "npx -y @lanterna-profiler/cli"
+```
+
+Use `lanterna` if installed, otherwise substitute `npx -y @lanterna-profiler/cli`. `run` requires `--` before the target command; `attach` never takes `--`. Every capture is a two-step flow: **(1) capture to `report.json`**, **(2) render the agent contract**. Keep both files on disk — the `.agent.md` drives the investigation, the `.json` stays available for targeted field lookup.
 
 ```bash
-command -v lanterna >/dev/null 2>&1 && echo installed || echo use-npx
+# Step 1 — capture (pick one)
+
+# CPU only, HTTP server with readiness gate and load
+lanterna run --duration 30s --wait-for-url <health-url> --workload "<representative-load-command>" --format json --output report.json -- node server.js
+
+# CPU + memory together (enables alloc-in-hot-path correlation)
+lanterna run --kind cpu --kind memory --duration 60s --wait-for-url <health-url> --workload "<representative-load-command>" --format json --output report.json -- node server.js
+
+# Memory + heap snapshots (retention/leak investigation)
+lanterna run --kind memory --heap-snapshot-analysis --heap-snapshot-dir .lanterna-heaps --duration 120s --workload "<steady-state-load>" --format json --output report.json -- node server.js
+
+# CPU + async (await gaps, deep chains, orphan resources)
+lanterna run --kind cpu --kind async --async-instrumentation safe --duration 30s --workload "<scenario-with-await-gap>" --format json --output report.json -- node server.js
+
+# Attach to a running PID (attach defaults to --format json, kept explicit for clarity)
+lanterna attach --pid <pid> --duration 30s --format json --output report.json
+
+# Step 2 — render the agent contract (mandatory, every time)
+lanterna report report.json --format agent --output report.agent.md
 ```
 
-Use `lanterna` if installed, else `npx -y @lanterna-profiler/cli`. Examples below write `$LANTERNA` — substitute the concrete prefix every time.
+If the user already has a `report.json`, skip step 1 and run step 2 directly.
 
-## Capture (only when there is no report yet)
+Use the **first capture** form when there is no report yet. Use the **rerun** form (same shape) when the existing report has degraded signal — typically a non-representative workload, mostly-idle CPU, missing kind, or `blocking_caveats`. For server profiles without load, ask the user to rerun with `--workload`, including realistic headers, auth, payload, concurrency, and route mix. See [workload-guidance.md](references/workload-guidance.md) for autocannon/artillery examples. Do not invent an endpoint for attach mode; ask for the representative workload.
 
-Ask the user, before capturing anything, for any item missing from this list — never silently choose:
+## Output Format
 
-- target: command (`run -- <command>`), PID (`attach --pid`), or inspector URL (`attach --inspect-url`)
-- duration
-- representative workload (shell string run during the capture)
-- readiness URL for HTTP servers
+Use [analysis-output.md](references/analysis-output.md) for substantive answers. For quick answers, still include quality, top lead, evidence, confidence, and next step.
 
-Canonical commands:
+## Stop Conditions
 
-```bash
-$LANTERNA run    --duration <dur> --output /tmp/r.json -- node server.js
-$LANTERNA run    --duration <dur> --wait-for-url <url> --workload "npx -y autocannon <base>" --output /tmp/r.json -- node server.js
-$LANTERNA attach --pid 4242 --duration <dur> --output /tmp/r.json
-$LANTERNA run    --kind cpu --kind memory --duration <dur> --output /tmp/r.json -- node server.js
-$LANTERNA run    --kind memory --heap-snapshot-analysis --heap-snapshot-dir /tmp/heaps --duration <dur> --output /tmp/r.json -- node server.js
-$LANTERNA run    --kind async --async-instrumentation safe --duration <dur> --output /tmp/r.json -- node server.js
-```
+Stop and ask instead of diagnosing when:
 
-Rules: `run` requires `--` before the target; `attach` never takes `--`. `--deep` is `run`-only. Use `--kind cpu,memory` together when latency and allocation matter, or to enable the `alloc-in-hot-path` correlation. `--async-instrumentation full` only when `safe` cannot find await sites.
-
-After capture, render the agent report:
-
-```bash
-$LANTERNA report /tmp/r.json --format agent --output /tmp/r.agent.md
-```
-
-This step is mandatory. Never start analysis from raw JSON, `--format text`, or `--format markdown`.
-
-## The agent report
-
-The file `report.agent.md` is the single source of truth for analysis. Structure:
-
-```
----
-mode: spawn|attach
-pid: <n>
-command: "<argv joined>"
-duration_ms: <n>
-cwd: <path>
-kinds: [cpu, memory, async, ...]
-lanterna_version: <semver>
-cpu_quality: high|medium|low|absent
-memory_signal: present|usage-unavailable|absent
-async_quality: high|medium|low|absent
-integrity: ok|degraded|unknown
-sourcemap_coverage: 0..1 | null
-sourcemap_maps_loaded: <n>            # only when sourcemap_coverage != null
-blocking_caveats: ["..."]             # block all conclusions until resolved
-degrading_caveats: ["..."]            # weaken signal but don't block
----
-
-## Findings
-| # | id | kind | prio | sev | conf | proof | decision | location | impact |
-| - | -- | ---- | ---- | --- | ---- | ----- | -------- | -------- | ------ |
-| 1 | sync-crypto | cpu | 92 | warning | high | direct-sample | actionable | src/auth.ts:42 | 320ms |
-
-## Finding 1 — <id>
-- title, location (with fallback), user_caller (when present), observed, thresholds,
-  impact, why, suggestion, remediation
-
-## Kind Review — cpu | memory | async | <custom>
-- scalar context lines + nested tables for hotspots / allocators / operations / chains
-
-## Files To Read First
-| location | reason | source | signal | decision |
-| -------- | ------ | ------ | ------ | -------- |
-| src/auth.ts:42 | finding location | finding | 320ms | read-first |
-| src/routes.ts:18 | user caller for dependency hotspot | cpu | 37.5% self | inspect-lead |
-
-## Next Steps
-- The capture signal is sufficient; no rerun is required by this report.
-- Read the files listed in `## Files To Read First`, then validate the hot path.
-```
-
-## How to read it
-
-Read in this order, every time:
-
-1. **Frontmatter.** If `blocking_caveats` is non-empty, stop and rerun (or fix the capture) before drawing any conclusion. If `*_quality` is `low` or `degrading_caveats` is non-empty, reduce confidence and prefer hypothesis language; rerun if precision matters.
-2. **`## Findings` table.** This is the action queue, in order. Each row carries everything you need to triage:
-   - `decision = actionable` → patch is on the table once you have read the source.
-   - `decision = hypothesis` → inspection lead only. Confirm before patching.
-   - `decision = rerun` → signal is too weak; do not patch from this report.
-   - `location` is already source-mapped to the user's editable file when possible.
-3. **`## Finding N — <id>` blocks** (in table order, do not reorder by intuition).
-   - `user_caller` is the closest user-code frame on the sampled path. Treat its `(confidence)` as gating: only `high` callers are direct patch locations; `medium`/`low` are inspection leads.
-   - `location` line with `(fallback …)` shows the generated file as well — keep it visible when source-map coverage is low.
-4. **`## Kind Review — <kind>`** for every kind listed in frontmatter `kinds`, including reports with no findings. The Kind Review tables (hotspots, allocators, top_operations, hot_files, cpu_attribution) carry the broader picture even when no detector fired.
-5. **`## Files To Read First`.** Open the table's `location` entries before suggesting changes. `decision = read-first` is the primary source-reading queue; `inspect-lead` needs confirmation before patching; `supporting-context` explains the surrounding path. Runtime, dependency, pnpm store, virtual source-map, and pseudo-frame locations are intentionally excluded unless there is an editable user-code `userCaller`. Generated output folders (`dist/`, `build/`, `.next/`, etc.) are `inspect-lead` fallbacks, not direct patch targets. Use `reason` and `signal` to understand whether the row came from a finding, dependency/runtime caller, CPU stack, memory allocator, or async lead.
-6. **`## Next Steps`.** Follow the checklist. If the signal is degraded or mostly idle, collect a new capture under representative load before patching. The agent renderer treats CPU idle ratio ≥ 90% as mostly idle. For `attach`, confirm the application workload before rerunning; do not invent an HTTP benchmark target.
-
-The report is self-contained. Consult the raw JSON only for a specific field that the agent report does not render (e.g. `meta.captureIntegrity.sourceMaps.failures[]`, full memory series, heap snapshot retainer paths). Never let JSON spelunking talk you into a stronger conclusion than the agent report supports.
-
-## Kind Review essentials
-
-- **cpu** — `top_user_hotspot` is your default starting point. For `hotspots` rows whose `location` is external (`node_modules`, `node:`, native), the `user_caller` column points at the patch site; the row itself is not. `hot_stacks` and `hot_stack_clusters` show recurring code paths around those frames.
-- **memory** — `top_allocator` and the `allocators` table behave like CPU hotspots; the `user_caller` column is again the patch site for external allocators. `memory_usage` describes the RSS/heap series; `heap_snapshot` lines (when present) show start/end retention deltas, including `top_growing_constructor` and `heap_snapshot_warnings`.
-- **async** — `top_operations` (long-running), `hot_files` (await density), `cpu_attribution.topChains` (CPU paid by an async chain). Async findings frequently have no `user_caller` on the finding itself; fall back to the `user_caller` columns in these tables.
-- **multi-kind correlations** — `alloc-in-hot-path` requires CPU + memory both present; `hot-async-context` requires CPU + async. Verify both signals before concluding.
-- **custom kinds** — the section says so explicitly; do not assume built-in field names.
-
-## Stop conditions
-
-Stop and ask, do not improvise, when:
-
-- there is no runnable command, running PID, inspector URL, or existing report;
-- a new capture is needed and duration / workload / readiness URL are still unknown;
+- no agent report, runnable command, PID, inspector URL, or target workload is available;
 - the target is not Node.js;
-- the report is mostly idle, has `blocking_caveats`, or `degrading_caveats` undermine the signal the user cares about;
-- a requested patch is based only on a `suggestion` line, with the source file unread.
-
-## Never
-
-- run `npx -y @lanterna-profiler/cli node server.js` (missing `run` and `--`);
-- recommend a global install as a prerequisite;
-- attach to the first PID found without confirming;
-- start analysis from `--format text`, `--format markdown`, or raw JSON instead of `--format agent`;
-- skip a `## Kind Review — <kind>` section for a kind that appears in frontmatter `kinds`;
-- reorder findings by intuition instead of following the `## Findings` table;
-- patch when `decision` is `hypothesis` or `rerun`;
-- patch from a `Files To Read First` row whose `decision` is `inspect-lead` or `supporting-context` without confirming it in source;
-- treat `medium` or `low` `user_caller` confidence as a patch location;
-- claim event-loop causality when `degrading_caveats` includes `event-loop timing unavailable`;
-- quote a virtual `source.file` (`webpack://`, `vite:/…`) as a fix location without confirming the path resolves on disk — these are bundler labels, not files;
-- infer fields that are not present in the report.
+- the report has blocking caveats;
+- the capture is mostly idle or workload is non-representative;
+- the user asks for a patch but the relevant source files have not been read;
+- the finding is only `hypothesis` or `rerun`;
+- source-map locations are virtual or generated and no editable source has been confirmed.
 
 ## References
 
-- [cpu-profiling.md](references/cpu-profiling.md) — CPU report interpretation.
-- [memory-profiling.md](references/memory-profiling.md) — memory report interpretation.
-- [async-profiling.md](references/async-profiling.md) — async report interpretation.
-- [report-schema.md](references/report-schema.md) — agent report layout + JSON schema for targeted lookups.
-- [detectors-and-plugins.md](references/detectors-and-plugins.md) — detector and plugin authoring.
+- [analysis-output.md](references/analysis-output.md) — response format and confidence rules.
+- [workload-guidance.md](references/workload-guidance.md) — interactive workload design with autocannon and artillery.
+- [cpu-profiling.md](references/cpu-profiling.md) — CPU, event loop, GC, deopt interpretation.
+- [memory-profiling.md](references/memory-profiling.md) — memory growth, allocations, snapshots, off-heap pressure.
+- [async-profiling.md](references/async-profiling.md) — async chains, awaits, orphan resources, attach caveats.
+- [report-schema.md](references/report-schema.md) — targeted JSON lookup only after reading the agent report.
 - [common-pitfalls.md](references/common-pitfalls.md) — Node.js remediation patterns.
-- [analysis-output.md](references/analysis-output.md) — answer format expected from you.
+- [detectors-and-plugins.md](references/detectors-and-plugins.md) — detector and plugin extension.
