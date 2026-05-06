@@ -562,46 +562,38 @@ describe('renderReport', () => {
       { format: 'agent' },
     );
 
-    expect(output).toContain('# Lanterna Agent Report');
-    expect(output).toContain('## Capture');
-    expect(output).toContain('- Mode: spawn');
-    expect(output).toContain('- Command: `node server.js`');
-    expect(output).toContain('- Source-map coverage: 90.0% coverage (2 maps loaded)');
-    expect(output).toContain('## Signal Gate');
-    expect(output).toContain('- CPU quality: low');
-    expect(output).toContain('- Blocking caveats: control channel unavailable');
-    expect(output).toContain('## Action Queue');
-    expect(output.indexOf('### 1. Cache grows')).toBeLessThan(
-      output.indexOf('### 2. Deopt observed'),
+    expect(output.startsWith('---\n')).toBe(true);
+    expect(output).toContain('mode: spawn');
+    expect(output).toContain('command: "node server.js"');
+    expect(output).toContain('kinds: [cpu, memory]');
+    expect(output).toContain('cpu_quality: low');
+    expect(output).toContain('integrity: degraded');
+    expect(output).toContain('sourcemap_coverage: 0.9');
+    expect(output).toContain('"control channel unavailable"');
+    expect(output).toContain('## Findings');
+    expect(output).toMatch(
+      /\| 1 +\| f1 +\| memory \| 93 +\|.*\| actionable +\| src\/cache\.ts:21 +\|/,
     );
-    expect(output.indexOf('### 2. Deopt observed')).toBeLessThan(
-      output.indexOf('### 3. Needs another capture'),
-    );
-    expect(output).toContain('- Priority: 93');
-    expect(output).toContain('- Action confidence: high');
-    expect(output).toContain('- Proof level: direct-sample');
-    expect(output).toContain('- Source: `src/cache.ts:21`');
-    expect(output).toContain('- Generated fallback: `/repo/dist/cache.js:8`');
-    expect(output).toContain('## Evidence Pack');
-    expect(output).toContain('- Observed: slopeBytesPerSec=2048');
-    expect(output).toContain('- Thresholds: slopeBytesPerSec=1024');
-    expect(output).toContain('- Remediation: cache; notes=Bound cache entries.');
-    expect(output).toContain('## Decision Rules');
-    expect(output).toContain('- f1: actionable');
-    expect(output).toContain('- f2: hypothesis');
-    expect(output).toContain('- f3: rerun required');
-    expect(output).toContain('## Kind Review');
-    expect(output).toContain('### cpu');
-    expect(output).toContain('- Quality: low');
-    expect(output).toContain('### memory');
-    expect(output).toContain('- Memory usage: available, 8 samples every 250ms');
+    expect(output).toMatch(/\| 2 +\| f2 +\| cpu .*\| hypothesis +\|/);
+    expect(output).toMatch(/\| 3 +\| f3 +\| cpu .*\| rerun +\|/);
+    expect(output.indexOf('## Finding 1 — f1')).toBeLessThan(output.indexOf('## Finding 2 — f2'));
+    expect(output.indexOf('## Finding 2 — f2')).toBeLessThan(output.indexOf('## Finding 3 — f3'));
+    expect(output).toContain('- title: Cache grows');
+    expect(output).toContain('- location: src/cache.ts:21 (fallback /repo/dist/cache.js:8)');
+    expect(output).toContain('- observed: slopeBytesPerSec=2048');
+    expect(output).toContain('- thresholds: slopeBytesPerSec=1024');
+    expect(output).toContain('- remediation: kind=cache notes=Bound cache entries.');
+    expect(output).toContain('## Kind Review — cpu');
+    expect(output).toContain('- quality: low');
+    expect(output).toContain('## Kind Review — memory');
+    expect(output).toContain('- memory_usage: 8 samples every 250ms');
     expect(output).toContain('## Files To Read First');
     expect(output).toContain('1. `src/cache.ts`');
     expect(output).toContain('2. `/repo/dist/hot.js`');
     expect(output).toContain('3. `src/worker.ts`');
     expect(output).toContain('## Next Commands');
     expect(output).toContain('lanterna run --duration 5s --output report.json -- node server.js');
-    expect(output).not.toContain('## Async');
+    expect(output).not.toContain('## Kind Review — async');
   });
 
   it('renders agent reports without rerun commands when signal is sufficient', () => {
@@ -627,12 +619,11 @@ describe('renderReport', () => {
       { format: 'agent' },
     );
 
-    expect(output).toContain('## Action Queue\n\nNo findings.');
-    expect(output).toContain('## Kind Review');
-    expect(output).toContain('### cpu');
-    expect(output).toContain('## Next Commands\n\nNo rerun required by report signal.');
-    expect(output).not.toContain('## Memory');
-    expect(output).not.toContain('## Async');
+    expect(output).toContain('## Findings\n\n_no findings_');
+    expect(output).toContain('## Kind Review — cpu');
+    expect(output).toContain('## Next Commands\n\n_no rerun required by report signal_');
+    expect(output).not.toContain('## Kind Review — memory');
+    expect(output).not.toContain('## Kind Review — async');
   });
 
   it('renders kind review summaries and uses aggregate files when findings are absent', () => {
@@ -948,24 +939,20 @@ describe('renderReport', () => {
       { format: 'agent' },
     );
 
-    expect(output).toContain('- Degrading caveats: source-map coverage below 70%');
-    expect(output).toContain('## Action Queue\n\nNo findings.');
-    expect(output).toContain('## Kind Review');
-    expect(output).toContain(
-      '- Top user hotspot: handler at src/server.ts:42 (/repo/dist/server.js:12)',
+    expect(output).toContain('"source-map coverage below 70%"');
+    expect(output).toContain('## Findings\n\n_no findings_');
+    expect(output).toContain('## Kind Review — cpu');
+    expect(output).toContain('- top_user_hotspot: handler at src/server.ts:42');
+    expect(output).toMatch(
+      /\| 1 +\| parsePayload +\| \/repo\/node_modules\/pkg\/index\.js:8 .*src\/server\.ts:42 \(high\)/,
     );
     expect(output).toContain(
-      '- Hotspot 1: parsePayload at /repo/node_modules/pkg/index.js:8; user caller handler (src/server.ts:42 (/repo/dist/server.js:12)) [high, support 92.0%]',
+      '- top_allocator: Buffer.alloc at node:buffer:10 — user_caller loadCache at src/cache.ts:18 (high, heap-sample-path, support 100.0%)',
     );
     expect(output).toContain(
-      '- Top allocator: Buffer.alloc at node:buffer:10; user caller loadCache (src/cache.ts:18 (/repo/dist/cache.js:6)) [high, support 100.0%]',
+      '- top_async_hot_file: loadUsers at src/users.ts:27 — user_caller route at src/routes.ts:11 (high, async-stack, support 85.0%)',
     );
-    expect(output).toContain(
-      '- Top async hot file: loadUsers at src/users.ts:27 (/repo/dist/users.js:9); user caller route (src/routes.ts:11 (/repo/dist/routes.js:3)) [high, support 85.0%]',
-    );
-    expect(output).toContain(
-      '- CPU chain 1: promise at 20.0% CPU; user caller route (src/routes.ts:11 (/repo/dist/routes.js:3)) [medium, support 85.0%]',
-    );
+    expect(output).toMatch(/\| 1 \| promise +\|.*src\/routes\.ts:11 \(medium\)/);
     expect(output).toContain('1. `src/server.ts`');
     expect(output).toContain('2. `src/cache.ts`');
     expect(output).toContain('3. `src/users.ts`');
@@ -1056,8 +1043,8 @@ describe('renderReport', () => {
       { format: 'agent' },
     );
 
-    expect(output).toContain(
-      '- Operation 1: tcp#42 at /repo/node_modules/mongodb/lib/cmap/connection.js:255; user caller loadUsers (src/users.ts:27 (/repo/dist/users.js:9)) [high, support 88.0%]',
+    expect(output).toMatch(
+      /\| 1 \| tcp +\| 42 +\| \/repo\/node_modules\/mongodb\/lib\/cmap\/connection\.js:255 \| 1200 +\| src\/users\.ts:27 \(high\) \|/,
     );
     expect(output).toContain('1. `src/users.ts`');
     expect(output).not.toContain('1. `/repo/node_modules/mongodb/lib/cmap/connection.js`');
@@ -1073,14 +1060,13 @@ describe('renderReport', () => {
       { format: 'agent' },
     );
 
-    expect(output).toContain('## Kind Review');
-    expect(output).toContain('### custom-profiler');
+    expect(output).toContain('## Kind Review — custom-profiler');
     expect(output).toContain(
-      '- Custom kind: inspect the declared profile kind and report shape without assuming a built-in section key.',
+      '_custom kind: inspect the declared profile kind and report shape without assuming a built-in section key_',
     );
-    expect(output).not.toContain('### cpu');
-    expect(output).not.toContain('### memory');
-    expect(output).not.toContain('### async');
+    expect(output).not.toContain('## Kind Review — cpu');
+    expect(output).not.toContain('## Kind Review — memory');
+    expect(output).not.toContain('## Kind Review — async');
   });
 
   it('keeps virtual source-map paths out of files to read first', () => {
@@ -1147,11 +1133,9 @@ describe('renderReport', () => {
       { format: 'agent' },
     );
 
+    expect(output).toContain('- top_user_hotspot: handler at webpack://app/src/server.ts:42');
     expect(output).toContain(
-      '- Top user hotspot: handler at webpack://app/src/server.ts:42 (/repo/dist/server.js:12)',
-    );
-    expect(output).toContain(
-      'No editable user source files identified from findings or aggregates.',
+      '_no editable user source files identified from findings or aggregates_',
     );
     expect(output).not.toContain('1. `webpack://app/src/server.ts`');
   });
@@ -1192,10 +1176,10 @@ describe('renderReport', () => {
       { format: 'agent' },
     );
 
-    expect(output).toContain(`- Source: \`${dependencyFile}:255\``);
+    expect(output).toContain(`- location: ${dependencyFile}:255`);
     expect(output).toContain('Do not patch the dependency file directly');
     expect(output).toContain(
-      'No editable user source files identified from findings or aggregates.',
+      '_no editable user source files identified from findings or aggregates_',
     );
     expect(output).not.toContain(`1. \`${dependencyFile}\``);
   });
@@ -1248,9 +1232,9 @@ describe('renderReport', () => {
     );
 
     expect(output).toContain(
-      '- User caller: handleRequest (src/app.ts:44 (/repo/src/app.js:22)) [high, support 92.0%]',
+      '- user_caller: handleRequest at src/app.ts:44 (high, cpu-sample-path, support 92.0%)',
     );
-    expect(output).toContain('- f1: actionable');
+    expect(output).toMatch(/\| 1 +\| f1 +\|.*\| actionable +\|/);
     expect(output).toContain('1. `src/app.ts`');
     expect(output).not.toContain(`1. \`${dependencyFile}\``);
   });
@@ -1301,8 +1285,8 @@ describe('renderReport', () => {
     );
 
     expect(output).toContain(
-      '- User caller: handleRequest (/repo/src/app.js:22) [medium, support 70.0%]',
+      '- user_caller: handleRequest at /repo/src/app.js:22 (medium, async-cpu-window, support 70.0%)',
     );
-    expect(output).toContain('- f1: hypothesis');
+    expect(output).toMatch(/\| 1 +\| f1 +\|.*\| hypothesis +\|/);
   });
 });
