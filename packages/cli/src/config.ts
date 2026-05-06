@@ -39,7 +39,7 @@ type ScalarConfigKey = (typeof SCALAR_CONFIG_KEYS)[number];
 const RawConfigSchema = z.object({
   duration: z.union([z.string(), z.number()]).optional(),
   output: z.string().optional(),
-  format: z.enum(['json', 'text', 'markdown']).optional(),
+  format: z.enum(['json', 'text', 'markdown', 'agent']).optional(),
   pretty: z.boolean().optional(),
   sourceMaps: z.boolean().optional(),
   detectors: z.array(z.string()).optional(),

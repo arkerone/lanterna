@@ -290,6 +290,51 @@ describe('profile commands', () => {
     );
   });
 
+  it('runCommand passes agent format to report output', async () => {
+    const report = { meta: {}, profiles: {}, findings: [] };
+    mocks.runProfile.mockResolvedValue(report);
+
+    await runCommand({
+      command: ['node', 'app.js'],
+      pretty: false,
+      format: 'agent',
+      deep: false,
+      sampleIntervalMicros: 1000,
+      detectors: [],
+      kinds: ['cpu'],
+    });
+
+    expect(mocks.writeReportOutput).toHaveBeenCalledWith(
+      report,
+      undefined,
+      false,
+      'agent',
+      expect.any(Array),
+    );
+  });
+
+  it('attachCommand passes agent format to report output', async () => {
+    const report = { meta: {}, profiles: {}, findings: [] };
+    mocks.attachProfile.mockResolvedValue(report);
+
+    await attachCommand({
+      pid: 1234,
+      pretty: false,
+      format: 'agent',
+      sampleIntervalMicros: 1000,
+      detectors: [],
+      kinds: ['cpu'],
+    });
+
+    expect(mocks.writeReportOutput).toHaveBeenCalledWith(
+      report,
+      undefined,
+      false,
+      'agent',
+      expect.any(Array),
+    );
+  });
+
   it('reportCommand reads an existing report and writes the selected rendering', async () => {
     await reportCommand({
       file: 'report.json',
@@ -303,6 +348,22 @@ describe('profile commands', () => {
       'report.md',
       false,
       'markdown',
+    );
+  });
+
+  it('reportCommand can render an existing report for agents', async () => {
+    await reportCommand({
+      file: 'report.json',
+      pretty: false,
+      format: 'agent',
+      output: 'report.agent.md',
+    });
+
+    expect(mocks.writeExistingReportOutput).toHaveBeenCalledWith(
+      'report.json',
+      'report.agent.md',
+      false,
+      'agent',
     );
   });
 });

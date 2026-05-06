@@ -94,9 +94,7 @@ export const longAwaitDetector: KindScopedDetector<'async'> = {
           },
         },
         why: buildWhy(op, frame, dropped),
-        suggestion: frame
-          ? `Open \`${frame.file}:${frame.line}\` (\`${frame.function}\`) and add a timeout/abort path to this operation. Network and database calls should always carry a deadline (\`AbortController\`, axios \`timeout\`, \`pg\` statement_timeout, etc.).`
-          : `Trace the trigger chain (triggerAsyncId=${op.triggerAsyncId}) to find the call site. Add explicit timeouts on network/database calls and verify every promise has a path to resolve or reject.`,
+        suggestion: buildSuggestion(op, frame),
         references: [
           'https://nodejs.org/api/async_hooks.html',
           'https://developer.mozilla.org/en-US/docs/Web/API/AbortController',
@@ -106,6 +104,18 @@ export const longAwaitDetector: KindScopedDetector<'async'> = {
     return findings;
   },
 };
+
+function buildSuggestion(op: AsyncTopOperation, frame: AsyncTopOperation['initFrame']): string {
+  const timeoutGuidance =
+    'Network and database calls should always carry a deadline (`AbortController`, axios `timeout`, `pg` statement_timeout, etc.).';
+  if (!frame) {
+    return `Trace the trigger chain (triggerAsyncId=${op.triggerAsyncId}) to find the call site. Add explicit timeouts on network/database calls and verify every promise has a path to resolve or reject.`;
+  }
+  if (!isUserEditableFrame(frame)) {
+    return `Do not patch the dependency file directly. Find the user-code caller that starts \`${frame.function}\` at \`${frame.file}:${frame.line}\`, then configure the timeout, abort signal, pool option, or query deadline at that call site. ${timeoutGuidance}`;
+  }
+  return `Open \`${frame.file}:${frame.line}\` (\`${frame.function}\`) and add a timeout/abort path to this operation. ${timeoutGuidance}`;
+}
 
 function buildWhy(
   op: AsyncTopOperation,
@@ -120,4 +130,19 @@ function buildWhy(
     ? ' Records were dropped during capture (`recordsDropped > 0`), so this is a lower bound.'
     : '';
   return `${head}${tail}.${drop} Long-lived async operations are usually slow I/O, network calls without a timeout, or promises waiting on something that already finished.`;
+}
+
+function isUserEditableFrame(frame: AsyncTopOperation['initFrame']): boolean {
+  if (!frame) return false;
+  return !isDependencyOrRuntimePath(frame.source?.file ?? frame.file);
+}
+
+function isDependencyOrRuntimePath(file: string): boolean {
+  return (
+    file.startsWith('node:') ||
+    file.includes('/node_modules/') ||
+    file.includes('/pnpm-store/') ||
+    file.includes('/.pnpm/') ||
+    file.includes('/caches/pnpm-store/')
+  );
 }

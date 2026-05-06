@@ -35,6 +35,8 @@ Attach reports can still be useful for new resources created during the capture 
 
 ## Report Paths
 
+These are targeted JSON lookup paths. For analysis, read the agent report first and use its frontmatter, `## Findings` table, `## Finding N` blocks, `Findings.decision` column, `Kind Review`, `Files To Read First`, and `Next Steps` sections as the contract.
+
 - `profiles.async.summary`: availability, counts, top kinds, collectedVia, instrumentation mode.
 - `profiles.async.quality`: confidence, reasons, recommendations, dropped records, `attachPartialCapture`, CDP stack coverage.
 - `profiles.async.records[]`: resource lifecycle records with init, resolve/destroy, run windows, and stacks.
@@ -47,7 +49,7 @@ Attach reports can still be useful for new resources created during the capture 
 
 ## Quality Gate
 
-Before prescribing, check:
+Before prescribing, check the report frontmatter and async `Kind Review`. If the rendered report omits a needed async detail, use these targeted JSON paths:
 
 - `profiles.async.quality.confidence`
 - `profiles.async.quality.reasons[]`
@@ -76,11 +78,15 @@ Async findings usually include:
 - `hot-async-context` / async CPU attribution findings when combined with CPU data.
 - `microtask-flood` when microtask or TickObject volume dominates and microtasks were included.
 
-Prefer findings with high confidence, clear `evidence.source.file` / `line` when present (or `evidence.file` / `line` as fallback), and corroborating records or chains. For orphan resources, inspect whether the resource is intentionally long-lived before patching.
+Prefer findings that the `Findings.decision` column marks actionable, with high confidence, clear rendered `Source` / generated fallback, and corroborating records or chains. For orphan resources, inspect whether the resource is intentionally long-lived before patching.
 
 ## Source Positions
 
 Await sites, resource origins, and async findings may carry a resolved `source` object. Prefer `source.file:source.line` over the raw `file:line` — raw coordinates point at compiled JS, `source.*` at the original TypeScript or bundled source. Fall back when `source` is missing. Use `source.name` for anonymous frames. Treat virtual paths (`webpack://`, `vite:/`) as bundler labels, not editable files, unless they resolve on disk. Quality gate: `meta.captureIntegrity.sourceMaps.coverage`.
+
+For analysis, use the rendered agent location first. Consult raw async frames only as a targeted JSON lookup when `Kind Review` does not render the specific frame or `userCaller` you need.
+
+In `## Files To Read First`, async rows use specific reasons such as `top async hot file`, `long async operation`, `long async operation caller`, `async hot file`, and `async CPU attribution`. Prefer `read-first` user callers for external async work; treat `inspect-lead` rows as places to confirm the async chain before editing. Pseudo/runtime async frames are filtered out of Kind Review tables unless an editable user caller can anchor the operation.
 
 ## Stop Conditions
 

@@ -121,7 +121,7 @@ export const OUTPUT_OPTIONS = [
   {
     flag: '--format <format>',
     description: 'Output format',
-    hint: 'json, text, markdown',
+    hint: 'json, text, markdown, agent',
   },
   {
     flag: '--pretty',

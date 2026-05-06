@@ -126,6 +126,30 @@ describe('long-await detector', () => {
     const result = pipeline.run(bundle, { command: ['node', 'app.js'], mode: 'spawn' });
     expect(result.findings).toEqual([]);
   });
+
+  it('does not tell agents to patch dependency frames for long awaits', () => {
+    const records: AsyncOperationRecord[] = [];
+    for (let i = 0; i < 8; i++) records.push(makeRecord(100 + i, 1, 'promise', 10));
+    records.push(
+      withFrame(makeRecord(999, 1, 'tcp', 1500), {
+        function: 'sendWire',
+        file: '/app/caches/pnpm-store/mongodb@6.20.0/node_modules/mongodb/lib/cmap/connection.js',
+        line: 255,
+      }),
+    );
+    const bundle = makeBundle({ records });
+    const pipeline = createAnalysisPipeline({
+      kinds: [createAsyncProfileKind()],
+      findingAnalyzers: [createFindingAnalyzerFromKindScopedDetector(longAwaitDetector)],
+    });
+
+    const result = pipeline.run(bundle, { command: ['node', 'app.js'], mode: 'spawn' });
+    const finding = result.findings.find((f) => f.id.startsWith('long-await:'));
+
+    expect(finding?.suggestion).not.toContain('Open `/app/caches/pnpm-store');
+    expect(finding?.suggestion).toContain('Do not patch the dependency file directly');
+    expect(finding?.suggestion).toContain('Find the user-code caller');
+  });
 });
 
 describe('orphan-async-resource detector', () => {

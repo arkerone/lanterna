@@ -26,7 +26,19 @@ Stop conditions specific to memory:
 - A capture under ~2 s with < 8 series samples is unreliable for `memory-growth` (slope is noisy). Ask the user to extend the duration before asserting a leak.
 - An empty `hotAllocators[]` with `memoryUsage.sampleCount > 0` means no allocations crossed the sampling threshold during capture — typically a steady-state workload reusing pools, or too short a window.
 
-## Reading `profiles.memory`
+## Reading Memory Evidence
+
+Start from the agent report, not from JSON:
+
+1. frontmatter — memory usage availability, heap snapshot warnings, integrity and source-map caveats.
+2. `## Findings` table / `## Finding N` blocks / `Findings.decision` column — memory findings, proof level, measurements, and actionability.
+3. `Kind Review` -> `memory` — memory usage, top allocator, hot allocators, user callers, and heap snapshot summary.
+4. `Files To Read First` — table of editable source locations to inspect before proposing patches. `read-first` rows are the primary queue; `inspect-lead` rows need confirmation; `supporting-context` rows provide surrounding evidence.
+5. `Next Steps` — rerun guidance when the report signal is degraded, mostly idle, or missing representative workload.
+
+Use the JSON shape below only when the agent report does not render a memory field you need to clarify.
+
+## Targeted JSON Lookup: `profiles.memory`
 
 ```json
 {
@@ -93,7 +105,7 @@ Stop conditions specific to memory:
 }
 ```
 
-Reading order:
+Targeted lookup order after the agent report:
 
 1. `summary.rss.slopeBytesPerSec` — positive and large means growth. Compare with `heapUsed` slope: if RSS grows but heapUsed is flat, the leak is off-heap (Buffer / native). If both grow, it's likely a JS-heap leak.
 2. `summary.topAllocator` and `hotAllocators[0..N]` — actionable allocation sources.
@@ -101,7 +113,7 @@ Reading order:
 4. `memoryUsage.firstSample` / `lastSample` — quick endpoints. Re-run with `--include-memory-samples` only when the slope alone is ambiguous and you need the full curve (e.g. step changes vs. steady growth).
 5. `heapSnapshotAnalysis` — present only with `--heap-snapshot-analysis`. Treat `available: false` plus `warnings[]` as a graceful degradation; the normal memory report still applies. Use `growthByConstructor[]` to identify growing object families and `retainerPaths[]` to inspect likely retainers. Heuristic labels are clues, not proof.
 
-`selfBytes` is bytes attributed exclusively to the frame; `totalBytes` includes its callees. Treat node\_modules / builtin frames as **symptoms**, not root causes — open the user-code caller first.
+`selfBytes` is bytes attributed exclusively to the frame; `totalBytes` includes its callees. Treat node\_modules / builtin frames as **symptoms**, not root causes — open the user-code caller first. In the agent report, `Files To Read First.reason` distinguishes allocator frames, dependency callers, runtime callers, generated output fallbacks, and supporting context. Pseudo/runtime allocator rows are filtered out of Kind Review tables unless an editable user caller can anchor the work.
 
 ## Source Positions
 
@@ -127,7 +139,9 @@ Each memory finding's `evidence.extra` carries the raw counters (slope, MB delta
 - **No growth, but `large-allocator` fires hard** → allocation churn. Hot path allocates and frees rapidly, driving GC pauses. Often co-fires with `excessive-gc` from the CPU side. Pool/reuse, prefer for-loops to `map+filter+slice` chains, avoid intermediate strings/objects.
 - **`alloc-in-hot-path` fires** → highest-leverage fix in the report. Reducing allocations on this frame cuts both CPU and GC.
 
-## jq snippets
+## Targeted jq snippets
+
+Use these only after reading `report.agent.md`, and only to clarify a field not rendered by frontmatter, `Kind Review`, `## Findings` table, or `## Finding N` blocks.
 
 ```bash
 # Memory summary at a glance
@@ -154,7 +168,7 @@ jq '.profiles.memory.heapSnapshotAnalysis.retainerPaths[] | {constructorName, re
 Stop and ask the user when:
 
 - The capture window is < 2 s — slope is unreliable, do not assert a leak.
-- `meta.profileKinds` does not include `memory` — the user did not request memory capture; do not invent memory observations from the CPU profile.
+- The agent frontmatter section does not list `memory` — the user did not request memory capture; do not invent memory observations from the CPU profile.
 - `memoryUsage.available` is false — the preload hook didn't run (e.g. no inspector). Time-series claims are not supported; only `hotAllocators` (from the CDP-side sampling profile) remain trustworthy.
 - `heapSnapshotAnalysis.available` is false — snapshot capture or parsing failed. Read `warnings[]`, keep using `summary`, `hotAllocators`, and `memoryUsage`, and avoid retainer claims.
 - The user mentions "OOM" but `summary.rss.maxBytes` is far below the host memory limit — the run probably did not reach the failure window; ask for a longer capture or one started closer to the OOM event.

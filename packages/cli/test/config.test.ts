@@ -26,8 +26,8 @@ describe('loadLanternaConfig', () => {
         join(dir, '.lanterna.json'),
         JSON.stringify({
           duration: '15s',
-          output: 'report.md',
-          format: 'markdown',
+          output: 'report.agent.md',
+          format: 'agent',
           pretty: true,
           sourceMaps: false,
           detectors: ['@scope/plugin', './local.js'],
@@ -52,8 +52,8 @@ describe('loadLanternaConfig', () => {
       const config = await loadLanternaConfig(dir);
       expect(config).toEqual({
         durationMs: 15_000,
-        output: 'report.md',
-        format: 'markdown',
+        output: 'report.agent.md',
+        format: 'agent',
         pretty: true,
         sourceMaps: false,
         detectors: ['@scope/plugin', './local.js'],

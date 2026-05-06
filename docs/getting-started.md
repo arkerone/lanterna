@@ -68,7 +68,10 @@ The fastest first pass is the built-in renderer:
 ```bash
 lanterna report report.json --format text
 lanterna report report.json --format markdown --output report.md
+lanterna report report.json --format agent --output report.agent.md
 ```
+
+For agent analysis, keep `report.json` as the archived source of truth and generate `report.agent.md` from it. Use `--format agent` directly on `run` or `attach` only when you need immediate agent-oriented output.
 
 For exact fields, use `jq`:
 

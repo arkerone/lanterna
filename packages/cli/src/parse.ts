@@ -291,7 +291,7 @@ function addCommonProfilingOptions(command: Command): Command {
   return command
     .option(OPTION_FLAGS.duration, 'Profiling duration', parseDuration)
     .option(OPTION_FLAGS.output, 'Write report to path')
-    .option(OPTION_FLAGS.format, 'Output format: json, text, or markdown', parseOutputFormat)
+    .option(OPTION_FLAGS.format, 'Output format: json, text, markdown, or agent', parseOutputFormat)
     .option(OPTION_FLAGS.pretty, 'Pretty-print JSON')
     .option(
       OPTION_FLAGS.noSourceMaps,
@@ -367,7 +367,7 @@ function createReportParser(): Command {
   return createBaseParser('report')
     .argument('[file]')
     .option(OPTION_FLAGS.output, 'Write rendered report to path')
-    .option(OPTION_FLAGS.format, 'Output format: json, text, or markdown', parseOutputFormat)
+    .option(OPTION_FLAGS.format, 'Output format: json, text, markdown, or agent', parseOutputFormat)
     .option(OPTION_FLAGS.pretty, 'Pretty-print JSON output');
 }
 
@@ -473,7 +473,7 @@ function parseOutputFormat(value: string): OutputFormat {
     throw new CommanderError(
       1,
       'lanterna.invalidFormat',
-      `invalid --format: ${value} (expected json, text, or markdown)`,
+      `invalid --format: ${value} (expected json, text, markdown, or agent)`,
     );
   }
 }

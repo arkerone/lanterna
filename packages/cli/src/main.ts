@@ -102,6 +102,10 @@ ${formatExamples('Examples', [
     cmd: 'lanterna report report.json --format text',
   },
   {
+    comment: 'Create deterministic agent analysis input from JSON',
+    cmd: 'lanterna report report.json --format agent --output report.agent.md',
+  },
+  {
     comment: 'Run a fresh process under the profiler',
     cmd: 'lanterna run --duration 30s --output report.json -- node app.js',
   },
@@ -163,6 +167,10 @@ ${formatExamples('Examples', [
     cmd: 'lanterna run --format markdown --output report.md -- node script.js',
   },
   {
+    comment: 'Render agent markdown directly from a capture',
+    cmd: 'lanterna run --format agent --output report.agent.md -- node script.js',
+  },
+  {
     comment: 'Wait for a server and run autocannon during capture',
     cmd: 'lanterna run --duration 30s --wait-for-url http://127.0.0.1:3000/health --workload "npx -y autocannon http://127.0.0.1:3000" -- node server.js',
   },
@@ -220,6 +228,10 @@ ${formatExamples('Examples', [
     comment: 'Memory profile of a live process',
     cmd: 'lanterna attach --pid 4242 --kind memory --duration 30s',
   },
+  {
+    comment: 'Render agent markdown from a live process',
+    cmd: 'lanterna attach --pid 4242 --duration 15s --format agent --output report.agent.md',
+  },
   { comment: 'Attach until you stop it manually', cmd: 'lanterna attach --pid 4242' },
   { comment: 'Open the interactive picker', cmd: 'lanterna attach --pid' },
 ])}
@@ -249,6 +261,10 @@ ${formatExamples('Examples', [
   {
     comment: 'Create markdown for an issue or pull request',
     cmd: 'lanterna report report.json --format markdown --output report.md',
+  },
+  {
+    comment: 'Create deterministic agent analysis input',
+    cmd: 'lanterna report report.json --format agent --output report.agent.md',
   },
   { comment: 'Reformat JSON', cmd: 'lanterna report report.json --format json --pretty' },
 ])}
