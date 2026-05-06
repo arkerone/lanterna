@@ -1,6 +1,8 @@
 # CPU Profiling Reference
 
-Use this when interpreting the built-in CPU profile kind. The current built-in kind id and report section key are both `cpu`, so CPU analysis lives under `profiles.cpu.*`, CPU meta under `meta.kinds.cpu.*`, and CPU integrity under `meta.captureIntegrity.kinds.cpu.*`.
+Use this when interpreting the built-in CPU profile kind. This reference exists to support an interactive investigation, not to produce a CPU summary — read the agent report first, then come here to interpret the specific CPU signal you need to verify a hypothesis or rule out a lead.
+
+The current built-in kind id and report section key are both `cpu`, so CPU analysis lives under `profiles.cpu.*`, CPU meta under `meta.kinds.cpu.*`, and CPU integrity under `meta.captureIntegrity.kinds.cpu.*`.
 
 ## Capture Rules
 

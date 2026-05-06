@@ -1,6 +1,8 @@
 # Async Profiling Reference
 
-Use this for `--kind async` reports. The async kind is experimental and opt-in. It observes async resource lifecycles, run windows, concurrency samples, optional safe API stacks, and CDP async-stack support under `profiles.async.*`, with meta under `meta.kinds.async.*` and integrity under `meta.captureIntegrity.kinds.async.*`.
+Use this for `--kind async` reports. This reference supports an interactive investigation — read the agent report first, then return here to interpret async lifecycle records, distinguish CPU work from awaits, and judge whether attach-mode partial capture is hiding the resources the user cares about.
+
+The async kind is experimental and opt-in. It observes async resource lifecycles, run windows, concurrency samples, optional safe API stacks, and CDP async-stack support under `profiles.async.*`, with meta under `meta.kinds.async.*` and integrity under `meta.captureIntegrity.kinds.async.*`.
 
 ## When to Capture Async
 
