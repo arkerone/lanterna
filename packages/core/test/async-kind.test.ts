@@ -396,6 +396,12 @@ describe('async kind round-trip', () => {
         'async_hooks data was not available; collection used cdp-only',
       ]),
     );
+    expect(quality?.recommendations).toEqual(
+      expect.arrayContaining(['Increase --async-max-events or shorten the capture window.']),
+    );
+    expect(quality?.recommendations).not.toEqual(
+      expect.arrayContaining(['Increase --async-max-records or shorten the capture window.']),
+    );
   });
 
   it('adds root, deepest, and dominant file frames to async chains', () => {

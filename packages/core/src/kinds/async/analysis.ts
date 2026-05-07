@@ -653,7 +653,7 @@ function buildQuality(
     reasons.push(
       `${data.integrity.recordsDropped} async records were dropped because maxRecords=${data.maxRecords} was reached`,
     );
-    recommendations.add('Increase --async-max-records or shorten the capture window.');
+    recommendations.add('Increase --async-max-events or shorten the capture window.');
   }
   if (data.collectedVia !== 'async-hooks') {
     reasons.push(`async_hooks data was not available; collection used ${data.collectedVia}`);
