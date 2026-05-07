@@ -12,6 +12,7 @@
     "test": "turbo run test",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
+    "bench": "node bench/run.mjs",
     "dev": "turbo run dev",
     "lint": "biome lint .",
     "lint:fix": "biome lint --write .",
