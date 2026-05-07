@@ -39,13 +39,15 @@ Attach reports can still be useful for new resources created during the capture 
 
 These are targeted JSON lookup paths. For analysis, read the agent report first and use its frontmatter, `## Findings` table, `## Finding N` blocks, `Findings.decision` column, `Kind Review`, `Files To Read First`, and `Next Steps` sections as the contract.
 
-- `profiles.async.summary`: availability, counts, top kinds, collectedVia, instrumentation mode.
+- `profiles.async.summary`: availability, counts, top kinds, `collectedVia`, dropped record count, and optional `topAsyncHotFile`.
 - `profiles.async.quality`: confidence, reasons, recommendations, dropped records, `attachPartialCapture`, CDP stack coverage.
-- `profiles.async.records[]`: resource lifecycle records with init, resolve/destroy, run windows, and stacks.
+- `profiles.async.topOperations[]`: ranked resource lifecycle summaries with duration, run counts, frames, and optional await/CPU attribution.
+- `profiles.async.hotFiles[]`: ranked user files responsible for async work.
 - `profiles.async.chains[]`: parent/trigger chains built from async resource relationships.
-- `profiles.async.concurrency`: active/inflight samples over time.
-- `profiles.async.awaitGaps[]`: long awaits when enough evidence exists.
+- `profiles.async.concurrencyTimeline[]`: active/inflight samples over time.
 - `profiles.async.orphans[]`: resources still unresolved/undestroyed at read time.
+- `profiles.async.cdpAsyncContexts[]`: supplemental CDP async stacks.
+- `profiles.async.cpuAttribution.topChains[]`: CPU attributed to async run windows when CPU was captured.
 - `meta.kinds.async.*`: capture knobs such as instrumentation mode and stack depth.
 - `meta.captureIntegrity.kinds.async.*`: per-kind integrity, including dropped records and async-stack support.
 
@@ -58,8 +60,9 @@ Before prescribing, check the report frontmatter and async `Kind Review`. If the
 - `profiles.async.quality.attachPartialCapture`
 - `profiles.async.quality.recordsDropped`
 - `profiles.async.quality.cdpAsyncStackCoverageRatio`
+- `profiles.async.quality.instrumentationMode`
 - `profiles.async.summary.collectedVia`
-- `profiles.async.summary.instrumentationMode`
+- `profiles.async.summary.recordsDropped`
 
 Interpretation rules:
 
@@ -75,12 +78,12 @@ Interpretation rules:
 Async findings usually include:
 
 - `deep-async-chain`: async parent chains exceed depth thresholds.
-- `long-await`: await gaps are materially long.
+- `long-await`: async operations or await frames are materially long.
 - `orphan-async-resource`: resources remain unresolved/undestroyed at read time.
 - `hot-async-context` / async CPU attribution findings when combined with CPU data.
 - `microtask-flood` when microtask or TickObject volume dominates and microtasks were included.
 
-Prefer findings that the `Findings.decision` column marks actionable, with high confidence, clear rendered `Source` / generated fallback, and corroborating records or chains. For orphan resources, inspect whether the resource is intentionally long-lived before patching.
+Prefer findings that the `Findings.decision` column marks actionable, with high confidence, clear rendered `Source` / generated fallback, and corroborating top operations or chains. For orphan resources, inspect whether the resource is intentionally long-lived before patching.
 
 ## Source Positions
 

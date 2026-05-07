@@ -78,7 +78,7 @@ Strongest actionable lead:
 
 ## Source Positions
 
-Every CPU frame may carry an optional `source` object resolved from a source map: `hotspots[].source`, `summary.topUserHotspot.source`, `hotStacks[].frames[].source`, `hotStacks[].clusters[].anchor.source`, and `findings[].evidence.source`.
+Every CPU frame may carry an optional `source` object resolved from a source map: `hotspots[].source`, `summary.topUserHotspot.source`, `hotStacks[].frames[].source`, `hotStackClusters[].anchor.source`, and `findings[].evidence.source`.
 
 - When `source` is present, cite `source.file:source.line` (the original TypeScript / bundled source) — do not cite `file:line` (the compiled `dist/` output).
 - When `source` is absent, fall back to `file:line` (no map was found for that frame — common for `node:` builtins or stripped bundles).
