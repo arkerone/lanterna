@@ -21,12 +21,40 @@
 
 > Lanterna is built so its output is **useful to an AI agent**, not just a human reader. Instead of a flamegraph, you get a categorized, correlated, and actionable `LanternaReport` — ready to pipe into an LLM or a CLI tool.
 
+## Why Lanterna?
+
+Most Node.js profilers were designed for a human staring at a flamegraph. That's a problem when an AI agent is doing the investigation: a flamegraph isn't parseable, hot stacks aren't categorized, and "what should I fix first?" requires a human to interpret the visual.
+
+Lanterna takes a different stance:
+
+- **Structured JSON, not pixels.** The `LanternaReport` is a stable schema — hotspots, allocators, async chains, GC pauses, event-loop lag, and findings — that an agent can read, correlate, and act on directly.
+- **Detectors, not just data.** 17 built-in detectors emit categorized `findings` (sync crypto, blocking I/O, deopt loops, memory growth, orphan async resources, …) with `confidence` and `proofLevel` so consumers know when to trust a hypothesis vs. require corroboration.
+- **CPU + memory + async in one capture.** Combine kinds in a single run; cross-kind detectors like `alloc-in-hot-path` and `hot-async-context` surface the highest-priority fixes (something flamegraph tools can't represent).
+- **Spawn or attach.** Profile a CLI, a server under load, or a live production process — same report shape, same detector surface.
+
+### Compared to other Node.js profilers
+
+| Tool | Primary output | CPU | Memory | Async | Findings / detectors | Agent-friendly |
+| --- | --- | :-: | :-: | :-: | :-: | :-: |
+| **Lanterna** | Structured JSON (+ text/markdown/agent renderers) | ✅ | ✅ | ✅ (experimental) | ✅ 17 built-in, pluggable | ✅ |
+| `node --prof` / `--cpu-prof` | V8 isolate log / `.cpuprofile` | ✅ | — | — | — | ⚠️ raw, post-processing required |
+| [0x](https://github.com/davidmarkclements/0x) | HTML flamegraph | ✅ | — | — | — | ❌ |
+| [Clinic.js](https://github.com/clinicjs/node-clinic) (Doctor / Flame / Bubbleprof) | HTML dashboards | ✅ | ⚠️ via Doctor | ⚠️ via Bubbleprof | ⚠️ heuristic recommendations | ❌ |
+| Chrome DevTools (inspector) | Interactive UI | ✅ | ✅ | ⚠️ stack-only | — | ❌ |
+
+When to reach for something else:
+- **You want a flamegraph for human inspection.** 0x and Chrome DevTools are purpose-built for that.
+- **You're already on Clinic.js's Doctor diagnostics workflow.** Clinic does well as a one-shot human triage.
+- **You need raw V8 internals (deoptimization traces, ICs, etc.).** Use `--prof` and the V8 tooling directly.
+
+Lanterna is the right fit when the consumer of the report is **an agent or an automated pipeline** that needs categorized signals, not pixels.
+
 ## What you get
 
 - **Two capture modes** — `lanterna run` to spawn & profile a command, `lanterna attach` to connect to a live process via the inspector.
 - **Three profile kinds** — opt in with `--kind`: `cpu` (V8 sampling profiler, default), `memory` (heap allocation profile + RSS series), and `async` (experimental async-resource profiling). Combine kinds by repeating `--kind` (`--kind cpu --kind memory`) or using commas (`--kind cpu,memory`).
 - **Enriched `LanternaReport`** — categorized hotspots, hot stacks, GC pauses, event-loop lag, allocator ranking, async chains, capture-integrity flags.
-- **Built-in detectors** for the patterns that actually matter — sync crypto / blocking I/O / JSON-on-hot-path, dependency hotspots, excessive GC, event-loop stalls, deopt loops, sustained memory growth, large allocators, off-heap pressure, deep async chains, long awaits, orphan resources, and more.
+- **17 built-in detectors** across CPU, memory, and async kinds — see the [Built-in detectors](#built-in-detectors) section below.
 - **Stable JSON schema** with finding `confidence` and `proofLevel` fields so consumers can distinguish direct sampled evidence from heuristics.
 - **Extensible** — ship your own detectors and profile kinds as plugins.
 
@@ -56,6 +84,44 @@ lanterna run --kind memory --heap-snapshot-analysis --duration 60s -- node app.j
 ```
 
 `Ctrl+C` stops profiling early **and still emits a final report**.
+
+## Built-in detectors
+
+Lanterna ships 17 detectors out of the box. Each emits a `Finding` in the report with `confidence` and `proofLevel` so consumers can distinguish direct sampled evidence from heuristics.
+
+**CPU kind** (8)
+
+| ID | What it flags |
+| --- | --- |
+| `sync-crypto-on-hot-path` | Synchronous `crypto` calls (`pbkdf2Sync`, `randomBytesSync`, …) dominating CPU |
+| `blocking-io` | Synchronous `fs` / `zlib` / `dns` calls on hot stacks |
+| `json-on-hot-path` | `JSON.parse` / `JSON.stringify` dominating CPU |
+| `excessive-gc` | High GC pause time relative to wall time |
+| `event-loop-stall` | Long event-loop lag spikes correlated with stack samples |
+| `deopt-loop` | V8 deoptimisation cycles repeatedly hit on the same function |
+| `require-in-hot-path` | Dynamic `require()` resolved on hot stacks (cold-start surprise) |
+| `node-modules-hotspot` | A third-party dependency dominating CPU |
+
+**Memory kind** (4)
+
+| ID | What it flags |
+| --- | --- |
+| `memory-growth` | Sustained heap / RSS growth over the capture window |
+| `large-allocator` | A single allocator responsible for a dominant share of bytes |
+| `external-buffer-pressure` | Off-heap pressure (Buffers, ArrayBuffers) |
+| `alloc-in-hot-path` | Allocators that are also CPU hot stacks — double impact, top-priority fix (cross-kind: requires both `cpu` and `memory`, auto-skips otherwise) |
+
+**Async kind** (experimental, 5)
+
+| ID | What it flags |
+| --- | --- |
+| `long-await` | `await` expressions exceeding the wait-time threshold |
+| `orphan-async-resource` | Async resources created but never resolved / destroyed |
+| `deep-async-chain` | Deeply nested await chains amplifying latency |
+| `microtask-flood` | Microtask queue saturation starving the event loop |
+| `hot-async-context` | Async contexts dominating CPU (cross-kind: requires both `cpu` and `async`, auto-skips otherwise) |
+
+Thresholds are configurable via `.lanterna.json` — see [docs/configuration.md](docs/configuration.md). To ship your own detectors, see [docs/extending/detectors.md](docs/extending/detectors.md).
 
 ## Requirements
 
@@ -87,6 +153,7 @@ Start here, then dive into whichever topic you need:
 - **[docs/signal-quality.md](docs/signal-quality.md)** — confidence, integrity flags, degradation modes.
 - **[docs/architecture.md](docs/architecture.md)** — capture flow and enrichment pipeline.
 - **[docs/troubleshooting.md](docs/troubleshooting.md)** — symptom-keyed fixes.
+- **[docs/performance-overhead.md](docs/performance-overhead.md)** — measured startup cost and steady-state overhead per kind.
 
 Per-kind details:
 
@@ -100,6 +167,10 @@ Extending Lanterna:
 - **[docs/extending/profile-kinds.md](docs/extending/profile-kinds.md)** — write a brand-new profile kind.
 - **[docs/extending/plugin-loading.md](docs/extending/plugin-loading.md)** — how plugins are discovered and packaged.
 
+Runnable examples:
+
+- **[examples/](examples)** — three tiny standalone scripts that exhibit a CPU hotspot, a memory leak, and an event-loop stall, with the matching `lanterna` command for each.
+
 For agents (Claude Code skill):
 
 - **[skills/lanterna-profiler/SKILL.md](skills/lanterna-profiler/SKILL.md)** — the agent-oriented profiling workflow.
@@ -112,7 +183,7 @@ npx skills add arkerone/lanterna --skill lanterna-profiler
 
 ## Repository layout
 
-```
+```text
 packages/
   core/       @lanterna-profiler/core       — capture orchestration, kinds, pipeline, report
   detectors/  @lanterna-profiler/detectors  — default detector pack (CPU + memory + async) and plugin helpers
@@ -134,6 +205,14 @@ npm test            # runs every package's vitest suite
 Per-package work: `npm run build -w @lanterna-profiler/core`, `npm test -w @lanterna-profiler/cli`, etc.
 
 Tests use Vitest and cover frame classification, hotspot aggregation, detector evidence attribution, and live profiling paths — including short-lived processes and real event-loop stall correlation.
+
+## Changelog
+
+Each package ships its own changelog, generated by [Changesets](https://github.com/changesets/changesets):
+
+- [`packages/cli/CHANGELOG.md`](packages/cli/CHANGELOG.md)
+- [`packages/core/CHANGELOG.md`](packages/core/CHANGELOG.md)
+- [`packages/detectors/CHANGELOG.md`](packages/detectors/CHANGELOG.md)
 
 ## License
 
