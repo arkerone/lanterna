@@ -2,7 +2,7 @@
 
 How Lanterna captures profiles, enriches them, and turns raw data into a structured report.
 
-> Field paths in this document use **schema v2**: per-kind data lives under `profiles.<kind>.*` and per-kind meta under `meta.kinds.<kind>.*`. See [report-schema.md](./report-schema.md) for the full shape.
+> Field paths in this document use **schema v2**: built-in per-kind data lives under `profiles.<kind>.*` and per-kind meta under `meta.kinds.<kind>.*`. Custom kinds may use a distinct `ProfileKind.reportSectionKey` for their `profiles.*` section. See [report-schema.md](./report-schema.md) for the full shape.
 
 ## Overview
 
@@ -15,9 +15,9 @@ flowchart LR
 ```
 
 1. **Capture** — a `ProfileSource` (spawn / attach) hands a live CDP connection to the `runCapture` coordinator. The coordinator runs the installed **profile kinds'** probes against that connection, plus the always-on runtime-signals installer (event-loop + GC). Output: `CaptureBundle = { target, runtimeSignals, kinds, captureIntegrity, … }`.
-2. **Enrichment** — each kind contributes its analysis section (`profiles.<kind>`), detectors emit cross-kind `findings[]`, and `buildLanternaReport` assembles the final `LanternaReport`.
+2. **Enrichment** — each kind contributes its analysis section (`profiles.<reportSectionKey>`), detectors emit cross-kind `findings[]`, and `buildLanternaReport` assembles the final `LanternaReport`.
 
-**Profile kinds** are the extensibility seam. The built-in kinds are `cpu`, `memory`, and `async` (`async` is experimental and opt-in). Domain profilers plug in through the same interface — see [extending/profile-kinds.md](./extending/profile-kinds.md). The CLI selects active kinds with `--kind <id>` (repeatable, default `cpu`); the JSON report lists successfully captured kinds in `meta.profileKinds` and puts their sections under `profiles.<kind>`.
+**Profile kinds** are the extensibility seam. The built-in kinds are `cpu`, `memory`, and `async` (`async` is experimental and opt-in). Domain profilers plug in through the same interface — see [extending/profile-kinds.md](./extending/profile-kinds.md). The CLI selects active kinds with `--kind <id>` (repeatable, default `cpu`); the JSON report lists successfully captured kind ids in `meta.profileKinds` and puts their sections under each kind's `reportSectionKey`.
 
 ### Spawn vs attach
 
@@ -155,7 +155,7 @@ Attach-specific limitations:
 
 The pipeline transforms `CaptureBundle` into `LanternaReport` in four phases:
 
-1. **Kind contributors** — each `ProfileKind` writes its report section into `profiles.<kind>` and publishes a typed view consumable via `context.forKind(id)`.
+1. **Kind contributors** — each `ProfileKind` writes its report section into `profiles.<reportSectionKey>` and publishes a typed view consumable via `context.forKind(id)`.
 2. **Section analyzers** — optional extensions write under `extensions.<namespace>` (not kind-specific).
 3. **Finding analyzers** — cross-cutting rules emit `Finding`s, each tagged with a `profileKind` string.
 4. **Finalize** — each kind's optional `finalize` hook mutates its own section based on the final findings (e.g. CPU sets `profiles.cpu.summary.dominantBlockingKind` and `topUserHotspot`).
@@ -218,7 +218,7 @@ These fields are intentionally separate from `severity`: severity estimates impa
 - Generate flamegraphs as its primary output.
 - Infer source-level fixes by itself. It emits evidence and suggestions; remediation belongs to the user or to an agent consuming the report.
 - Provide an in-process programmatic API for inline self-profiling (only spawn and attach are supported today).
-- Stream heap snapshots — large snapshots are skipped with a warning instead of being parsed unbounded.
+- Stream heap snapshots — large snapshots return `heapSnapshotAnalysis.available: false` with a warning instead of being parsed unbounded.
 - Support differential CPU profiling between two captures (consumers can diff JSON reports themselves).
 
 ---

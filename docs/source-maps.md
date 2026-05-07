@@ -54,9 +54,9 @@ Whenever a frame is mapped successfully, a `source` object is attached:
 - `profiles.cpu.hotspots[].source`
 - `profiles.cpu.summary.topUserHotspot.source`
 - `profiles.cpu.hotStacks[].frames[].source`
-- `profiles.cpu.hotStacks[].clusters[].anchor.source`
+- `profiles.cpu.hotStackClusters[].anchor.source`
 - `profiles.memory.hotAllocators[].source` and the memory summary
-- `profiles.async.*` (await sites and resource origins)
+- `profiles.async.*` frame-bearing entries such as top operations, chains, orphans, CDP async contexts, and async CPU attribution
 - `findings[].evidence.source`
 
 ### Integrity block — `meta.captureIntegrity.sourceMaps`

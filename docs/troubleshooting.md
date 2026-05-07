@@ -21,7 +21,7 @@ Symptom-keyed fixes for the most common Lanterna issues.
 | Attach mode emits no deopts | [Attach mode has no deopts](#attach-mode-has-no-deopts) |
 | Unknown `--kind <id>` | [Unknown profile kind](#unknown-profile-kind) |
 | `memory-growth:*` finding looks like a startup artifact | [Spurious memory-growth on warm-up](#spurious-memory-growth-on-warm-up) |
-| `heapSnapshotAnalysis` empty or skipped | [Heap snapshot skipped or empty](#heap-snapshot-skipped-or-empty) |
+| `heapSnapshotAnalysis` missing or unavailable | [Heap snapshot missing or unavailable](#heap-snapshot-missing-or-unavailable) |
 | `--kind async` produces a near-empty report in attach | [Async report empty in attach mode](#async-report-empty-in-attach-mode) |
 | `--async-instrumentation full` misses awaits | [Async full instrumentation misses sites](#async-full-instrumentation-misses-sites) |
 
@@ -245,15 +245,15 @@ unknown profile kind(s): <ids>. Available kinds: cpu, memory, async
 
 ---
 
-## Heap snapshot skipped or empty
+## Heap snapshot missing or unavailable
 
-**Symptom:** `profiles.memory.heapSnapshotAnalysis` is missing, empty, or has `skipped: true`.
+**Symptom:** `profiles.memory.heapSnapshotAnalysis` is missing, or it is present with `available: false` and explanatory `warnings[]`.
 
 **Causes and fixes:**
 
 1. **You did not pass `--heap-snapshot-analysis`.** It's opt-in.
 2. **The capture ended via `Ctrl+C`.** When `--heap-snapshot-analysis` is active, stopping early skips the final snapshot so Lanterna exits promptly. Use `--duration` or let the target exit naturally.
-3. **The snapshot exceeded internal size limits.** Very large snapshots are skipped with a warning rather than parsed unbounded — `heapSnapshotAnalysis.skipped` is `true`. Reduce target heap usage or use `--heap-sample-interval` for a sampled view of allocations.
+3. **The snapshot exceeded internal size limits.** Very large snapshots return `heapSnapshotAnalysis.available: false` with a warning rather than being parsed unbounded. Reduce target heap usage or use `--heap-sample-interval` for a sampled view of allocations.
 4. **Disk write failed.** Check `--heap-snapshot-dir` is writable and has space. Default is `.lanterna-heapsnapshots`.
 
 ---
@@ -276,4 +276,4 @@ If you need full async capture, use `lanterna run --kind async -- ...` so Lanter
 
 1. **The code was loaded before instrumentation registered.** `full` rewrites `await` sites in modules loaded **after** registration. Code loaded earlier is not covered. In attach mode this is fundamental; in spawn mode it can happen if the preload hook is itself loaded after some modules (rare).
 2. **Source maps or bundlers interfere.** Bundled or transpiled code may not present recognisable `await` patterns to the rewriter. Run unbundled code where possible.
-3. **`safe` mode is sufficient.** `full` is experimental and higher risk. Stick to `safe` unless `safe` cannot identify the await sites you need; check `profiles.async.quality.instrumentationFailures` for failed rewrites — the count is non-fatal but indicative.
+3. **`safe` mode is sufficient.** `full` is experimental and higher risk. Stick to `safe` unless `safe` cannot identify the await sites you need; check `meta.kinds.async.transformStats.failed` and `profiles.async.quality.reasons[]` for failed rewrites — the count is non-fatal but indicative.

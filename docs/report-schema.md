@@ -9,18 +9,20 @@ A `LanternaReport` is the structured JSON Lanterna emits after every capture. Th
 ```ts
 interface LanternaReport {
   meta: Meta;
-  profiles: Partial<Record<KindId, KindReport>>;
+  profiles: Partial<Record<ReportSectionKey, KindReport>>;
   findings: Finding[];
+  extensions?: Record<string, unknown>;
 }
 ```
 
 | Field | Purpose |
 | --- | --- |
 | `meta` | Capture metadata, mode, duration, successfully captured `profileKinds`, integrity flags. |
-| `profiles.<kind>` | Per-kind analysis sections. Built-in kinds: `cpu`, `memory`, `async`. |
+| `profiles.<reportSectionKey>` | Per-kind analysis sections. Built-in section keys: `cpu`, `memory`, `async`. |
 | `findings` | Cross-kind detector output. Each finding carries a `profileKind` tag. |
+| `extensions` | Optional custom section-analyzer output keyed by analyzer namespace. Kind-specific data belongs under `profiles`. |
 
-The set of populated `profiles.<kind>` entries matches `meta.profileKinds`.
+For built-in kinds, populated `profiles.<kind>` entries match `meta.profileKinds`. Custom kinds may choose a `ProfileKind.reportSectionKey` different from their CLI kind id, so consumers should use the registered kind metadata when handling extension sections.
 
 ## `meta`
 
@@ -48,7 +50,7 @@ Heap sampling configuration, RSS series cadence, and heap snapshot status (when 
 
 ### `meta.kinds.async`
 
-Instrumentation mode (`safe` / `full` / `off`), max events cap, stack depth, microtask inclusion, concurrency interval, and warning counters such as dropped events or failed instrumentation.
+Instrumentation mode (`safe` / `full` / `off`), `maxRecords` cap, stack depth, microtask inclusion, concurrency interval, transform stats, and operation count.
 
 ### `meta.captureIntegrity`
 
@@ -65,7 +67,7 @@ Instrumentation mode (`safe` / `full` / `off`), max events cap, stack depth, mic
 | `sourceMaps` | Optional source-map resolution integrity when source maps were enabled for the capture. |
 | `kinds.cpu.samplesTimed` | The CPU profile included usable per-sample timing deltas. |
 | `kinds.memory.*` | Memory-specific integrity counters when `--kind memory` is active. |
-| `kinds.async.*` | Async-specific integrity counters when `--kind async` is active (e.g. dropped events, partial-capture markers). |
+| `kinds.async.*` | Async-specific integrity counters when `--kind async` is active (e.g. `recordsDropped`, partial-capture markers). |
 
 `meta.captureIntegrity.sourceMaps` has this shape:
 
@@ -97,7 +99,7 @@ interface SourceLocation {
 
 When present, prefer `source.file:source.line` for human diagnosis and patching, but keep the generated `file:line` as fallback context. On-disk sources are relative to `meta.cwd` when possible. Bundler virtual sources such as `webpack://app/src/server.ts` or `vite:/src/server.ts` are kept verbatim and may not exist on disk.
 
-`source?: SourceLocation` can appear on CPU hotspots, hot-stack frames and anchors, memory allocators and memory summaries, async frame/resource records, deopts, and `findings[].evidence`.
+`source?: SourceLocation` can appear on CPU hotspots, hot-stack frames and anchors, memory allocators and memory summaries, async frame-bearing entries, deopts, and `findings[].evidence`.
 
 `userCaller?: UserCallerAttribution` can appear when the visible cost is outside user code but Lanterna can identify the nearest user frame that led there. It contains `function`, `file`, `line`, optional `column`/`source`, `profilePct`, `supportPct`, `confidence` (`low`/`medium`/`high`), and `basis` (`cpu-sample-path`, `heap-sample-path`, `async-stack`, or `async-cpu-window`). Treat it as an inspection lead; low-confidence attribution should not be read as the line to patch.
 
@@ -109,6 +111,7 @@ When present, prefer `source.file:source.line` for human diagnosis and patching,
 | `quality` | Confidence gate for CPU evidence — `confidence`, `sampleCount`, `durationMs`, `idleRatio`, `samplesTimed`, `durationBasis`, `reasons[]`, `recommendations[]`. |
 | `hotspots` | Aggregated functions with `selfMs`/`selfPct` and `totalMs`/`totalPct`, `callers[]`/`callees[]`, `category`, `optimizationState`, and optional `userCaller` for non-user frames. |
 | `hotStacks` | Most frequent complete sampled stacks with `weightPct` and `frames[]`. |
+| `hotStackClusters` | Optional hot-stack groups anchored on the nearest user-code frame. |
 | `gc` | Pause totals, counts, `longestPauseMs`, `pausesOver10ms`, `correlatedHotspots`. |
 | `eventLoop` | `available`, `measurementBasis` (`both`/`heartbeats`/`histogram`/`none`), `confidence`, lag percentiles, `stallIntervals`, `correlatedHotspots`. |
 | `deopts` | V8 deoptimisation clusters — populated only when `meta.kinds.cpu.deep === true`. |
@@ -122,13 +125,13 @@ Detail: [kinds/cpu.md](./kinds/cpu.md).
 | `summary` | Total sampled bytes, top allocator, RSS / heapUsed / external / arrayBuffers stats (start/end/min/max/mean/p95) plus linear `slopeBytesPerSec`. |
 | `hotAllocators` | Frames ranked by `selfBytes` / `totalBytes`, with file/line, frame category, and optional `userCaller` for external allocators. |
 | `memoryUsage` | Compact `process.memoryUsage()` metadata (`sampleCount`, first/last sample). Raw samples present only with `--include-memory-samples`. |
-| `heapSnapshotAnalysis` | Optional start/end retained-growth summary when `--heap-snapshot-analysis` is enabled. Very large snapshots are skipped with a warning instead of being parsed unbounded. |
+| `heapSnapshotAnalysis` | Optional start/end retained-growth summary when `--heap-snapshot-analysis` is enabled. Very large snapshots return `available: false` with a warning instead of being parsed unbounded. |
 
 Detail: [kinds/memory.md](./kinds/memory.md).
 
 ## `profiles.async` (experimental)
 
-Async resource lifecycle, concurrency timeline, awaits, orphans, CDP async-stack support, and quality metadata. Only present when `--kind async` was selected. In attach mode, capture is intentionally partial — the section's `quality` records this.
+Async resource lifecycle summaries, `topOperations`, `hotFiles`, `chains`, `orphans`, `concurrencyTimeline`, `filteredCounts`, `cdpAsyncContexts`, `cpuAttribution`, and quality metadata. Only present when `--kind async` was selected. In attach mode, capture is intentionally partial — the section's `quality` records this.
 
 Detail: [kinds/async.md](./kinds/async.md).
 
@@ -143,8 +146,8 @@ Each finding has the same shape regardless of which kind produced it:
 | `severity` | `critical`, `warning`, or `info`. |
 | `category` | Grouping for filtering. |
 | `title` | Short human label. |
-| `confidence` | Detector confidence (`high`, `medium`, `low`). |
-| `proofLevel` | Evidence class: `direct-sample`, `correlated-window`, `trace-only`, or `heuristic`. |
+| `confidence` | Optional detector confidence (`high`, `medium`, `low`). Built-in detectors set it. |
+| `proofLevel` | Optional evidence class: `direct-sample`, `correlated-window`, `trace-only`, or `heuristic`. Built-in detectors set it. |
 | `evidence.file` / `evidence.line` / `evidence.function` | Where the action should happen (often the user caller, not the builtin callee). |
 | `evidence.selfPct` | CPU/allocation weight attributed to that evidence. |
 | `evidence.extra` | Detector-specific metadata. |
@@ -158,7 +161,7 @@ The full catalog of built-in findings, grouped by kind, is in [extending/detecto
 
 ## Schema versioning
 
-This is **schema v2**. The defining trait of v2 is per-kind nesting under `profiles.<id>.*` and `meta.kinds.<id>.*`. Future schema changes will bump the version; consumers should branch on the discriminator they need rather than on the version itself.
+This is **schema v2**. The defining trait of v2 is per-kind nesting under `profiles.<reportSectionKey>.*` and `meta.kinds.<kindId>.*`. Future schema changes will bump the version; consumers should branch on the discriminator they need rather than on the version itself.
 
 ## See also
 

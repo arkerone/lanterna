@@ -34,7 +34,7 @@ export const kinds: ProfileKind[] = [
 ];
 ```
 
-`pipeline` is the active `AnalysisPipeline`. `ctx` (`LanternaPluginContext`) gives access to capture options, kind registry, and helpers.
+`pipeline` is the active `AnalysisPipeline`. `ctx` (`LanternaPluginContext`) exposes the current `cwd` and mode (`spawn` / `attach`).
 
 ## Kind-scoped detector (recommended)
 
@@ -171,7 +171,7 @@ The default pack lives in `@lanterna-profiler/detectors` and pre-wires detectors
 
 | Finding id | Trigger |
 | --- | --- |
-| `alloc-in-hot-path:<frame>` | Same frame hot on CPU **and** in top allocators. Requires `--kind cpu memory`. |
+| `alloc-in-hot-path:<frame>` | Same frame hot on CPU **and** in top allocators. Requires `--kind cpu --kind memory` or `--kind cpu,memory`. |
 
 ## Attribution helpers
 
@@ -198,7 +198,7 @@ import {
 ```ts
 import { DETECTOR_THRESHOLDS } from '@lanterna-profiler/detectors';
 
-console.log(DETECTOR_THRESHOLDS.eventLoop.p99LagWarningMs);
+console.log(DETECTOR_THRESHOLDS.eventLoopStall.p99);
 ```
 
 You can read these values in your own detectors so users get consistent thresholds across the pack.

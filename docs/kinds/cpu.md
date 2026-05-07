@@ -6,7 +6,7 @@ The default profile kind. Captures the V8 sampling profiler plus timed runtime s
 | --- | --- |
 | Kind id | `cpu` |
 | Default? | Yes — `--kind cpu` is the default for `lanterna run` and `lanterna attach`. |
-| Report sections | `profiles.cpu.{summary, quality, hotspots, hotStacks, gc, eventLoop, deopts}` |
+| Report sections | `profiles.cpu.{summary, quality, hotspots, hotStacks, hotStackClusters?, gc, eventLoop, deopts}` |
 | Meta | `meta.kinds.cpu` |
 | Integrity | `meta.captureIntegrity.kinds.cpu` |
 
@@ -59,6 +59,10 @@ For non-user frames, `userCaller` is present when a user-code ancestor was obser
 
 Most frequent complete sampled stacks, weighted by share of total samples. Useful when a single hotspot is ambiguous and you need the surrounding call path.
 
+### `hotStackClusters`
+
+Optional groups of hot sampled stacks anchored on the nearest user-code frame. Use this when many complete stacks point to the same actionable caller.
+
 ### `eventLoop`
 
 Latency signal correlated with stall windows. Quality of this section is described by `measurementBasis` and `confidence` — see [signal-quality.md](../signal-quality.md#profilescpueventloop).
@@ -69,7 +73,7 @@ Pause counts, total pause time, longest pause, detailed list of pauses over 10 m
 
 ### `deopts`
 
-V8 deoptimisation clusters with `function`, `file`, `line`, `reason`, `bailout`, `count`, and `explanation`. Empty unless `meta.kinds.cpu.deep === true`.
+V8 deoptimisation clusters with `function`, `file`, `line`, `reason`, `bailoutType`, `count`, and `explanation`. Empty unless `meta.kinds.cpu.deep === true`.
 
 ## Findings
 
@@ -94,7 +98,7 @@ Each finding ships with `confidence`, `proofLevel`, `evidence.file/line/function
 4. Top 5 `hotspots` even when no finding fired — direct evidence.
 5. `eventLoop` — translates CPU pressure into latency.
 6. `gc` — allocation pressure and pauses.
-7. `hotStacks` — when a hotspot is ambiguous, look at the surrounding stack.
+7. `hotStacks` / `hotStackClusters` — when a hotspot is ambiguous, look at surrounding stacks and their user anchors.
 8. `deopts` — only with `--deep`, and only repeated entries matter.
 
 For full interpretation rules and common mistakes, see [reading-a-report.md](../reading-a-report.md).

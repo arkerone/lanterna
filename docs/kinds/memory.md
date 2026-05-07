@@ -64,7 +64,7 @@ Compact metadata: `sampleCount`, first/last sample timestamps. Raw samples are p
 
 ### `heapSnapshotAnalysis` (optional)
 
-When `--heap-snapshot-analysis` is enabled, contains a start/end retained-growth synthesis: top retainer paths, growth in retained sizes, and noise-filtered constructor groups. Very large snapshots are **skipped with a warning** rather than parsed unbounded — `heapSnapshotAnalysis.skipped` records this so consumers can tell silence from absence.
+When `--heap-snapshot-analysis` is enabled, contains a start/end retained-growth synthesis: top retainer paths, growth in retained sizes, and noise-filtered constructor groups. Very large snapshots are reported as `heapSnapshotAnalysis.available: false` with `warnings[]` rather than parsed unbounded, so consumers can tell silence from absence.
 
 ## Findings
 
@@ -73,7 +73,7 @@ When `--heap-snapshot-analysis` is enabled, contains a start/end retained-growth
 | `memory-growth:rss` / `memory-growth:heapUsed` | Sustained linear growth ≥ 1 MB/s (warning) or ≥ 5 MB/s (critical) over the capture window. |
 | `large-allocator:<frame>` | A single frame accounts for ≥ 15 % of sampled allocations. |
 | `external-buffer-pressure` | Mean `external` exceeds 0.5× `heapUsed` (and ≥ 32 MB absolute). |
-| `alloc-in-hot-path:<frame>` | Cross-kind: same frame is hot on CPU **and** in top allocators. Requires `--kind cpu memory`. |
+| `alloc-in-hot-path:<frame>` | Cross-kind: same frame is hot on CPU **and** in top allocators. Requires `--kind cpu --kind memory` or `--kind cpu,memory`. |
 
 `alloc-in-hot-path` is the highest-value memory finding when you also captured CPU: it isolates allocators that pay both a GC cost (memory) and a direct CPU cost (allocation overhead) — usually the best place to apply object pooling or buffer reuse.
 

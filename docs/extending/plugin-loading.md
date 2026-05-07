@@ -59,7 +59,7 @@ See [configuration.md](../configuration.md) for the full config file reference.
 ## Resolution order
 
 1. Built-in kinds (`cpu`, `memory`, `async`) are registered.
-2. Plugins listed in `.lanterna.json` `detectors[]` are loaded — their `kinds` named exports are registered, then their default `setupPipeline` runs.
+2. Plugins listed in `.lanterna.json` `detectors[]` are loaded — their `kinds` named exports are registered, then their default `setupPipeline` function is queued for the analysis pipeline.
 3. Plugins from `--detectors` flags (in command-line order) are loaded the same way.
 4. `--kind <id>` is resolved against the combined kind registry. Unknown ids fail before capture starts.
 
@@ -80,8 +80,8 @@ A standalone npm package:
     ".": "./dist/index.js"
   },
   "peerDependencies": {
-    "@lanterna-profiler/core": "^1.7.0",
-    "@lanterna-profiler/detectors": "^1.5.0"
+    "@lanterna-profiler/core": "^2.0.0",
+    "@lanterna-profiler/detectors": "^2.0.1"
   }
 }
 ```
@@ -96,8 +96,8 @@ Conventions:
 ## Failure modes
 
 - **Module not found.** The CLI exits with the resolution error. Local paths must be relative to the current working directory.
-- **Module loads but exports neither `default` nor `kinds`.** The CLI rejects the plugin with `plugin module exports neither a default function nor a named kinds array`.
-- **`kinds` collision.** A plugin registering an id already in the registry fails fast. Pick a unique id (e.g. `fs-acme`).
+- **Module loads but exports neither `default` nor non-empty `kinds`.** The CLI rejects the plugin with `detector plugin "<spec>" must export default function(pipeline, ctx) and/or named "kinds: ProfileKind[]"`.
+- **`kinds` collision.** A plugin registering a kind id or report section key already in the registry fails fast. Pick a unique id and `reportSectionKey` (e.g. `fs-acme`).
 - **Detector throws during pipeline run.** The pipeline isolates failures: the detector's findings are dropped for that run, but other detectors and the report itself are unaffected. The error is logged.
 
 ## See also
