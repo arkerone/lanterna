@@ -1,5 +1,11 @@
 # @lanterna-profiler/cli
 
+## 1.10.1
+
+### Patch Changes
+
+- 0d0173e: Document agent skill installation with `npx skills`, add the skills.sh badge, and show the CLI version in the global help header.
+
 ## 1.10.0
 
 ### Minor Changes
