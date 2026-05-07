@@ -6,7 +6,7 @@
 
 <p align="center">
   <strong>Agent-first Node.js CPU, memory & experimental async profiler.</strong><br />
-  Runs your program, captures a V8 profile plus timed runtime signals,<br />
+  Spawns or attaches to your program, captures selected profile kinds plus timed runtime signals,<br />
   and emits a structured JSON report that humans <em>and</em> AI agents can act on directly.
 </p>
 
@@ -24,10 +24,10 @@
 ## What you get
 
 - **Two capture modes** — `lanterna run` to spawn & profile a command, `lanterna attach` to connect to a live process via the inspector.
-- **Three profile kinds** — opt in with `--kind`: `cpu` (V8 sampling profiler, default), `memory` (heap allocation profile + RSS series), and `async` (experimental async-resource profiling).
+- **Three profile kinds** — opt in with `--kind`: `cpu` (V8 sampling profiler, default), `memory` (heap allocation profile + RSS series), and `async` (experimental async-resource profiling). Combine kinds by repeating `--kind` (`--kind cpu --kind memory`) or using commas (`--kind cpu,memory`).
 - **Enriched `LanternaReport`** — categorized hotspots, hot stacks, GC pauses, event-loop lag, allocator ranking, async chains, capture-integrity flags.
 - **Built-in detectors** for the patterns that actually matter — sync crypto / blocking I/O / JSON-on-hot-path, dependency hotspots, excessive GC, event-loop stalls, deopt loops, sustained memory growth, large allocators, off-heap pressure, deep async chains, long awaits, orphan resources, and more.
-- **Stable JSON schema** with `confidence` and `proofLevel` on every finding so consumers can distinguish direct sampled evidence from heuristics.
+- **Stable JSON schema** with finding `confidence` and `proofLevel` fields so consumers can distinguish direct sampled evidence from heuristics.
 - **Extensible** — ship your own detectors and profile kinds as plugins.
 
 ## 60-second example

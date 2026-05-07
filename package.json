@@ -2,7 +2,7 @@
   "name": "lanterna-monorepo",
   "private": true,
   "version": "0.1.0",
-  "description": "Agent-first Node.js CPU profiler — monorepo root",
+  "description": "Agent-first Node.js CPU, memory & experimental async profiler — monorepo root",
   "type": "module",
   "workspaces": [
     "packages/*"
