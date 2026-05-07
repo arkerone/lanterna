@@ -97,7 +97,7 @@ function buildGrowthFinding(
     why: `${label} climbed at ${formatRate(slopeMBPerSec)} (linear fit) over ${(durationMs / 1000).toFixed(1)}s. Sustained linear growth is a leak signature: objects are retained instead of being released between requests.`,
     suggestion:
       metric === 'rss'
-        ? 'Take heap snapshots at start vs end (Chrome DevTools or `--inspect`), compare retained-size diffs, and look for unbounded caches/Maps, dangling listeners, or accumulating closures. Correlate with the top hot allocators in `profiles.memory.hotAllocators`.'
+        ? 'Rerun with `--kind memory --heap-snapshot-analysis` so Lanterna can compare start/end retained growth and expose `profiles.memory.heapSnapshotAnalysis.retainerPaths`. Correlate retainer clues with the top hot allocators in `profiles.memory.hotAllocators`; use Chrome DevTools heap snapshots only if Lanterna still lacks retention signal.'
         : 'V8 heap is growing — review long-lived collections (Map, Set, arrays), event listeners, and Promise chains that retain references. Run with `--expose-gc` and force a GC near peak to confirm objects are reachable, not just deferred.',
     references: [
       'https://nodejs.org/en/learn/diagnostics/memory/using-heap-snapshot',
