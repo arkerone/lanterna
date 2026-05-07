@@ -517,6 +517,10 @@ function installAsyncOperations(
             : handler;
         return (original as (...timerArgs: unknown[]) => unknown).call(this, wrapped, ...args);
       };
+      // Monkey-patch the timer API on `globalThis` and remember the original so
+      // dispose() can restore it. The cast loosens `globalThis` to a string-keyed
+      // map because the indexed assignment isn't expressible against the typed
+      // global namespace; the value shape is constrained by `typeof original`.
       (globalThis as unknown as Record<typeof name, unknown>)[name] = patched as typeof original;
       restoredApis.push(() => {
         (globalThis as unknown as Record<typeof name, unknown>)[name] = original;

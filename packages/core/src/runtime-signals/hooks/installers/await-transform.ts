@@ -73,6 +73,10 @@ export function transformAwaitExpressions(
       stats.partial = true;
       return { code: source, stats };
     }
+    // oxc-parser's `Program` and our local `AstNode` describe the same shape
+    // but oxc returns a deeply-typed union we don't model. The cast lets the
+    // visitor walk the tree generically — the structural assumptions are
+    // checked by node-kind branches further down.
     program = parsed.program as unknown as AstNode;
   } catch {
     stats.failed = 1;

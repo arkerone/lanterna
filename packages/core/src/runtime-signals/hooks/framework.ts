@@ -275,6 +275,11 @@ export function installLanternaFramework(
   };
 
   // Capabilities are populated by installers via a shared bag.
+  // The next three `as unknown as` injections (capabilities, heartbeatSamples,
+  // startCapture) widen `api` with framework-internal fields that aren't part
+  // of the public installer API but need to be reachable from the closure body
+  // below — keeping them off the typed surface area prevents installers from
+  // accidentally depending on them.
   const capabilities = { eventLoop: false, gc: false, lifecycle: emitLifecycle };
   (api as unknown as { capabilities: typeof capabilities }).capabilities = capabilities;
 
@@ -384,6 +389,10 @@ export function installLanternaFramework(
       setTimeout(() => {}, 250);
     };
     const originalExit = process.exit.bind(process);
+    // Monkey-patch `process.exit` to flush an `app-complete` event before the
+    // process tears down. The cast loosens the never-returns signature so we
+    // can install a wrapper that *does* return after emitting; the original
+    // call is forwarded synchronously and still terminates the process.
     (process as unknown as { exit: (code?: number) => void }).exit = function patchedExit(
       code?: number,
     ) {
