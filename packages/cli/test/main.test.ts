@@ -31,6 +31,7 @@ describe('main help routing', () => {
     await main([]);
     expect(stdoutWrite).toHaveBeenCalledWith(GLOBAL_HELP);
     expect(GLOBAL_HELP).toContain('██');
+    expect(GLOBAL_HELP).toContain(`v${VERSION}`);
     expect(GLOBAL_HELP).toContain('Agent-first Node.js profiler');
     expect(GLOBAL_HELP).toContain('Commands');
     expect(GLOBAL_HELP).toContain('Examples');
