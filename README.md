@@ -12,6 +12,7 @@
 
 <p align="center">
   <a href="https://www.npmjs.com/package/@lanterna-profiler/cli"><img src="https://img.shields.io/npm/v/@lanterna-profiler/cli.svg" alt="npm version" /></a>
+  <a href="https://skills.sh/arkerone/lanterna"><img src="https://skills.sh/b/arkerone/lanterna" alt="skills.sh" /></a>
   <img src="https://img.shields.io/node/v/@lanterna-profiler/cli.svg" alt="Node.js version" />
   <img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT" />
 </p>

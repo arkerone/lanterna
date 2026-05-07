@@ -15,6 +15,8 @@ You only need the CLI to capture and read reports. The other packages (`@lantern
 
 ### Agent skill
 
+[![skills.sh](https://skills.sh/b/arkerone/lanterna)](https://skills.sh/arkerone/lanterna)
+
 Lanterna also ships an agent-oriented profiling workflow in [`skills/lanterna-profiler/SKILL.md`](../skills/lanterna-profiler/SKILL.md). Install it into your agent workspace with:
 
 ```bash
