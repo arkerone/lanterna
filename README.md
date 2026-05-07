@@ -103,6 +103,12 @@ For agents (Claude Code skill):
 
 - **[skills/lanterna-profiler/SKILL.md](skills/lanterna-profiler/SKILL.md)** — the agent-oriented profiling workflow.
 
+Install the skill into an agent workspace with:
+
+```bash
+npx skills add arkerone/lanterna --skill lanterna-profiler
+```
+
 ## Repository layout
 
 ```
