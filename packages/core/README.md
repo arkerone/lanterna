@@ -21,6 +21,7 @@ import { createCpuProfileKindWithBuiltInDetectors } from '@lanterna-profiler/det
 const report = await runProfile({
   command: ['node', 'app.js'],
   durationMs: 15_000,
+  pretty: false,
   kinds: [
     createCpuProfileKindWithBuiltInDetectors({
       readStderrSoFar: () => '',

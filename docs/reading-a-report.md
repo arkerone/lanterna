@@ -23,10 +23,10 @@ Use `--format agent` when an AI agent or automation will consume the report. It 
 | 5 | `profiles.cpu.hotspots` | Where CPU is actually spent (self + inclusive). | A hot leaf in `node_modules` is usually a symptom, not a cause. |
 | 6 | `profiles.cpu.eventLoop` | Latency signal + stall windows. | `confidence = low` or `measurementBasis = histogram` alone. |
 | 7 | `profiles.cpu.gc` | Pause counts, duration, correlated hotspots. | Very short runs with no `gcTimed`. |
-| 8 | `profiles.cpu.hotStacks` | Complete sampled call paths, weighted. | Only needed when a single hotspot is ambiguous. |
-| 9 | `profiles.cpu.deopts` | V8 deoptimisation clusters. | Empty unless `meta.kinds.cpu.deep === true`. |
+| 8 | `profiles.cpu.hotStacks` / `hotStackClusters` | Complete sampled call paths, plus optional groups by user-code anchor. | Only needed when a single hotspot is ambiguous. |
+| 9 | `profiles.cpu.deopts` | V8 deoptimisation clusters. | Empty unless `meta.kinds.cpu.deep === true`; field is `bailoutType`, not `bailout`. |
 | 10 | `profiles.memory.*` | Allocators, RSS series, optional snapshot deltas. | Short captures inflate growth slopes; sample interval bounds visibility. |
-| 11 | `profiles.async.*` | Experimental async chains, awaits, orphans, concurrency. | `quality.attachPartialCapture = true`, dropped events, low CDP stack coverage. |
+| 11 | `profiles.async.*` | Experimental async top operations, chains, orphans, and concurrency. | `quality.attachPartialCapture = true`, dropped records, low CDP stack coverage. |
 
 `findings[]` is cross-kind at the root; each finding carries a required `profileKind` tag so you can filter.
 
@@ -77,7 +77,7 @@ For some detectors (e.g. `sync-crypto-on-hot-path`, `blocking-io:<api>`), `evide
 
 #### `proofLevel` separates evidence class from impact
 
-`severity` estimates impact; `proofLevel` describes the evidence:
+`severity` estimates impact; when present, `proofLevel` describes the evidence:
 
 | Value | Meaning |
 | --- | --- |

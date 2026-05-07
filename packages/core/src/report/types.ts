@@ -788,7 +788,7 @@ export type ExtensionEntry = unknown;
 /**
  * Root Lanterna report — schema v2.
  *
- * - `profiles.<kind>` holds per-kind analysis output (cpu/memory/async/...).
+ * - `profiles.<reportSectionKey>` holds per-kind analysis output (cpu/memory/async/...).
  * - `findings` stays cross-kind; each finding is tagged `profileKind`.
  * - `extensions` is the free-form escape hatch for custom analyzer sections
  *   that aren't tied to a profile kind.

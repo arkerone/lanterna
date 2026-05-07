@@ -174,6 +174,24 @@ describe('parseRunArgs', () => {
     expectKindsToEqual(parsed.kinds, ['cpu', 'memory', 'async']);
   });
 
+  it('rejects whitespace-separated multi-kind syntax before the target separator', () => {
+    expect(() => parseRunArgs(['--kind', 'cpu', 'memory', '--', 'node', 'app.js'])).toThrow(
+      /Use --kind cpu,memory or repeat --kind/,
+    );
+  });
+
+  it('accepts comma-separated multi-kind syntax', () => {
+    const parsed = parseRunArgs(['--kind', 'cpu,memory', '--', 'node', 'app.js']);
+
+    expectKindsToEqual(parsed.kinds, ['cpu', 'memory']);
+  });
+
+  it('accepts repeatable multi-kind syntax', () => {
+    const parsed = parseRunArgs(['--kind', 'cpu', '--kind', 'memory', '--', 'node', 'app.js']);
+
+    expectKindsToEqual(parsed.kinds, ['cpu', 'memory']);
+  });
+
   it('parses raw memory sample opt-in for run and attach', () => {
     expect(
       parseRunArgs(['--kind', 'memory', '--include-memory-samples', '--', 'node', 'app.js'])
@@ -211,6 +229,19 @@ describe('parseRunArgs', () => {
         'app.js',
       ]),
     ).toThrow(/invalid --async-instrumentation/);
+  });
+
+  it('rejects the old async max records flag name', () => {
+    expect(() =>
+      parseRunArgs(['--kind', 'async', '--async-max-records', '1000', '--', 'node', 'app.js']),
+    ).toThrow(/unknown option "--async-max-records"/);
+  });
+
+  it('accepts the async max events flag name', () => {
+    expect(
+      parseRunArgs(['--kind', 'async', '--async-max-events', '1000', '--', 'node', 'app.js'])
+        .asyncMaxRecords,
+    ).toBe(1000);
   });
 
   it('parses heap snapshot analysis options for memory captures', () => {

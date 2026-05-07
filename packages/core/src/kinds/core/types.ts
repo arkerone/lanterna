@@ -21,8 +21,8 @@ export interface CaptureKindDataMap {
 }
 
 /**
- * Map of kind id -> report section shape. Augmented per-kind. Controls what
- * appears under `report.profiles[kindId]`.
+ * Map of report section key -> report section shape. Augmented per-kind.
+ * Controls what appears under `report.profiles[reportSectionKey]`.
  */
 export interface ProfileSectionMap {
   [kindId: string]: unknown;

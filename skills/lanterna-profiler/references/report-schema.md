@@ -75,7 +75,7 @@ Important global integrity flags:
 
 ### `SourceLocation`
 
-Optional field on every frame-bearing object (`hotspots[]`, `summary.topUserHotspot`, `hotStacks[].frames[]`, `hotStacks[].clusters[].anchor`, `hotAllocators[]`, async `awaitSites[]`, `findings[].evidence`):
+Optional field on every frame-bearing object (`hotspots[]`, `summary.topUserHotspot`, `hotStacks[].frames[]`, `hotStackClusters[].anchor`, `hotAllocators[]`, async frame-bearing entries such as `topOperations[]` / `chains[]` / `orphans[]`, `findings[].evidence`):
 
 ```json
 { "file": "src/server.ts", "line": 42, "column": 18, "name": "handleRequest" }

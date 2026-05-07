@@ -1,6 +1,6 @@
 # Writing a Profile Kind
 
-A **profile kind** is a new axis of measurement: it captures its own data, contributes its own report section under `profiles.<id>.*`, and (optionally) ships its own detectors. CPU, memory and async are each implemented exactly this way and serve as reference implementations.
+A **profile kind** is a new axis of measurement: it captures its own data, contributes its own report section under `profiles.<reportSectionKey>.*`, and (optionally) ships its own detectors. CPU, memory and async use matching kind ids and report section keys, and serve as reference implementations.
 
 When you only want a new **rule** on existing data, write a detector instead — see [detectors.md](./detectors.md).
 
@@ -12,9 +12,9 @@ A `ProfileKind<TData>` provides:
 | --- | --- |
 | `id` | Stable kind id (`'cpu'`, `'memory'`, `'async'`, `'heap'`, …). Used on the CLI as `--kind <id>` and in `meta.profileKinds`. |
 | `reportSectionKey` | Key under `report.profiles.*`. Usually equal to `id`. |
-| `reportSchema` | Zod schema validating `profiles.<id>.*`. Composed dynamically by `buildReportSchema(kinds)`. |
+| `reportSchema` | Zod schema validating `profiles.<reportSectionKey>.*`. Composed dynamically by `buildReportSchema(kinds)`. |
 | `createProbe()` | Factory returning a `CaptureProbe<TData>` that drives the live target via CDP and returns the raw kind data. |
-| `createAnalysisContributor()` | Factory returning a `KindAnalysisContributor<TData>` that turns raw data into the `profiles.<id>.*` section and a typed view. |
+| `createAnalysisContributor()` | Factory returning a `KindAnalysisContributor<TData>` that turns raw data into the `profiles.<reportSectionKey>.*` section and a typed view. |
 | `label?` | Human-readable label for logs and help. |
 | `hookInstaller?` | Optional preload-script fragment composed into the runtime hook (for kinds that need in-target instrumentation). |
 | `contributeMeta?(data)` | Optional contribution merged under `meta.kinds.<id>.*`. |
@@ -265,6 +265,7 @@ import { createFsProfileKind } from './kind.js';
 await runProfile({
   command: ['node', 'app.js'],
   durationMs: 30_000,
+  pretty: false,
   kinds: [createFsProfileKind()],
 });
 ```
@@ -274,7 +275,7 @@ Or build a registry up-front:
 ```ts
 import { createKindRegistry } from '@lanterna-profiler/core';
 const registry = createKindRegistry([createFsProfileKind() /* , other kinds */]);
-const resolved = registry.resolve(['fs', 'cpu']);
+const resolved = registry.resolveMany(['fs', 'cpu']);
 ```
 
 ## Reference implementations

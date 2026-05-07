@@ -138,6 +138,23 @@ describe('memory-growth detector', () => {
     expect(rssFinding?.profileKind).toBe('memory');
   });
 
+  it('recommends Lanterna heap snapshot analysis before external heap tooling', () => {
+    const bundle = makeBundle({
+      samplingProfile: singleAllocatorProfile('alloc', 'file:///app/src/a.js', 1, 1024),
+      memoryUsageSamples: growingSeries(6 * 1024),
+    });
+    const pipeline = createAnalysisPipeline({
+      kinds: [createMemoryProfileKind()],
+      findingAnalyzers: [createFindingAnalyzerFromKindScopedDetector(memoryGrowthDetector)],
+    });
+    const result = pipeline.run(bundle, { command: ['node', 'app.js'], mode: 'spawn' });
+
+    const rssFinding = result.findings.find((f) => f.id === 'memory-growth:rss');
+    expect(rssFinding?.suggestion).toContain('--heap-snapshot-analysis');
+    expect(rssFinding?.suggestion).toContain('heapSnapshotAnalysis.retainerPaths');
+    expect(rssFinding?.suggestion).not.toContain('Chrome DevTools or `--inspect`');
+  });
+
   it('does not fire when growth is below threshold', () => {
     const bundle = makeBundle({
       samplingProfile: singleAllocatorProfile('alloc', 'file:///app/src/a.js', 1, 1024),

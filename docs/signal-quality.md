@@ -72,16 +72,16 @@ The memory kind exposes statistical signals rather than a discrete confidence en
 
 - `summary.rss.slopeBytesPerSec` — linear growth slope. Sustained slopes ≥ 1 MB/s trigger a `memory-growth` finding (warning); ≥ 5 MB/s upgrades to critical. Short captures with warm-up phases can produce artificially steep slopes.
 - `memoryUsage.sampleCount` — how many `process.memoryUsage()` samples landed. Below ~10 samples, the slope is unreliable.
-- `heapSnapshotAnalysis.skipped` — whether snapshot parsing was skipped because the file exceeded internal size limits. When skipped, retained-growth claims are absent rather than approximate.
+- `heapSnapshotAnalysis.available` plus `heapSnapshotAnalysis.warnings[]` — whether retained-growth parsing succeeded. When `available` is `false`, retained-growth claims are absent rather than approximate.
 
 ## `profiles.async.*` quality
 
 The async kind reports its own quality fields:
 
 - `quality.attachPartialCapture` — `true` in attach mode, signaling that resources created before hook installation cannot be observed.
-- `quality.cdpStackCoverage` — fraction of resources for which Lanterna obtained a CDP async stack. Low coverage weakens chain-related findings.
-- `quality.droppedEvents` — number of events discarded once `--async-max-events` was reached. A non-zero value means the report is sampled, not exhaustive.
-- `quality.instrumentationFailures` — counter for `--async-instrumentation full` rewrite failures (logged but never fatal).
+- `quality.cdpAsyncStackCoverageRatio` — fraction of resources for which Lanterna obtained a CDP async stack. Low coverage weakens chain-related findings.
+- `quality.recordsDropped` — number of records discarded once `--async-max-events` was reached. A non-zero value means the report is sampled, not exhaustive.
+- `meta.kinds.async.transformStats.failed` — counter for `--async-instrumentation full` rewrite failures. These are non-fatal; when full instrumentation is partial, `quality.reasons[]` and `quality.recommendations[]` explain how to interpret the report.
 
 ## Failure and degradation modes
 

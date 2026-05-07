@@ -59,7 +59,7 @@ const generalRows = renderOptionRows(GENERAL_OPTIONS);
 
 const GLOBAL_HELP = `${renderBrandHeader({
   subtitle: 'Agent-first Node.js profiler',
-  accent: 'CPU and memory captures for real Node.js workloads',
+  accent: 'CPU, memory, and experimental async captures for real Node.js workloads',
   version: VERSION,
 })}
 

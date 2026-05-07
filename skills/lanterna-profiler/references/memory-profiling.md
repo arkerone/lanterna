@@ -129,14 +129,14 @@ Targeted lookup order after the agent report:
 | `memory-growth:heapUsed` | `memory-growth` | Same shape as `:rss` but on `heapUsed`. Less prone to off-heap noise. |
 | `large-allocator:<frame>` | `large-allocator` | A single frame ≥ 15 % of sampled bytes (`totalPct` or `selfPct`); critical at ≥ 40 %. Skips synthetic frames `(root)`, `(idle)`, `(program)`, `(garbage collector)`. |
 | `external-buffer-pressure` | `external-buffer-pressure` | Mean `external` ≥ 0.5 × `heapUsed` and ≥ 32 MB absolute. Critical at ≥ 1.5×. |
-| `alloc-in-hot-path:<frame>` | `alloc-in-hot-path` | Same frame appears in top CPU hotspots (`totalPct ≥ 5 %`) **and** top memory allocators (`totalPct ≥ 5 %`). Requires `--kind cpu memory`. Critical when combined % ≥ 60. |
+| `alloc-in-hot-path:<frame>` | `alloc-in-hot-path` | Same frame appears in top CPU hotspots (`totalPct ≥ 5 %`) **and** top memory allocators (`totalPct ≥ 5 %`). Requires `--kind cpu --kind memory` or `--kind cpu,memory`. Critical when combined % ≥ 60. |
 
 Each memory finding's `evidence.extra` carries the raw counters (slope, MB delta, ratio, combined pct). Use top-level `confidence`, `proofLevel`, and `measurements.thresholds` to explain *why* the finding fired and how strongly to trust it.
 
 ## Common interpretation patterns
 
 - **RSS grows linearly, `heapUsed` flat, `external` rising** → off-heap leak. Suspect Buffer pools not reset, pino transports buffering, native modules (sharp, libpq, zlib streams). `external-buffer-pressure` will usually co-fire. `arrayBuffers` is already included in `external`, so use it as a breakdown signal, not as an additive term.
-- **Both RSS and `heapUsed` grow** → JS heap leak. Look for unbounded `Map`/`Set`, long-lived listeners, Promise chains retaining context. Lanterna shows the *allocators*; finding the *retainers* requires a heap snapshot from Chrome DevTools.
+- **Both RSS and `heapUsed` grow** → JS heap leak. Look for unbounded `Map`/`Set`, long-lived listeners, Promise chains retaining context. Lanterna shows allocators from sampling; use `--heap-snapshot-analysis` and `heapSnapshotAnalysis.retainerPaths[]` for Lanterna's retained-growth and retainer clues. Chrome DevTools heap snapshots are an optional external fallback only when Lanterna lacks the needed retention signal.
 - **`heapSnapshotAnalysis.retainerPaths[]` points through `_events`, `Timeout`, or `Map.entries`** → likely listener, timer, or cache retention respectively. Confirm in source before patching because labels are heuristic and V8 internal paths can be noisy.
 - **No growth, but `large-allocator` fires hard** → allocation churn. Hot path allocates and frees rapidly, driving GC pauses. Often co-fires with `excessive-gc` from the CPU side. Pool/reuse, prefer for-loops to `map+filter+slice` chains, avoid intermediate strings/objects.
 - **`alloc-in-hot-path` fires** → highest-leverage fix in the report. Reducing allocations on this frame cuts both CPU and GC.

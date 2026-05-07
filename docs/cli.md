@@ -57,6 +57,8 @@ lanterna run --deep --duration 15s -- node app.js
 lanterna run --no-source-maps -- node dist/app.js
 ```
 
+Select multiple profile kinds either by repeating `--kind` (`--kind cpu --kind memory`) or with a comma-separated value (`--kind cpu,memory`).
+
 `--workload` is a shell command run from the same cwd and environment as Lanterna. It is intended for external traffic generators: `npx -y autocannon ...`, `npx -y artillery run load.yml`, `npm run load`, `node scripts/load.mjs`. Prefer `npx -y` for one-off tools so the workload cannot block on an install confirmation prompt. If the workload exits non-zero, Lanterna still writes the report and then returns an error, so automation can fail the run without losing the captured evidence.
 
 ## `lanterna attach`

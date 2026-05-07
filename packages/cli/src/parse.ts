@@ -391,7 +391,7 @@ function parseCommand(command: Command, args: string[]): void {
     if (!(error instanceof CommanderError)) {
       throw error;
     }
-    throw new Error(normalizeCommanderError(command.name(), args.slice(1), error));
+    throw new Error(normalizeCommanderError(command.name(), args, error));
   }
 
   if (command.name() === 'attach' && command.opts<{ deep?: boolean }>().deep) {
@@ -413,6 +413,13 @@ function normalizeCommanderError(
       return `unknown option "${unknownOption ?? ''}" (did you forget "--" before the target command?)`;
     }
     return `unknown option "${unknownOption ?? ''}"`;
+  }
+  if (
+    error.code === 'commander.excessArguments' &&
+    commandName === 'run' &&
+    joinedArgs.includes('--kind')
+  ) {
+    return 'unexpected profile kind argument before "--". Use --kind cpu,memory or repeat --kind for multiple profile kinds.';
   }
   if (error.code === 'commander.optionMissingArgument') {
     if (joinedArgs.includes('--duration')) return '--duration expects a value';

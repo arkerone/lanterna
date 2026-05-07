@@ -22,6 +22,7 @@ import {
 const report = await runProfile({
   command: ['node', 'app.js'],
   durationMs: 30_000,
+  pretty: false,
   kinds: [
     createCpuProfileKindWithBuiltInDetectors({
       readStderrSoFar: () => '',

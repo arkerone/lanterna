@@ -1,7 +1,7 @@
 {
   "name": "@lanterna-profiler/detectors",
   "version": "2.0.1",
-  "description": "Lanterna default detector pack — CPU, memory & async detectors, thresholds, attribution helpers, plugin types",
+  "description": "Lanterna default detector pack — CPU, memory & experimental async detectors, thresholds, attribution helpers, plugin types",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
