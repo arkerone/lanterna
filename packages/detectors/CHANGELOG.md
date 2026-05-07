@@ -1,5 +1,16 @@
 # @lanterna-profiler/detectors
 
+## 2.1.0
+
+### Minor Changes
+
+- 81f7258: Align CLI, core, and detectors with schema v2, improve experimental async terminology, and refine memory growth suggestions.
+
+### Patch Changes
+
+- Updated dependencies [81f7258]
+  - @lanterna-profiler/core@2.1.0
+
 ## 2.0.1
 
 ### Patch Changes
