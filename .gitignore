@@ -8,6 +8,10 @@ packages/*/.tsbuildinfo
 .DS_Store
 packages/core/src/report/version.generated.ts
 
+# Coverage
+coverage/
+packages/*/coverage/
+
 # Tooling caches
 .turbo/
 packages/*/.turbo/
