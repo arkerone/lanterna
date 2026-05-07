@@ -13,6 +13,16 @@ npx -y @lanterna-profiler/cli --help
 
 You only need the CLI to capture and read reports. The other packages (`@lanterna-profiler/core`, `@lanterna-profiler/detectors`) are for programmatic use — see [programmatic-api.md](./programmatic-api.md).
 
+### Agent skill
+
+[![skills.sh](https://skills.sh/b/arkerone/lanterna)](https://skills.sh/arkerone/lanterna)
+
+Lanterna also ships an agent-oriented profiling workflow in [`skills/lanterna-profiler/SKILL.md`](../skills/lanterna-profiler/SKILL.md). Install it into your agent workspace with:
+
+```bash
+npx skills add arkerone/lanterna --skill lanterna-profiler
+```
+
 ### Requirements
 
 | Environment | Minimum | Why |
