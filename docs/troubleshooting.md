@@ -24,6 +24,7 @@ Symptom-keyed fixes for the most common Lanterna issues.
 | `heapSnapshotAnalysis` missing or unavailable | [Heap snapshot missing or unavailable](#heap-snapshot-missing-or-unavailable) |
 | `--kind async` produces a near-empty report in attach | [Async report empty in attach mode](#async-report-empty-in-attach-mode) |
 | `--async-instrumentation full` misses awaits | [Async full instrumentation misses sites](#async-full-instrumentation-misses-sites) |
+| Looking for env vars / debug knobs | [Environment variables](#environment-variables) |
 
 ---
 
@@ -277,3 +278,30 @@ If you need full async capture, use `lanterna run --kind async -- ...` so Lanter
 1. **The code was loaded before instrumentation registered.** `full` rewrites `await` sites in modules loaded **after** registration. Code loaded earlier is not covered. In attach mode this is fundamental; in spawn mode it can happen if the preload hook is itself loaded after some modules (rare).
 2. **Source maps or bundlers interfere.** Bundled or transpiled code may not present recognisable `await` patterns to the rewriter. Run unbundled code where possible.
 3. **`safe` mode is sufficient.** `full` is experimental and higher risk. Stick to `safe` unless `safe` cannot identify the await sites you need; check `meta.kinds.async.transformStats.failed` and `profiles.async.quality.reasons[]` for failed rewrites — the count is non-fatal but indicative.
+
+---
+
+## Environment variables
+
+Lanterna exposes a small set of environment variables for debugging and tuning. Most users never need to set any of them.
+
+| Variable | Scope | Purpose |
+| --- | --- | --- |
+| `LANTERNA_LOG` | host (the process running `lanterna`) | Pino log level for Lanterna's own logger. Accepts `trace`, `debug`, `info`, `warn`, `error`, `fatal`, `silent`. Default: `silent` (no internal logs). Useful when filing a bug to capture verbose internal traces. |
+| `LANTERNA_DEBUG_SELF` | host | Set to `1` to **keep** Lanterna's own internal frames (preload hook, retainer functions) in hotspots, allocators and async chains. By default these are filtered out as instrumentation noise. Only useful when developing or debugging Lanterna itself — never set this when profiling your own application. |
+| `NODE_OPTIONS` | target (the profiled program) | Lanterna **extends** rather than replaces `NODE_OPTIONS` to inject its preload hook. If you have a pre-existing `NODE_OPTIONS` that conflicts (e.g. another loader), unset it before running Lanterna or be aware that both will be active. See [Inspector timeout](#inspector-timeout). |
+| `LANTERNA_ACTIVE` | target (auto-set) | Marker the spawn parent injects so the child preload hook can detect that it was started by Lanterna. **Do not set manually.** |
+| `LANTERNA_CONTROL_FD` | target (auto-set) | File descriptor the preload hook uses to stream control-channel events (GC pauses, event-loop heartbeats) back to the host. **Do not set manually.** |
+
+**Quick recipes:**
+
+```bash
+# See Lanterna's own internal logs (debug a bug report)
+LANTERNA_LOG=debug lanterna run --duration 10s -- node app.js
+
+# Profile Lanterna itself (developer mode — keeps Lanterna frames in the report)
+LANTERNA_DEBUG_SELF=1 lanterna run --duration 10s -- node app.js
+
+# Strip a conflicting NODE_OPTIONS for this invocation only
+NODE_OPTIONS= lanterna run --duration 10s -- node app.js
+```
