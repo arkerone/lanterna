@@ -49,6 +49,19 @@ export class TextReportRenderer implements ReportRenderer {
       lines.push(
         `  GC: ${formatMs(cpu.gc?.totalPauseMs)} total pause, ${formatMs(cpu.gc?.longestPauseMs)} longest`,
       );
+      if (cpu.summary?.topCpuCulprit) {
+        lines.push(
+          `  Top CPU culprit: ${cpu.summary.topCpuCulprit.function} (${formatFrameLocation(cpu.summary.topCpuCulprit)}): self ${formatPct(cpu.summary.topCpuCulprit.selfPct)}, total ${formatPct(cpu.summary.topCpuCulprit.totalPct)}`,
+        );
+      }
+      if (
+        cpu.summary?.topRequestEntry &&
+        !sameFrameLocation(cpu.summary.topRequestEntry, cpu.summary.topCpuCulprit)
+      ) {
+        lines.push(
+          `  Top request entry: ${cpu.summary.topRequestEntry.function} (${formatFrameLocation(cpu.summary.topRequestEntry)}): total ${formatPct(cpu.summary.topRequestEntry.totalPct)}`,
+        );
+      }
       lines.push('  Top hotspots:');
       this.renderHotspots(lines, cpu.hotspots ?? [], '    ');
       lines.push('');
@@ -57,6 +70,7 @@ export class TextReportRenderer implements ReportRenderer {
     const memory = report.profiles?.memory;
     if (memory) {
       lines.push('Memory');
+      lines.push(`  Quality: ${memory.quality?.confidence ?? 'unknown'}`);
       lines.push(`  Total sampled: ${formatBytes(memory.summary?.totalSampledBytes)}`);
       if (memory.summary?.topAllocator?.userCaller) {
         lines.push(
@@ -213,6 +227,18 @@ export class TextReportRenderer implements ReportRenderer {
       }
     }
   }
+}
+
+function sameFrameLocation(
+  left: { function?: string; file: string; line: number; source?: { file: string; line: number } },
+  right:
+    | { function?: string; file: string; line: number; source?: { file: string; line: number } }
+    | undefined,
+): boolean {
+  if (!right) return false;
+  return (
+    formatFrameLocation(left) === formatFrameLocation(right) && left.function === right.function
+  );
 }
 
 function userCallerFromEvidenceExtra(extra: unknown): UserCallerAttribution | undefined {

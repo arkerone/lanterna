@@ -516,6 +516,11 @@ describe('renderReport', () => {
             },
           },
           memory: {
+            quality: {
+              confidence: 'medium',
+              reasons: ['heap snapshots unavailable'],
+              recommendations: ['Use the allocation samples as the primary evidence.'],
+            },
             memoryUsage: {
               available: true,
               sampleIntervalMs: 250,
@@ -610,6 +615,7 @@ describe('renderReport', () => {
     expect(output).toContain('command: "node server.js"');
     expect(output).toContain('kinds: [cpu, memory]');
     expect(output).toContain('cpu_quality: low');
+    expect(output).toContain('memory_quality: medium');
     expect(output).toContain('integrity: degraded');
     expect(output).toContain('rerun_required: true');
     expect(output).toContain('sourcemap_coverage: 0.9');
@@ -632,6 +638,7 @@ describe('renderReport', () => {
     expect(output).toContain('## Kind Review — cpu');
     expect(output).toContain('- quality: low');
     expect(output).toContain('## Kind Review — memory');
+    expect(output).toContain('- quality: medium');
     expect(output).toContain('- memory_usage: 8 samples every 250ms');
     expect(output).toContain('## Files To Read First');
     const filesSection = sectionText(output, 'Files To Read First');
@@ -680,6 +687,299 @@ describe('renderReport', () => {
     expect(output).not.toContain('The capture signal is sufficient');
     expect(output).not.toContain('## Kind Review — memory');
     expect(output).not.toContain('## Kind Review — async');
+  });
+
+  it('does not force rerun for CPU findings when only event-loop and GC timing are unavailable', () => {
+    const output = renderReport(
+      {
+        meta: {
+          ...baseMeta,
+          captureIntegrity: {
+            ...baseMeta.captureIntegrity,
+            eventLoopTimed: false,
+            gcTimed: false,
+          },
+        },
+        profiles: {
+          cpu: {
+            quality: {
+              confidence: 'high',
+              sampleCount: 250,
+              durationMs: 5000,
+              idleRatio: 0.2,
+              samplesTimed: true,
+              durationBasis: 'timeDeltas',
+              reasons: [],
+              recommendations: [],
+            },
+          },
+        },
+        findings: [
+          {
+            id: 'sync-crypto-on-hot-path',
+            profileKind: 'cpu',
+            severity: 'critical',
+            category: 'sync-crypto',
+            title: 'Synchronous crypto on hot path',
+            evidence: {
+              file: '/repo/src/auth.js',
+              line: 3,
+              function: 'hashPassword',
+              selfPct: 81,
+            },
+            priority: { score: 90, actionConfidence: 'high' },
+            confidence: 'high',
+            proofLevel: 'direct-sample',
+            why: 'Synchronous crypto was sampled in user code.',
+            suggestion: 'Move the crypto work off the request path.',
+            references: [],
+          },
+        ],
+      },
+      { format: 'agent' },
+    );
+
+    expect(output).toContain('rerun_required: false');
+    expect(output).toContain(
+      'degrading_caveats: ["event-loop timing unavailable", "GC timing unavailable"]',
+    );
+  });
+
+  it('labels inclusive CPU aggregate read targets with total signal when CPU has no findings', () => {
+    const output = renderReport(
+      {
+        meta: baseMeta,
+        profiles: {
+          cpu: {
+            summary: {
+              topRequestEntry: {
+                function: 'processBatch',
+                file: '/repo/src/app.js',
+                line: 7,
+                selfPct: 0.01,
+                totalPct: 62,
+              },
+              topUserHotspot: {
+                function: 'processBatch',
+                file: '/repo/src/app.js',
+                line: 7,
+                selfPct: 0.01,
+                totalPct: 62,
+              },
+            },
+            quality: {
+              confidence: 'high',
+              sampleCount: 250,
+              durationMs: 5000,
+              idleRatio: 0.2,
+              samplesTimed: true,
+              durationBasis: 'timeDeltas',
+              reasons: [],
+              recommendations: [],
+            },
+          },
+        },
+        findings: [],
+      },
+      { format: 'agent' },
+    );
+
+    const filesSection = sectionText(output, 'Files To Read First');
+    expect(filesSection).toMatch(
+      /\| \/repo\/src\/app\.js:7 +\| top request entry +\| cpu +\| 62\.0% total +\| inspect-lead \|/,
+    );
+    expect(filesSection).not.toContain('0.01% self');
+  });
+
+  it('does not duplicate inclusive CPU aggregate read targets when CPU findings already point at code', () => {
+    const output = renderReport(
+      {
+        meta: baseMeta,
+        profiles: {
+          cpu: {
+            summary: {
+              topRequestEntry: {
+                function: 'processBatch',
+                file: '/repo/src/app.js',
+                line: 7,
+                selfPct: 0.01,
+                totalPct: 62,
+              },
+              topUserHotspot: {
+                function: 'processBatch',
+                file: '/repo/src/app.js',
+                line: 7,
+                selfPct: 0.01,
+                totalPct: 62,
+              },
+            },
+            quality: {
+              confidence: 'high',
+              sampleCount: 250,
+              durationMs: 5000,
+              idleRatio: 0.2,
+              samplesTimed: true,
+              durationBasis: 'timeDeltas',
+              reasons: [],
+              recommendations: [],
+            },
+          },
+        },
+        findings: [
+          {
+            id: 'sync-crypto-on-hot-path:hashPassword',
+            profileKind: 'cpu',
+            severity: 'warning',
+            category: 'sync-crypto',
+            title: 'Synchronous crypto on hot path',
+            evidence: {
+              file: '/repo/src/app.js',
+              line: 3,
+              function: 'hashPassword',
+              selfPct: 28,
+            },
+            priority: { score: 90, actionConfidence: 'high' },
+            confidence: 'high',
+            proofLevel: 'direct-sample',
+            why: 'Synchronous crypto was sampled in user code.',
+            suggestion: 'Move the crypto work off the request path.',
+            references: [],
+          },
+        ],
+      },
+      { format: 'agent' },
+    );
+
+    const kindReviewSection = sectionText(output, 'Kind Review — cpu');
+    expect(kindReviewSection).toContain(
+      '- top_request_entry: processBatch at /repo/src/app.js:7 (62.0% total)',
+    );
+
+    const filesSection = sectionText(output, 'Files To Read First');
+    expect(filesSection).toMatch(
+      /\| \/repo\/src\/app\.js:3 +\| finding location +\| finding \| 28\.0% self +\| read-first \|/,
+    );
+    expect(filesSection).not.toContain('/repo/src/app.js:7');
+  });
+
+  it('renders the matched CPU user stack on finding details', () => {
+    const output = renderReport(
+      {
+        meta: baseMeta,
+        profiles: {
+          cpu: {
+            summary: {},
+            hotStacks: [
+              {
+                weightPct: 81,
+                frames: [
+                  {
+                    function: 'pbkdf2Sync',
+                    file: 'node:internal/crypto/pbkdf2',
+                    line: 62,
+                    category: 'node:builtin',
+                  },
+                  {
+                    function: 'hashPassword',
+                    file: '/repo/src/auth.js',
+                    line: 3,
+                    category: 'user',
+                  },
+                  {
+                    function: 'route',
+                    file: '/repo/src/server.js',
+                    line: 12,
+                    category: 'user',
+                  },
+                ],
+              },
+            ],
+            quality: {
+              confidence: 'high',
+              sampleCount: 250,
+              durationMs: 5000,
+              idleRatio: 0.2,
+              samplesTimed: true,
+              durationBasis: 'timeDeltas',
+              reasons: [],
+              recommendations: [],
+            },
+          },
+        },
+        findings: [
+          {
+            id: 'sync-crypto-on-hot-path',
+            profileKind: 'cpu',
+            severity: 'critical',
+            category: 'sync-crypto',
+            title: 'Synchronous crypto on hot path',
+            evidence: {
+              file: '/repo/src/auth.js',
+              line: 3,
+              function: 'hashPassword',
+              selfPct: 81,
+              extra: {
+                proofLevel: 'attributed-caller',
+                attributionBasis: 'sample-path',
+                attributionConfidence: 'high',
+                callee: 'pbkdf2Sync',
+                calleeTotalPct: 81,
+                userCaller: {
+                  function: 'hashPassword',
+                  file: '/repo/src/auth.js',
+                  line: 3,
+                  profilePct: 81,
+                  supportPct: 100,
+                  confidence: 'high',
+                  basis: 'cpu-sample-path',
+                  stackDistance: 1,
+                },
+                candidateCallers: [
+                  {
+                    function: 'hashPassword',
+                    file: '/repo/src/auth.js',
+                    line: 3,
+                    profilePct: 81,
+                    supportPct: 100,
+                    confidence: 'high',
+                    basis: 'cpu-sample-path',
+                    stackDistance: 1,
+                  },
+                  {
+                    function: 'route',
+                    file: '/repo/src/server.js',
+                    line: 12,
+                    profilePct: 81,
+                    supportPct: 100,
+                    confidence: 'high',
+                    basis: 'cpu-sample-path',
+                    stackDistance: 2,
+                  },
+                ],
+              },
+            },
+            priority: { score: 90, actionConfidence: 'high' },
+            confidence: 'high',
+            proofLevel: 'direct-sample',
+            why: 'Synchronous crypto was sampled in user code.',
+            suggestion: 'Move the crypto work off the request path.',
+            references: [],
+          },
+        ],
+      },
+      { format: 'agent' },
+    );
+
+    expect(output).toContain(
+      '- user_stack: route at /repo/src/server.js:12 -> hashPassword at /repo/src/auth.js:3 (81.0% stack, leaf pbkdf2Sync at node:internal/crypto/pbkdf2:62)',
+    );
+    const filesSection = sectionText(output, 'Files To Read First');
+    expect(filesSection).toMatch(
+      /\| \/repo\/src\/server\.js:12 +\| CPU user stack +\| finding \| 81\.0% stack +\| supporting-context \|/,
+    );
+    expect(filesSection).toMatch(
+      /\| \/repo\/src\/auth\.js:3 +\| finding location +\| finding \| 81\.0% self +\| read-first +\|/,
+    );
   });
 
   it('does not require rerun for non-applicable source maps', () => {
@@ -1508,6 +1808,21 @@ describe('renderReport', () => {
                 callees: [],
                 optimizationState: 'unknown',
               },
+              {
+                id: 'native-writev',
+                function: 'writev',
+                file: 'writev',
+                line: 0,
+                column: 0,
+                category: 'native',
+                selfMs: 12,
+                selfPct: 12,
+                totalMs: 12,
+                totalPct: 12,
+                callers: [],
+                callees: [],
+                optimizationState: 'unknown',
+              },
             ],
             hotStacks: [
               {
@@ -1552,6 +1867,7 @@ describe('renderReport', () => {
     expect(filesSection).not.toContain('(program):0');
     expect(filesSection).not.toContain('(garbage collector):0');
     expect(filesSection).not.toContain('node:internal/streams/writable:300');
+    expect(filesSection).not.toContain('writev:0');
     expect(kindReviewSection).not.toContain('(idle):0');
     expect(kindReviewSection).not.toContain('(program):0');
     expect(kindReviewSection).not.toContain('(garbage collector):0');
@@ -1800,6 +2116,44 @@ describe('renderReport', () => {
     expect(tableBodyRows(filesSection)[0]).toContain('read-first');
     expect(filesSection).not.toContain('/repo/src/file-1.js:11');
     expect(filesSection).not.toContain('/repo/src/file-11.js:21');
+  });
+
+  it('keeps anonymous frames when they point at editable user source', () => {
+    const output = renderReport(
+      {
+        meta: baseMeta,
+        profiles: {},
+        findings: [
+          {
+            id: 'cpu-hotspot:/repo/src/app.js:1:(anonymous)',
+            profileKind: 'cpu',
+            severity: 'critical',
+            category: 'cpu-hotspot',
+            title: 'Top-level module is hot',
+            evidence: {
+              file: '/repo/src/app.js',
+              line: 1,
+              function: '(anonymous)',
+              selfPct: 98,
+            },
+            priority: {
+              score: 98,
+              actionConfidence: 'high',
+            },
+            confidence: 'high',
+            proofLevel: 'direct-sample',
+            why: 'Top-level CPU work was sampled here.',
+            suggestion: 'Inspect the top-level module body.',
+            references: [],
+          },
+        ],
+      },
+      { format: 'agent' },
+    );
+
+    expect(sectionText(output, 'Files To Read First')).toContain(
+      '| /repo/src/app.js:1 | finding location | finding | 98.0% self | read-first |',
+    );
   });
 
   it('keeps generated output fallbacks as inspection leads instead of read-first targets', () => {
@@ -2132,6 +2486,11 @@ function agentFixtureReport() {
         deopts: [],
       },
       memory: {
+        quality: {
+          confidence: 'high',
+          reasons: [],
+          recommendations: [],
+        },
         summary: {
           totalSampledBytes: 4096,
           samplingIntervalBytes: 524288,

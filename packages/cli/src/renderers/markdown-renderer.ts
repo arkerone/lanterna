@@ -52,6 +52,19 @@ export class MarkdownReportRenderer implements ReportRenderer {
       lines.push(
         `- GC: ${formatMs(cpu.gc?.totalPauseMs)} total pause, ${formatMs(cpu.gc?.longestPauseMs)} longest`,
       );
+      if (cpu.summary?.topCpuCulprit) {
+        lines.push(
+          `- Top CPU culprit: ${escapePipe(cpu.summary.topCpuCulprit.function)} at \`${escapeBackticks(formatFrameLocation(cpu.summary.topCpuCulprit))}\` (${formatPct(cpu.summary.topCpuCulprit.selfPct)} self, ${formatPct(cpu.summary.topCpuCulprit.totalPct)} total)`,
+        );
+      }
+      if (
+        cpu.summary?.topRequestEntry &&
+        !sameFrameLocation(cpu.summary.topRequestEntry, cpu.summary.topCpuCulprit)
+      ) {
+        lines.push(
+          `- Top request entry: ${escapePipe(cpu.summary.topRequestEntry.function)} at \`${escapeBackticks(formatFrameLocation(cpu.summary.topRequestEntry))}\` (${formatPct(cpu.summary.topRequestEntry.totalPct)} total)`,
+        );
+      }
       lines.push('');
       lines.push('### Top CPU Hotspots');
       this.renderHotspots(lines, cpu.hotspots ?? []);
@@ -62,6 +75,7 @@ export class MarkdownReportRenderer implements ReportRenderer {
     if (memory) {
       lines.push('## Memory');
       lines.push('');
+      lines.push(`- Quality: ${memory.quality?.confidence ?? 'unknown'}`);
       lines.push(`- Total sampled: ${formatBytes(memory.summary?.totalSampledBytes)}`);
       if (memory.summary?.topAllocator?.userCaller) {
         lines.push(
@@ -212,6 +226,18 @@ function escapePipe(value: string): string {
 
 function escapeBackticks(value: string): string {
   return value.replaceAll('`', '\\`');
+}
+
+function sameFrameLocation(
+  left: { function?: string; file: string; line: number; source?: { file: string; line: number } },
+  right:
+    | { function?: string; file: string; line: number; source?: { file: string; line: number } }
+    | undefined,
+): boolean {
+  if (!right) return false;
+  return (
+    formatFrameLocation(left) === formatFrameLocation(right) && left.function === right.function
+  );
 }
 
 function userCallerFromEvidenceExtra(extra: unknown): UserCallerAttribution | undefined {
