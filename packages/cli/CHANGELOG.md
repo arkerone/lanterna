@@ -1,5 +1,11 @@
 # @lanterna-profiler/cli
 
+## 1.11.3
+
+### Patch Changes
+
+- eaa0def: Remove redundant `sourcemap_applicable` metadata from agent report frontmatter. The agent format now keeps `sourcemap_status` and `sourcemap_coverage`, while structured JSON reports still expose source-map applicability.
+
 ## 1.11.2
 
 ### Patch Changes
