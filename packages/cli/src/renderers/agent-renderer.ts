@@ -99,9 +99,6 @@ function appendFrontmatter(lines: string[], report: LanternaReport): void {
     if (sourceMaps.status !== undefined) {
       lines.push(`sourcemap_status: ${yamlScalar(sourceMaps.status)}`);
     }
-    if (sourceMaps.applicable !== undefined) {
-      lines.push(`sourcemap_applicable: ${yamlScalar(sourceMaps.applicable)}`);
-    }
     lines.push(`sourcemap_maps_loaded: ${yamlScalar(sourceMaps.mapsLoaded)}`);
   } else {
     lines.push('sourcemap_coverage: null');
