@@ -261,6 +261,105 @@ describe('deriveTopUserHotspot', () => {
     expect(top?.function).toBe('serialize');
   });
 
+  it('falls back to explained user hotspots instead of returning no lead', () => {
+    const cryptoHotspot = makeHotspot({
+      category: 'user',
+      function: 'hashPassword',
+      file: 'src/auth.ts',
+      line: 5,
+      selfPct: 15,
+      totalPct: 30,
+    });
+    const findings = [
+      {
+        category: 'sync-crypto',
+        evidence: {
+          file: 'src/auth.ts',
+          line: 5,
+          function: 'hashPassword',
+        },
+      },
+    ] as unknown as LanternaReport['findings'];
+
+    const top = deriveTopUserHotspot([cryptoHotspot], [], findings);
+
+    expect(top?.function).toBe('hashPassword');
+  });
+
+  it('can derive a user hotspot from finding candidate callers when public hotspots omit it', () => {
+    const findings = [
+      {
+        category: 'sync-crypto',
+        evidence: {
+          file: 'node:internal/crypto/pbkdf2',
+          line: 62,
+          function: 'pbkdf2Sync',
+          extra: {
+            candidateCallers: [
+              {
+                function: 'hashPassword',
+                file: 'src/auth.ts',
+                line: 5,
+                profilePct: 80,
+                supportPct: 100,
+                confidence: 'high',
+                basis: 'cpu-sample-path',
+              },
+              {
+                function: 'processBatch',
+                file: 'src/batch.ts',
+                line: 12,
+                profilePct: 80,
+                supportPct: 100,
+                confidence: 'high',
+                basis: 'cpu-sample-path',
+              },
+            ],
+          },
+        },
+      },
+    ] as unknown as LanternaReport['findings'];
+
+    const top = deriveTopUserHotspot([], [], findings);
+
+    expect(top?.function).toBe('hashPassword');
+    expect(top?.alternativeHotspots?.[0]?.function).toBe('processBatch');
+  });
+
+  it('prefers named correlated hotspots over anonymous wrappers', () => {
+    const wrapper = makeHotspot({
+      category: 'user',
+      function: '(anonymous)',
+      file: 'src/app.js',
+      line: 1,
+      selfPct: 5,
+      totalPct: 95,
+    });
+    const named = makeHotspot({
+      category: 'user',
+      function: 'processBatch',
+      file: 'src/app.js',
+      line: 12,
+      selfPct: 12,
+      totalPct: 55,
+    });
+    const correlated: CorrelatedHotspot = {
+      id: 'src/app.js:12:processBatch',
+      function: 'processBatch',
+      file: 'src/app.js',
+      line: 12,
+      overlapPct: 70,
+      samplePct: 50,
+      rank: 1,
+      confidence: 'high',
+    };
+
+    const top = deriveTopUserHotspot([wrapper, named], [correlated]);
+
+    expect(top?.function).toBe('processBatch');
+    expect(top?.eventLoopCorrelation).toEqual({ overlapPct: 70, samplePct: 50 });
+  });
+
   it('forwards the source location when set on the hotspot', () => {
     const hotspot = makeHotspot({
       category: 'user',

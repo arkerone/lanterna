@@ -58,29 +58,31 @@ export function deriveTopUserHotspot(
   correlatedHotspots: readonly CorrelatedHotspot[] = [],
   findings: LanternaReport['findings'] = [],
 ): SummaryUserHotspot | undefined {
-  const matches = hotspots
+  const candidateHotspots = dedupeHotspots([...hotspots, ...candidateCallerHotspots(findings)]);
+  const candidates = candidateHotspots
     .filter(
       (hotspot) =>
         hotspot.category === 'user' &&
         (hotspot.selfPct >= TOP_USER_HOTSPOT_MIN_SELF_PCT ||
-          hotspot.totalPct >= TOP_USER_HOTSPOT_MIN_TOTAL_PCT) &&
-        !isExplainedBySpecificFinding(hotspot, findings),
+          hotspot.totalPct >= TOP_USER_HOTSPOT_MIN_TOTAL_PCT),
     )
-    .sort((left, right) => {
-      const totalDelta = right.totalPct - left.totalPct;
-      if (totalDelta !== 0) return totalDelta;
-      return right.selfPct - left.selfPct;
-    });
-  const top = matches[0];
+    .map((hotspot) => ({
+      hotspot,
+      correlated: findCorrelatedHotspot(hotspot, correlatedHotspots),
+      explained: isExplainedBySpecificFinding(hotspot, findings),
+    }));
+  const unexplainedCandidates = candidates.filter((candidate) => !candidate.explained);
+  const explanationPool = unexplainedCandidates.length > 0 ? unexplainedCandidates : candidates;
+  const namedPool = explanationPool.some((candidate) => !isAnonymousWrapper(candidate.hotspot))
+    ? explanationPool.filter((candidate) => !isAnonymousWrapper(candidate.hotspot))
+    : explanationPool;
+  const matches = namedPool.sort((left, right) => compareTopHotspotCandidates(left, right));
+  const topCandidate = matches[0];
+  const top = topCandidate?.hotspot;
   if (!top) return undefined;
 
-  const correlated = correlatedHotspots.find(
-    (candidate) =>
-      candidate.file === top.file &&
-      candidate.line === top.line &&
-      candidate.function === top.function,
-  );
-  const alternatives = matches.slice(1, 3).map((hotspot) => {
+  const correlated = topCandidate.correlated;
+  const alternatives = matches.slice(1, 3).map(({ hotspot }) => {
     const alt: SummaryUserHotspot['alternativeHotspots'] extends (infer T)[] | undefined
       ? T
       : never = {
@@ -110,6 +112,103 @@ export function deriveTopUserHotspot(
   return summary;
 }
 
+function compareTopHotspotCandidates(
+  left: { hotspot: Hotspot; correlated?: CorrelatedHotspot },
+  right: { hotspot: Hotspot; correlated?: CorrelatedHotspot },
+): number {
+  const correlationDelta = correlationScore(right.correlated) - correlationScore(left.correlated);
+  if (correlationDelta !== 0) return correlationDelta;
+  const totalDelta = right.hotspot.totalPct - left.hotspot.totalPct;
+  if (totalDelta !== 0) return totalDelta;
+  return right.hotspot.selfPct - left.hotspot.selfPct;
+}
+
+function correlationScore(correlated: CorrelatedHotspot | undefined): number {
+  if (!correlated) return 0;
+  const confidenceWeight =
+    correlated.confidence === 'high' ? 3 : correlated.confidence === 'medium' ? 2 : 1;
+  return confidenceWeight * 1000 + correlated.overlapPct;
+}
+
+function findCorrelatedHotspot(
+  hotspot: Hotspot,
+  correlatedHotspots: readonly CorrelatedHotspot[],
+): CorrelatedHotspot | undefined {
+  return correlatedHotspots.find(
+    (candidate) =>
+      candidate.file === hotspot.file &&
+      candidate.line === hotspot.line &&
+      candidate.function === hotspot.function,
+  );
+}
+
+function isAnonymousWrapper(hotspot: Hotspot): boolean {
+  return hotspot.function === '(anonymous)' || hotspot.function.trim() === '';
+}
+
+function dedupeHotspots(hotspots: Hotspot[]): Hotspot[] {
+  const byId = new Map<string, Hotspot>();
+  for (const hotspot of hotspots) {
+    if (!byId.has(hotspot.id)) byId.set(hotspot.id, hotspot);
+  }
+  return Array.from(byId.values());
+}
+
+function candidateCallerHotspots(findings: LanternaReport['findings']): Hotspot[] {
+  const byId = new Map<string, Hotspot>();
+  for (const finding of findings) {
+    if (!SPECIFIC_FINDING_CATEGORIES.has(finding.category)) continue;
+    const extra = finding.evidence.extra as { candidateCallers?: unknown } | undefined;
+    if (!Array.isArray(extra?.candidateCallers)) continue;
+    for (const candidate of extra.candidateCallers) {
+      if (!isUserCallerCandidate(candidate)) continue;
+      const id = `${candidate.file}:${candidate.line}:${candidate.function}`;
+      if (byId.has(id)) continue;
+      byId.set(id, {
+        id,
+        function: candidate.function,
+        file: candidate.file,
+        line: candidate.line,
+        column: candidate.column ?? 1,
+        category: 'user',
+        selfMs: 0,
+        selfPct: 0,
+        totalMs: 0,
+        totalPct: candidate.profilePct,
+        callers: [],
+        callees: [],
+        optimizationState: 'unknown',
+        source: candidate.source,
+      });
+    }
+  }
+  return Array.from(byId.values());
+}
+
+function isUserCallerCandidate(candidate: unknown): candidate is {
+  function: string;
+  file: string;
+  line: number;
+  column?: number;
+  stackDistance?: number;
+  profilePct: number;
+  source?: SummaryUserHotspot['source'];
+} {
+  if (!candidate || typeof candidate !== 'object') return false;
+  const value = candidate as {
+    function?: unknown;
+    file?: unknown;
+    line?: unknown;
+    profilePct?: unknown;
+  };
+  return (
+    typeof value.function === 'string' &&
+    typeof value.file === 'string' &&
+    typeof value.line === 'number' &&
+    typeof value.profilePct === 'number'
+  );
+}
+
 const SPECIFIC_FINDING_CATEGORIES = new Set([
   'blocking-io',
   'sync-crypto',
@@ -125,8 +224,16 @@ function isExplainedBySpecificFinding(
   return findings.some((finding) => {
     if (!SPECIFIC_FINDING_CATEGORIES.has(finding.category)) return false;
     if (matchesHotspot(finding.evidence, hotspot)) return true;
-    const userCaller = (finding.evidence.extra as { userCaller?: unknown } | undefined)?.userCaller;
-    return matchesHotspot(userCaller, hotspot);
+    const extra = finding.evidence.extra as
+      | { userCaller?: unknown; candidateCallers?: unknown }
+      | undefined;
+    const userCaller = extra?.userCaller;
+    const candidateCallers = extra?.candidateCallers;
+    if (matchesHotspot(userCaller, hotspot)) return true;
+    if (Array.isArray(candidateCallers)) {
+      return candidateCallers.some((candidate) => matchesHotspot(candidate, hotspot));
+    }
+    return false;
   });
 }
 
