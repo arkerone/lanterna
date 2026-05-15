@@ -45,6 +45,7 @@ export const userCallerAttributionSchema = z.object({
   line: z.number().int(),
   column: z.number().int().optional(),
   source: sourceLocationSchema.optional(),
+  stackDistance: z.number().int().positive().optional(),
   profilePct: z.number(),
   supportPct: z.number(),
   confidence: z.enum(['low', 'medium', 'high']),
@@ -61,6 +62,7 @@ export const attributionEvidenceSchema = z.object({
   attributionBasis: z.enum(['sample-path', 'builtin-only']),
   attributionConfidence: z.enum(['low', 'medium', 'high']),
   userCaller: userCallerAttributionSchema.optional(),
+  candidateCallers: z.array(userCallerAttributionSchema).optional(),
 });
 
 export const alternativeHotspotEvidenceSchema = z.object({
