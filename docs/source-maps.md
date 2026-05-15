@@ -64,6 +64,8 @@ Whenever a frame is mapped successfully, a `source` object is attached:
 ```json
 {
   "enabled": true,
+  "applicable": true,
+  "status": "partial",
   "framesResolved": 1842,
   "framesUnresolved": 211,
   "coverage": 0.897,
@@ -73,6 +75,8 @@ Whenever a frame is mapped successfully, a `source` object is attached:
   ]
 }
 ```
+
+For plain JavaScript files without a `sourceMappingURL`, source maps are not applicable: Lanterna reports `applicable: false`, `status: "not-applicable"`, `coverage: 1`, and does not treat those frames as unresolved. Missing, unreadable, or invalid referenced maps remain applicable failures.
 
 Use `coverage` as a quality gate. Below ~0.7, prefer raw `file:line` and warn the reader. The `failures[]` array is capped at 20 entries — informative, not exhaustive.
 
@@ -96,7 +100,7 @@ When consuming the JSON:
 2. **Fall back gracefully** to the generated `file:line` when `source` is absent — that means the frame had no map (e.g. a `node:` builtin, a stripped bundle).
 3. **Treat virtual paths as untrusted.** A `source.file` with a bundler scheme (`webpack://`, `vite:/...`) is the bundler's logical path; it may not exist on disk. Verify via filesystem before quoting it as a fix location.
 4. **Use `source.name` when `function` is `(anonymous)`** — the original symbol name often survives in the map.
-5. **Check `meta.captureIntegrity.sourceMaps.coverage`** before stating "the hotspot is at `src/foo.ts:42`". Low coverage means most frames were not mapped; the few that were may still be misleading without the surrounding context.
+5. **Check `meta.captureIntegrity.sourceMaps`** before stating "the hotspot is at `src/foo.ts:42`". If `applicable !== false` and coverage is low, most frames were not mapped; the few that were may still be misleading without the surrounding context. `applicable: false` means plain JS without source maps, not degraded mapping.
 
 ## See also
 

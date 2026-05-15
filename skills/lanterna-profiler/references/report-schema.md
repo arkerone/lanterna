@@ -71,7 +71,7 @@ Important global integrity flags:
 | `gcObserverAvailable` | Runtime GC observer was unavailable |
 | `controlChannelWriteErrors`, `gcObserverSetupFailed`, `heartbeatDropped` | Non-zero counters reduce confidence |
 | `diagnostics[]` | Non-fatal capture, probe, or analyzer diagnostics |
-| `sourceMaps` | Source-map resolution counters: `{ enabled, framesResolved, framesUnresolved, coverage, mapsLoaded, failures: [{url, reason}] }`. When `enabled` and `coverage < 0.7`, treat any `source.*` position as a hint, not a fact. Capped at 20 `failures`. |
+| `sourceMaps` | Source-map resolution counters: `{ enabled, applicable?, status?, framesResolved, framesUnresolved, coverage, mapsLoaded, failures: [{url, reason}] }`. Plain JS without `sourceMappingURL` is `applicable: false`, `status: "not-applicable"`, `coverage: 1`; missing or invalid referenced maps are applicable failures. When `enabled`, `applicable !== false`, and `coverage < 0.7`, treat any `source.*` position as a hint, not a fact. Capped at 20 `failures`. |
 
 ### `SourceLocation`
 
@@ -109,6 +109,7 @@ Shape:
   "file": "/repo/dist/app.js",
   "line": 22,
   "source": { "file": "src/app.ts", "line": 44 },
+  "stackDistance": 1,
   "profilePct": 37.5,
   "supportPct": 92,
   "confidence": "high",
@@ -116,7 +117,7 @@ Shape:
 }
 ```
 
-Location rule: use the agent report's rendered `User caller` first. If targeted JSON lookup is needed, prefer `userCaller.source.file:userCaller.source.line`, then keep `userCaller.file:userCaller.line` as generated fallback. `confidence: "high"` can support an actionable finding when the finding confidence, proof level, action confidence, and signal gate also support action. `confidence: "medium"` or `"low"` is only an inspection lead.
+Location rule: use the agent report's rendered `User caller` first. If targeted JSON lookup is needed, prefer `userCaller.source.file:userCaller.source.line`, then keep `userCaller.file:userCaller.line` as generated fallback. `stackDistance: 1` means closest user frame to the external callee. Attributed finding extras may also expose `candidateCallers[]`, ordered by stack proximity first and support second. `confidence: "high"` can support an actionable finding when the finding confidence, proof level, action confidence, and signal gate also support action. `confidence: "medium"` or `"low"` is only an inspection lead.
 
 ## `profiles`
 
@@ -201,6 +202,7 @@ Common fields:
 | `evidence.selfPct` | CPU share or kind-specific share represented by the evidence |
 | `evidence.extra` | Detector-specific proof, attribution, and correlation details |
 | `evidence.extra.userCaller` | Optional nearest user-code caller attribution for external or indirect evidence |
+| `evidence.extra.candidateCallers` | Optional ranked user-code caller candidates; use `stackDistance: 1` as the closest patch lead, and outer callers as context |
 | `measurements.observed`, `measurements.thresholds` | Numeric trigger data |
 | `confidence` | Finding-level confidence: `"low"`, `"medium"`, or `"high"` when supplied |
 | `proofLevel` | Evidence class: `"direct-sample"`, `"correlated-window"`, `"trace-only"`, or `"heuristic"` when supplied |

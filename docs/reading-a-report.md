@@ -116,7 +116,7 @@ A dependency hotspot is often a symptom — your code controls when and how ofte
 
 > **Treating async findings from attach mode as exhaustive.** `quality.attachPartialCapture = true` means resources before hook installation are invisible.
 
-> **Treating low-confidence `userCaller` as the fix location.** `userCaller` is meant to explain how user code reached external work. When confidence is low, inspect that path before moving evidence or changing code.
+> **Treating low-confidence `userCaller` as the fix location.** `userCaller` is meant to explain how user code reached external work. When confidence is low, inspect that path before moving evidence or changing code. For attributed CPU findings, `candidateCallers[]` may list the broader call chain; `stackDistance: 1` is the closest patch lead, while larger distances are context.
 
 ## What to do after reading a report
 

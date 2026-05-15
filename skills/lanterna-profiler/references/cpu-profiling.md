@@ -84,7 +84,7 @@ Every CPU frame may carry an optional `source` object resolved from a source map
 - When `source` is absent, fall back to `file:line` (no map was found for that frame — common for `node:` builtins or stripped bundles).
 - When `function` is `(anonymous)`, prefer `source.name` if set.
 - Treat virtual `source.file` values (e.g. `webpack://`, `vite:/`) as bundler labels, not editable files, unless they resolve on disk.
-- Gate everything above on `meta.captureIntegrity.sourceMaps.coverage`. Below ~0.7, treat resolved positions as hints, not facts.
+- Gate everything above on `meta.captureIntegrity.sourceMaps`: when `applicable !== false` and `coverage` is below ~0.7, treat resolved positions as hints, not facts. `applicable: false` means plain JS without source maps, not degraded mapping.
 
 ## Interpretation Order
 
