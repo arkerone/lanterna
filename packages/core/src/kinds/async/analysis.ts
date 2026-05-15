@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url';
 import type { SourceMapResolver } from '../../analysis/sourcemap/resolver.js';
 import type { CaptureBundle, RawCpuProfile } from '../../capture/core/types.js';
 import type {
@@ -176,17 +177,24 @@ function effectiveDuration(rec: AsyncOperationRecord, captureDurationMs: number)
 }
 
 function toReportFrame(frame: AsyncStackFrame): AsyncStackFrameReport {
+  const source = activeResolver?.resolve(frame.file, frame.line, frame.column);
   const reportFrame: AsyncStackFrameReport = {
     function: frame.function,
-    file: frame.file,
+    file: normalizeFrameFile(frame.file),
     line: frame.line,
     column: frame.column,
   };
-  if (activeResolver && frame.file && frame.line > 0) {
-    const source = activeResolver.resolve(frame.file, frame.line, frame.column);
-    if (source) reportFrame.source = source;
-  }
+  if (source) reportFrame.source = source;
   return reportFrame;
+}
+
+function normalizeFrameFile(file: string): string {
+  if (!file.startsWith('file://')) return file;
+  try {
+    return fileURLToPath(file);
+  } catch {
+    return file;
+  }
 }
 
 function userCallerFromAsyncFrame(
@@ -445,7 +453,10 @@ function scoreCdpMatch(
 }
 
 function sameFrameFile(left: AsyncStackFrame, right: AsyncStackFrame): boolean {
-  return left.file === right.file && Math.abs(left.line - right.line) <= 2;
+  return (
+    normalizeFrameFile(left.file) === normalizeFrameFile(right.file) &&
+    Math.abs(left.line - right.line) <= 2
+  );
 }
 
 function buildChainTree(
@@ -546,7 +557,10 @@ function buildChains(
       totalOps += 1;
       totalDuration += node.durationMs;
       const frame = recordById.get(node.asyncId)?.initStack[0];
-      if (frame) fileCounts.set(frame.file, (fileCounts.get(frame.file) ?? 0) + 1);
+      if (frame) {
+        const file = normalizeFrameFile(frame.file);
+        fileCounts.set(file, (fileCounts.get(file) ?? 0) + 1);
+      }
       if (depthFromRoot > maxDepth) {
         maxDepth = depthFromRoot;
         deepestLeaf = node;
@@ -645,9 +659,7 @@ function buildQuality(
     reasons.push(
       `only ${(sampledStackRatio * 100).toFixed(0)}% of async operations include init stacks`,
     );
-    recommendations.add(
-      'Increase async stack depth or capture from process start for better file attribution.',
-    );
+    recommendations.add('Increase async stack depth for better file attribution.');
   }
   if (data.integrity.recordsDropped > 0) {
     reasons.push(
@@ -775,16 +787,14 @@ function buildHotFiles(args: {
   const cpuPctByFile = new Map<string, number>();
   for (const entry of cpuAttribution.topChains) {
     if (!entry.rootFrame) continue;
-    cpuPctByFile.set(
-      entry.rootFrame.file,
-      (cpuPctByFile.get(entry.rootFrame.file) ?? 0) + entry.cpuPct,
-    );
+    const file = normalizeFrameFile(entry.rootFrame.file);
+    cpuPctByFile.set(file, (cpuPctByFile.get(file) ?? 0) + entry.cpuPct);
   }
 
   for (const rec of records) {
     const frame = rec.initStack[0];
     if (!frame) continue;
-    const file = frame.file;
+    const file = normalizeFrameFile(frame.file);
     const durationMs = effectiveDuration(rec, captureDurationMs);
     const ageMs = rec.orphan ? Math.max(0, captureDurationMs - rec.initAtMs) : 0;
     const aggregate = byFile.get(file) ?? {
@@ -831,7 +841,7 @@ function buildHotFiles(args: {
     const rootFrame = rootId
       ? records.find((candidate) => candidate.asyncId === rootId)?.initStack[0]
       : undefined;
-    if (rootFrame && rootFrame.file !== file) {
+    if (rootFrame && normalizeFrameFile(rootFrame.file) !== file) {
       cpuPctByFile.set(file, cpuPctByFile.get(file) ?? 0);
     }
   }
@@ -1004,7 +1014,7 @@ function buildCpuAttribution(args: BuildAttributionArgs): AsyncCpuAttribution {
     );
     const frame = cpuFrameForNode(nodeById.get(samples[i] ?? -1));
     if (frame) {
-      const key = `${frame.file}:${frame.line}:${frame.column}:${frame.function}`;
+      const key = `${normalizeFrameFile(frame.file)}:${frame.line}:${frame.column}:${frame.function}`;
       const current = bucket.frameCounts.get(key);
       if (current) current.count += 1;
       else bucket.frameCounts.set(key, { frame, count: 1 });

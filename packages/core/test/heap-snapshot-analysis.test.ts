@@ -224,6 +224,32 @@ describe('heap snapshot parsing and analysis', () => {
     }
   });
 
+  it('treats zero-byte snapshots as unavailable instead of parsing them', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'lanterna-empty-heap-test-'));
+    try {
+      const startPath = join(dir, 'start.heapsnapshot');
+      const endPath = join(dir, 'end.heapsnapshot');
+      await writeFile(startPath, '');
+      await writeFile(endPath, '{}');
+
+      const report = buildHeapSnapshotAnalysisReport(
+        {
+          available: true,
+          mode: 'start-end',
+          start: { path: startPath },
+          end: { path: endPath },
+          warnings: [],
+        },
+        normalizeHeapSnapshotAnalysisOptions({ enabled: true }),
+      );
+
+      expect(report.available).toBe(false);
+      expect(report.warnings.join('\n')).toMatch(/0 bytes/);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it('classifies listener, timer, cache and closure retainer paths', () => {
     expect(
       classifyRetainerPath([

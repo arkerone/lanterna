@@ -4,6 +4,7 @@ import { rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { connectCdp } from '../../inspector/client.js';
+import type { MemoryUsageSample } from '../../report/types.js';
 import { attachControlChannel } from '../../runtime-signals/control-channel.js';
 import { createCaptureIntegrity, mergeCaptureIntegrityCounters } from '../core/session.js';
 import type {
@@ -78,8 +79,10 @@ export class SpawnSource implements ProfileSource<SpawnStartOptions> {
     const captureIntegrity = createCaptureIntegrity({ controlChannelExpected: true });
     const gcEventsAbs: RawGcEvent[] = [];
     const eventLoopSamplesAbs: EventLoopSample[] = [];
+    const memoryUsageSamples: MemoryUsageSample[] = [];
     let eventLoopAvailable = false;
     let eventLoopResolutionMs: number | undefined;
+    let memoryUsageSampleIntervalMs: number | undefined;
     let appCompleted = false;
     let resolveAppCompletion = () => {};
     const appCompletionPromise = new Promise<void>((resolve) => {
@@ -114,6 +117,19 @@ export class SpawnSource implements ProfileSource<SpawnStartOptions> {
               atMs: event.atMs,
               kind: event.kind ?? 'other',
               durationMs: event.durationMs,
+            });
+            return;
+          }
+          if (event.type === 'memory-usage') {
+            if (!event.captureStarted) return;
+            memoryUsageSampleIntervalMs = event.sampleIntervalMs;
+            memoryUsageSamples.push({
+              atMs: event.atMs,
+              rss: event.rss,
+              heapTotal: event.heapTotal,
+              heapUsed: event.heapUsed,
+              external: event.external,
+              arrayBuffers: event.arrayBuffers,
             });
             return;
           }
@@ -166,6 +182,8 @@ export class SpawnSource implements ProfileSource<SpawnStartOptions> {
         eventLoopSamplesAbs: [...eventLoopSamplesAbs],
         eventLoopAvailable,
         eventLoopResolutionMs,
+        memoryUsageSamples: [...memoryUsageSamples],
+        memoryUsageSampleIntervalMs,
         integrityCounters: {
           controlChannelWriteErrors: captureIntegrity.controlChannelWriteErrors,
           gcObserverSetupFailed: captureIntegrity.gcObserverSetupFailed,

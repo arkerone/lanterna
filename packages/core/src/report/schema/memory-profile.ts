@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import {
   frameCategorySchema,
+  profileConfidenceSchema,
   sourceLocationSchema,
   userCallerAttributionSchema,
 } from './primitives.js';
@@ -91,9 +92,16 @@ const heapSnapshotAnalysisSchema = z.object({
   warnings: z.array(z.string()),
 });
 
+const memoryProfileQualitySchema = z.object({
+  confidence: profileConfidenceSchema,
+  reasons: z.array(z.string()),
+  recommendations: z.array(z.string()),
+});
+
 export const memoryProfileReportSchema = z.object({
   summary: memorySummarySchema,
   hotAllocators: z.array(memoryHotAllocatorSchema),
+  quality: memoryProfileQualitySchema,
   memoryUsage: z.object({
     available: z.boolean(),
     sampleIntervalMs: z.number().positive(),

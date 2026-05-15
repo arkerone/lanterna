@@ -33,7 +33,8 @@ export type BuiltinFindingCategory =
   | 'excessive-gc'
   | 'event-loop-stall'
   | 'json-on-hot-path'
-  | 'node-modules-hotspot';
+  | 'node-modules-hotspot'
+  | 'cpu-hotspot';
 
 export type FindingCategory = BuiltinFindingCategory | (string & {});
 
@@ -125,6 +126,8 @@ export interface CpuSummary {
   idleRatio: number;
   topCategory: FrameCategory;
   dominantBlockingKind: 'sync-crypto' | 'blocking-io' | null;
+  topCpuCulprit?: SummaryUserHotspot;
+  topRequestEntry?: SummaryUserHotspot;
   topUserHotspot?: SummaryUserHotspot;
 }
 
@@ -328,7 +331,7 @@ export interface ExcessiveGcEvidenceExtra {
 }
 
 export interface EventLoopStallEvidenceExtra {
-  proofLevel: 'aggregate-correlation';
+  proofLevel: 'aggregate-correlation' | 'hotspot-fallback';
   p99LagMs: number;
   maxLagMs: number;
   sampleCount: number;
@@ -337,6 +340,7 @@ export interface EventLoopStallEvidenceExtra {
   histogram?: EventLoopReport['histogram'];
   stallIntervals: EventLoopReport['stallIntervals'];
   candidateHotspots: CorrelatedHotspot[];
+  fallbackHotspots?: AlternativeHotspotEvidence[];
   correlationCoverage?: CorrelationCoverage;
 }
 
@@ -357,6 +361,16 @@ export interface NodeModulesHotspotEvidenceExtra extends AttributionEvidence {
   alternativeHotspots?: AlternativeHotspotEvidence[];
 }
 
+export interface CpuHotspotEvidenceExtra {
+  proofLevel: 'direct-user-hotspot' | 'inclusive-user-entry';
+  mode: 'self' | 'inclusive-entry';
+  category: FrameCategory;
+  selfPct: number;
+  totalPct: number;
+  eventLoopCorrelation?: StallCorrelation;
+  alternativeHotspots: AlternativeHotspotEvidence[];
+}
+
 export interface BuiltinFindingEvidenceExtraMap {
   'blocking-io': BlockingIoEvidenceExtra;
   'sync-crypto': SyncCryptoEvidenceExtra;
@@ -366,6 +380,7 @@ export interface BuiltinFindingEvidenceExtraMap {
   'event-loop-stall': EventLoopStallEvidenceExtra;
   'json-on-hot-path': JsonHotPathEvidenceExtra;
   'node-modules-hotspot': NodeModulesHotspotEvidenceExtra;
+  'cpu-hotspot': CpuHotspotEvidenceExtra;
 }
 
 export type BuiltinFindingEvidenceExtra = Exclude<
@@ -552,6 +567,12 @@ export interface MemorySummary {
   externalRatio?: number;
 }
 
+export interface MemoryProfileQuality {
+  confidence: ProfileConfidence;
+  reasons: string[];
+  recommendations: string[];
+}
+
 /**
  * Memory profile report section — lives under `report.profiles.memory`. Built
  * from V8 sampling heap profiler output plus a `process.memoryUsage()` time
@@ -560,6 +581,7 @@ export interface MemorySummary {
 export interface MemoryProfileReport {
   summary: MemorySummary;
   hotAllocators: MemoryHotAllocator[];
+  quality: MemoryProfileQuality;
   memoryUsage: {
     available: boolean;
     sampleIntervalMs: number;

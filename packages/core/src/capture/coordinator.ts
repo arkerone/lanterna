@@ -123,6 +123,7 @@ export async function runCapture<TSourceOptions>(
 
     const kindsData = await stopProbes(
       probeInstances,
+      connected,
       cdp,
       mode,
       options,
@@ -240,6 +241,7 @@ function emitProbeStartProgress<TSourceOptions>(
 
 async function stopProbes<TSourceOptions>(
   probeInstances: readonly ProbeInstance[],
+  connected: RunCaptureConnectedSession,
   cdp: RunCaptureConnectedSession['cdp'],
   mode: ProbeLifecycleContext['mode'],
   options: RunCaptureOptions<TSourceOptions>,
@@ -248,7 +250,15 @@ async function stopProbes<TSourceOptions>(
 ): Promise<Record<string, unknown>> {
   const kindsData: Record<string, unknown> = {};
   for (const probeInstance of probeInstances) {
-    const result = await stopProbe(probeInstance, cdp, mode, options, captureIntegrity, stopReason);
+    const result = await stopProbe(
+      probeInstance,
+      connected,
+      cdp,
+      mode,
+      options,
+      captureIntegrity,
+      stopReason,
+    );
     if (!result.ok) continue;
     kindsData[probeInstance.kind.id] = result.value;
   }
@@ -257,6 +267,7 @@ async function stopProbes<TSourceOptions>(
 
 async function stopProbe<TSourceOptions>(
   { kind, probe }: ProbeInstance,
+  connected: RunCaptureConnectedSession,
   cdp: RunCaptureConnectedSession['cdp'],
   mode: ProbeLifecycleContext['mode'],
   options: RunCaptureOptions<TSourceOptions>,
@@ -270,6 +281,9 @@ async function stopProbe<TSourceOptions>(
     const ctx = createProbeLifecycleContext(cdp, mode, kind.id, {
       abortSignal: options.abortSignal,
       stopReason,
+      ...(connected.drainLiveSignals
+        ? { liveSourceSignals: connected.drainLiveSignals.bind(connected) }
+        : {}),
     });
     const result =
       stopTimeoutMs === false

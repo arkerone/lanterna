@@ -9,6 +9,7 @@ import type { CaptureBundle } from '../../capture/core/types.js';
 import type {
   FrameCategory,
   MemoryHotAllocator,
+  MemoryProfileQuality,
   MemoryProfileReport,
   MemorySeriesStats,
   MemorySummary,
@@ -104,10 +105,12 @@ export function createMemoryAnalysisContributor(
         data.heapSnapshotAnalysis,
         options.heapSnapshotAnalysis,
       );
+      const quality = buildMemoryQuality(data, totalSampledBytes, heapSnapshotAnalysis);
 
       const report: MemoryProfileReport = {
         summary,
         hotAllocators: hotAllocators.slice(0, MAX_PUBLIC_HOT_ALLOCATORS),
+        quality,
         memoryUsage: {
           available: data.memoryUsage.available,
           sampleIntervalMs: data.memoryUsage.sampleIntervalMs || 0,
@@ -132,6 +135,57 @@ export function createMemoryAnalysisContributor(
       };
       ctx.setContextView<MemoryAnalysisView>(view);
     },
+  };
+}
+
+function buildMemoryQuality(
+  data: MemoryKindData,
+  totalSampledBytes: number,
+  heapSnapshotAnalysis: HeapSnapshotAnalysisReport | undefined,
+): MemoryProfileQuality {
+  const reasons: string[] = [];
+  const recommendations = new Set<string>();
+  const memorySampleCount = data.memoryUsage.samples.length;
+
+  if (!data.memoryUsage.available || memorySampleCount === 0) {
+    reasons.push('process.memoryUsage() samples were unavailable');
+    recommendations.add(
+      'Keep the target alive until finalization or use spawn mode so live memory samples can be preserved.',
+    );
+  }
+
+  if (data.heapSamplingAvailable === false) {
+    reasons.push('V8 heap sampling profile was unavailable');
+    recommendations.add('Rerun the capture while the target process remains reachable over CDP.');
+  }
+
+  for (const warning of data.warnings ?? []) {
+    reasons.push(warning);
+  }
+
+  if (heapSnapshotAnalysis && !heapSnapshotAnalysis.available) {
+    reasons.push('heap snapshot analysis was unavailable');
+    if (heapSnapshotAnalysis.warnings.length > 0) {
+      reasons.push(...heapSnapshotAnalysis.warnings);
+    }
+    recommendations.add(
+      'Use profiles.memory.hotAllocators and memoryUsage as the primary evidence when heap snapshots are unavailable.',
+    );
+  }
+
+  const hasHeapSampling = data.heapSamplingAvailable !== false && totalSampledBytes > 0;
+  const hasMemoryUsage = data.memoryUsage.available && memorySampleCount > 0;
+  const confidence: MemoryProfileQuality['confidence'] =
+    hasHeapSampling && hasMemoryUsage
+      ? 'high'
+      : hasHeapSampling || hasMemoryUsage
+        ? 'medium'
+        : 'low';
+
+  return {
+    confidence,
+    reasons,
+    recommendations: Array.from(recommendations),
   };
 }
 

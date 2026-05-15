@@ -8,6 +8,7 @@ import {
   findingConfidenceSchema,
   findingReportProofLevelSchema,
   findingSeveritySchema,
+  frameCategorySchema,
   gcCountSchema,
   measurementBasisSchema,
   measurementConfidenceSchema,
@@ -53,7 +54,7 @@ export const excessiveGcExtraSchema = z.object({
 });
 
 export const eventLoopStallExtraSchema = z.object({
-  proofLevel: z.literal('aggregate-correlation'),
+  proofLevel: z.union([z.literal('aggregate-correlation'), z.literal('hotspot-fallback')]),
   p99LagMs: z.number(),
   maxLagMs: z.number(),
   sampleCount: z.number().int().nonnegative(),
@@ -62,6 +63,7 @@ export const eventLoopStallExtraSchema = z.object({
   histogram: eventLoopHistogramSchema.optional(),
   stallIntervals: z.array(stallIntervalSchema),
   candidateHotspots: z.array(correlatedHotspotSchema),
+  fallbackHotspots: z.array(alternativeHotspotEvidenceSchema).optional(),
   correlationCoverage: correlationCoverageSchema.optional(),
 });
 
@@ -82,6 +84,16 @@ export const nodeModulesHotspotExtraSchema = attributionEvidenceSchema.extend({
   alternativeHotspots: z.array(alternativeHotspotEvidenceSchema).optional(),
 });
 
+export const cpuHotspotExtraSchema = z.object({
+  proofLevel: z.union([z.literal('direct-user-hotspot'), z.literal('inclusive-user-entry')]),
+  mode: z.enum(['self', 'inclusive-entry']),
+  category: frameCategorySchema,
+  selfPct: z.number(),
+  totalPct: z.number(),
+  eventLoopCorrelation: stallCorrelationSchema.optional(),
+  alternativeHotspots: z.array(alternativeHotspotEvidenceSchema),
+});
+
 const builtinFindingExtraSchema = z.union([
   blockingIoExtraSchema,
   syncCryptoExtraSchema,
@@ -91,6 +103,7 @@ const builtinFindingExtraSchema = z.union([
   eventLoopStallExtraSchema,
   jsonHotPathExtraSchema,
   nodeModulesHotspotExtraSchema,
+  cpuHotspotExtraSchema,
 ]);
 
 const genericFindingExtraSchema = z.record(z.string(), z.unknown());
@@ -161,6 +174,7 @@ export const findingSchema = z
       'event-loop-stall': eventLoopStallExtraSchema,
       'json-on-hot-path': jsonHotPathExtraSchema,
       'node-modules-hotspot': nodeModulesHotspotExtraSchema,
+      'cpu-hotspot': cpuHotspotExtraSchema,
     } as const;
 
     const extraSchema = schemaByCategory[category as keyof typeof schemaByCategory];

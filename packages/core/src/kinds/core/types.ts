@@ -1,5 +1,6 @@
 import type { ZodType } from 'zod';
 import type { FindingAnalyzer, SectionAnalyzer } from '../../analysis/core/types.js';
+import type { LiveSourceSignals } from '../../capture/core/types.js';
 import type { CdpClient } from '../../inspector/client.js';
 import type { HookInstaller } from '../../runtime-signals/hooks/framework.js';
 
@@ -40,6 +41,7 @@ export interface ProbeLifecycleContext {
   cdp: CdpClient;
   mode: 'spawn' | 'attach';
   kindId: string;
+  liveSourceSignals?: () => LiveSourceSignals;
 }
 
 export type ProbeStopReason = 'exit' | 'timeout' | 'signal';

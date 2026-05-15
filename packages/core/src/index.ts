@@ -181,6 +181,7 @@ export type {
   BlockingIoEvidenceExtra,
   BuiltinFinding,
   BuiltinFindingCategory,
+  CpuHotspotEvidenceExtra,
   CpuProfileReport,
   CpuSummary,
   DeoptEntry,

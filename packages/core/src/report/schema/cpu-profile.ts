@@ -27,6 +27,30 @@ const cpuSummarySchema = z.object({
   idleRatio: z.number(),
   topCategory: frameCategorySchema,
   dominantBlockingKind: z.union([z.literal('sync-crypto'), z.literal('blocking-io'), z.null()]),
+  topCpuCulprit: z
+    .object({
+      function: z.string(),
+      file: z.string(),
+      line: z.number().int(),
+      selfPct: z.number(),
+      totalPct: z.number(),
+      eventLoopCorrelation: stallCorrelationSchema.optional(),
+      alternativeHotspots: z.array(alternativeHotspotEvidenceSchema).optional(),
+      source: sourceLocationSchema.optional(),
+    })
+    .optional(),
+  topRequestEntry: z
+    .object({
+      function: z.string(),
+      file: z.string(),
+      line: z.number().int(),
+      selfPct: z.number(),
+      totalPct: z.number(),
+      eventLoopCorrelation: stallCorrelationSchema.optional(),
+      alternativeHotspots: z.array(alternativeHotspotEvidenceSchema).optional(),
+      source: sourceLocationSchema.optional(),
+    })
+    .optional(),
   topUserHotspot: z
     .object({
       function: z.string(),

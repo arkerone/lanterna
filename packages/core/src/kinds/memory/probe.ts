@@ -11,6 +11,7 @@ import {
 import type { CaptureProbe, ProbeLifecycleContext, ProbeStopReason } from '../core/types.js';
 import {
   type CapturedHeapSnapshots,
+  DEFAULT_HEAP_SNAPSHOT_CAPTURE_TIMEOUT_MS,
   type HeapSnapshotAnalysisReport,
   type NormalizedHeapSnapshotAnalysisOptions,
   resolveHeapSnapshotPath,
@@ -26,6 +27,8 @@ export interface MemoryKindData {
     sampleIntervalMs: number;
   };
   heapSnapshotAnalysis?: CapturedHeapSnapshots | HeapSnapshotAnalysisReport;
+  heapSamplingAvailable?: boolean;
+  warnings?: string[];
 }
 
 export interface MemoryProbeOptions {
@@ -42,6 +45,7 @@ export interface MemoryProbeOptions {
  */
 export function createMemoryProbe(options: MemoryProbeOptions): CaptureProbe<MemoryKindData> {
   let capturedHeapSnapshots: CapturedHeapSnapshots | undefined;
+  const warnings: string[] = [];
   return {
     ...(options.heapSnapshotAnalysis?.enabled ? { stopTimeoutMs: false as const } : {}),
     ...(options.heapSnapshotAnalysis?.enabled
@@ -67,6 +71,7 @@ export function createMemoryProbe(options: MemoryProbeOptions): CaptureProbe<Mem
         try {
           await takeHeapSnapshotToFile(ctx.cdp, startPath, {
             abortSignal: ctx.abortSignal,
+            timeoutMs: DEFAULT_HEAP_SNAPSHOT_CAPTURE_TIMEOUT_MS,
           });
         } catch (error) {
           capturedHeapSnapshots.available = false;
@@ -82,7 +87,18 @@ export function createMemoryProbe(options: MemoryProbeOptions): CaptureProbe<Mem
     async stop(
       ctx: ProbeLifecycleContext & { abortSignal?: AbortSignal; stopReason?: ProbeStopReason },
     ): Promise<MemoryKindData> {
-      const samplingProfile = await stopHeapSampling(ctx.cdp);
+      let samplingProfile: RawSamplingHeapProfile;
+      let heapSamplingAvailable = true;
+      try {
+        if (ctx.cdp.closed) throw new Error('CDP connection closed before heap sampling stopped');
+        samplingProfile = await stopHeapSampling(ctx.cdp);
+      } catch (error) {
+        heapSamplingAvailable = false;
+        warnings.push(
+          `failed to stop heap sampling: ${error instanceof Error ? error.message : String(error)}`,
+        );
+        samplingProfile = emptySamplingProfile();
+      }
       if (options.heapSnapshotAnalysis?.enabled && capturedHeapSnapshots) {
         if (ctx.stopReason === 'signal') {
           capturedHeapSnapshots.available = false;
@@ -93,6 +109,7 @@ export function createMemoryProbe(options: MemoryProbeOptions): CaptureProbe<Mem
           try {
             await takeHeapSnapshotToFile(ctx.cdp, capturedHeapSnapshots.end.path, {
               abortSignal: ctx.abortSignal,
+              timeoutMs: DEFAULT_HEAP_SNAPSHOT_CAPTURE_TIMEOUT_MS,
             });
           } catch (error) {
             capturedHeapSnapshots.available = false;
@@ -104,9 +121,7 @@ export function createMemoryProbe(options: MemoryProbeOptions): CaptureProbe<Mem
           }
         }
       }
-      const memoryUsage = ctx.cdp.closed
-        ? { samples: [], available: false, sampleIntervalMs: options.memoryUsageIntervalMs }
-        : await readMemoryUsageSeries(ctx.cdp);
+      const memoryUsage = await readMemoryUsage(ctx, options.memoryUsageIntervalMs);
       return {
         samplingProfile,
         samplingIntervalBytes: options.samplingIntervalBytes,
@@ -114,6 +129,8 @@ export function createMemoryProbe(options: MemoryProbeOptions): CaptureProbe<Mem
           ...memoryUsage,
           sampleIntervalMs: memoryUsage.sampleIntervalMs || options.memoryUsageIntervalMs,
         },
+        heapSamplingAvailable,
+        ...(warnings.length > 0 ? { warnings: [...warnings] } : {}),
         ...(capturedHeapSnapshots ? { heapSnapshotAnalysis: capturedHeapSnapshots } : {}),
       };
     },
@@ -122,5 +139,44 @@ export function createMemoryProbe(options: MemoryProbeOptions): CaptureProbe<Mem
       await disableMemoryUsageSeries(ctx.cdp);
       await ctx.cdp.send('HeapProfiler.disable');
     },
+  };
+}
+
+async function readMemoryUsage(
+  ctx: ProbeLifecycleContext & {
+    liveSourceSignals?: () => import('../../capture/core/types.js').LiveSourceSignals;
+  },
+  fallbackIntervalMs: number,
+) {
+  const live = ctx.liveSourceSignals?.();
+  if (!ctx.cdp.closed) {
+    const memoryUsage = await readMemoryUsageSeries(ctx.cdp);
+    if (memoryUsage.available || memoryUsage.samples.length > 0) return memoryUsage;
+  }
+  if (live?.memoryUsageSamples && live.memoryUsageSamples.length > 0) {
+    return {
+      samples: live.memoryUsageSamples,
+      available: true,
+      sampleIntervalMs: live.memoryUsageSampleIntervalMs ?? fallbackIntervalMs,
+    };
+  }
+  return { samples: [], available: false, sampleIntervalMs: fallbackIntervalMs };
+}
+
+function emptySamplingProfile(): RawSamplingHeapProfile {
+  return {
+    head: {
+      callFrame: {
+        functionName: '(root)',
+        scriptId: '0',
+        url: '',
+        lineNumber: 0,
+        columnNumber: 0,
+      },
+      selfSize: 0,
+      id: 1,
+      children: [],
+    },
+    samples: [],
   };
 }

@@ -11,6 +11,15 @@ export const eventLoopSampleSchema = z.object({
   lagMs: z.number(),
 });
 
+export const memoryUsageSampleSchema = z.object({
+  atMs: z.number(),
+  rss: z.number().nonnegative(),
+  heapTotal: z.number().nonnegative(),
+  heapUsed: z.number().nonnegative(),
+  external: z.number().nonnegative(),
+  arrayBuffers: z.number().nonnegative(),
+});
+
 const eventLoopSummarySchema = z.object({
   max: z.number(),
   mean: z.number(),
@@ -72,6 +81,12 @@ export const controlGcSchema = z.object({
   durationMs: z.number(),
 });
 
+export const controlMemoryUsageSchema = memoryUsageSampleSchema.extend({
+  type: z.literal('memory-usage'),
+  sampleIntervalMs: z.number().positive(),
+  captureStarted: z.boolean().optional(),
+});
+
 export const controlAppCompleteSchema = z.object({
   type: z.literal('app-complete'),
   atMs: z.number().optional(),
@@ -83,6 +98,7 @@ export const controlEventSchema = z.discriminatedUnion('type', [
   controlCaptureStartSchema,
   controlHeartbeatSchema,
   controlGcSchema,
+  controlMemoryUsageSchema,
   controlAppCompleteSchema,
 ]);
 

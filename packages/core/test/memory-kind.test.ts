@@ -1,5 +1,8 @@
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import vm from 'node:vm';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { createAnalysisPipeline } from '../src/analysis/core/pipeline.js';
 import type { RawSamplingHeapProfile } from '../src/capture/core/heap.js';
 import type { CaptureBundle } from '../src/capture/core/types.js';
@@ -222,6 +225,25 @@ describe('memory kind analysis', () => {
     expect(memoryProfileReportSchema.safeParse(report).success).toBe(true);
   });
 
+  it('adds memory quality using the shared confidence/reasons/recommendations contract', () => {
+    const data: MemoryKindData = {
+      samplingProfile: profile(),
+      samplingIntervalBytes: 512 * 1024,
+      memoryUsage: { samples: series(0), available: true, sampleIntervalMs: 200 },
+    };
+    const pipeline = createAnalysisPipeline({ kinds: [createMemoryProfileKind()] });
+    const result = pipeline.run(bundle(data), { command: ['node', 'app.js'], mode: 'spawn' });
+
+    const report = result.profiles.memory as MemoryProfileReport;
+
+    expect(report.quality).toEqual({
+      confidence: 'high',
+      reasons: [],
+      recommendations: [],
+    });
+    expect(memoryProfileReportSchema.safeParse(report).success).toBe(true);
+  });
+
   it('attributes external allocators to the nearest user caller', () => {
     const data: MemoryKindData = {
       samplingProfile: externalAllocatorProfile(),
@@ -338,6 +360,8 @@ describe('memory kind analysis', () => {
     expect(report.hotAllocators).toEqual([]);
     expect(report.summary.totalSampledBytes).toBe(0);
     expect(report.summary.rss).toBeUndefined();
+    expect(report.quality.confidence).toBe('low');
+    expect(report.quality.reasons).toContain('process.memoryUsage() samples were unavailable');
 
     const lanternaReport = buildLanternaReport(bundle(data), result, [memoryKind], {
       command: ['node', 'app.js'],
@@ -496,6 +520,99 @@ describe('memory kind analysis', () => {
     eventLoop.markCaptureStart();
     expect(memory.read().samples).toHaveLength(1);
     expect(memory.read().samples[0]?.atMs).toBe(0);
+  });
+
+  it('preserves live memory usage samples when the target exits before CDP final reads', async () => {
+    const liveSamples = series(0, 3);
+    const cdp = {
+      closed: true,
+      send: async () => {
+        throw new Error('CDP connection closed');
+      },
+      evaluate: async () => null,
+      on: () => () => {},
+      onClose: () => () => {},
+      close: async () => {},
+    };
+    const probe = createMemoryProbe({
+      samplingIntervalBytes: 512 * 1024,
+      memoryUsageIntervalMs: 250,
+    });
+
+    const data = await probe.stop({
+      cdp,
+      mode: 'spawn',
+      kindId: 'memory',
+      stopReason: 'exit',
+      liveSourceSignals: () => ({
+        gcEventsAbs: [],
+        eventLoopSamplesAbs: [],
+        eventLoopAvailable: false,
+        memoryUsageSamples: liveSamples,
+        memoryUsageSampleIntervalMs: 250,
+      }),
+    } as never);
+
+    expect(data.memoryUsage).toEqual({
+      samples: liveSamples,
+      available: true,
+      sampleIntervalMs: 250,
+    });
+  });
+
+  it('bounds heap snapshot capture and still returns standard memory data', async () => {
+    vi.useFakeTimers();
+    const outputDir = await mkdtemp(join(tmpdir(), 'lanterna-heap-timeout-'));
+    let rejectSnapshot!: (error: Error) => void;
+    const hangingSnapshot = new Promise<never>((_resolve, reject) => {
+      rejectSnapshot = reject;
+    });
+    const sent: string[] = [];
+    const cdp = {
+      closed: false,
+      send: async (method: string) => {
+        sent.push(method);
+        if (method === 'HeapProfiler.takeHeapSnapshot') return hangingSnapshot;
+        if (method === 'HeapProfiler.stopSampling') return { profile: profile() };
+        return {};
+      },
+      evaluate: async () => ({ samples: series(0, 2), sampleIntervalMs: 250 }),
+      on: () => () => {},
+      onClose: () => () => {},
+      close: async () => {},
+    };
+    const probe = createMemoryProfileKind({
+      heapSnapshotAnalysis: { enabled: true, outputDir },
+    }).createProbe();
+    let startState: 'pending' | 'resolved' | 'rejected' = 'pending';
+    const startPromise = probe.start({ cdp, mode: 'spawn', kindId: 'memory' }).then(
+      () => {
+        startState = 'resolved';
+      },
+      () => {
+        startState = 'rejected';
+      },
+    );
+
+    try {
+      await vi.advanceTimersByTimeAsync(31_000);
+      await Promise.resolve();
+      expect(startState).toBe('resolved');
+      expect(sent).toContain('HeapProfiler.startSampling');
+
+      const stopPromise = probe.stop({ cdp, mode: 'spawn', kindId: 'memory' });
+      await vi.advanceTimersByTimeAsync(31_000);
+      const data = await stopPromise;
+      const snapshot = data.heapSnapshotAnalysis;
+      expect(snapshot?.available).toBe(false);
+      expect(snapshot?.warnings.join('\n')).toMatch(/timed out/i);
+      expect(data.memoryUsage.available).toBe(true);
+    } finally {
+      rejectSnapshot(new Error('cleanup'));
+      await startPromise.catch(() => {});
+      vi.useRealTimers();
+      await rm(outputDir, { recursive: true, force: true });
+    }
   });
 
   it('installs memory hooks on a later attach when the framework already exists', () => {

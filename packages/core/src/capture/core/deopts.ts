@@ -8,6 +8,8 @@ export function parseDeoptsFromStderr(stderr: string): RawDeopt[] {
   const lines = stderr.split('\n');
   const bailoutPattern =
     /bailout .*?kind:\s*([^,]+),\s*reason:\s*([^)]+)\).*?<[^>]*>\s+(\S+)\s+at\s+(\S+):(\d+)/i;
+  const nodeBailoutPattern =
+    /bailout\s+\(kind:\s*([^,]+),\s*reason:\s*(.*?)\):\s*(?:begin|end)\.\s+deoptimizing\s+.*?<JSFunction\s+(.+?)\s+\(sfi\s*=/i;
   const genericBailoutPattern = /bailout .*?kind:\s*([^,]+),\s*reason:\s*([^)]+)\)/i;
   const deoptPattern =
     /deoptimiz\w+\s+.*?\(([^)]+)\):\s*(?:begin|end)\s+\S+\s+<[^>]*>\s+(\S+).*?reason:\s*([^,;]+)/i;
@@ -29,6 +31,27 @@ export function parseDeoptsFromStderr(stderr: string): RawDeopt[] {
         file: match[4] ?? '',
         line: Number(match[5]) || 0,
         reason: (match[2] ?? '').trim(),
+        bailoutType: (match[1] ?? '').trim(),
+        count: 1,
+      });
+      continue;
+    }
+
+    match = nodeBailoutPattern.exec(line);
+    if (match) {
+      const reason = (match[2] ?? '').trim();
+      const functionName = (match[3] ?? '').trim();
+      const key = `${functionName}|${reason}`;
+      const existing = deoptCountsByKey.get(key);
+      if (existing) {
+        existing.count += 1;
+        continue;
+      }
+      deoptCountsByKey.set(key, {
+        function: functionName,
+        file: '',
+        line: 0,
+        reason,
         bailoutType: (match[1] ?? '').trim(),
         count: 1,
       });
