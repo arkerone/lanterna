@@ -29,15 +29,15 @@ Lanterna produces agent-facing Node.js profiling reports. Your job is not to sum
    - If the user did not provide the symptom, ask one targeted question before deep analysis.
 
 2. **Gate the report quality**
-   - Read frontmatter first: `kinds`, `cpu_quality`, `memory_signal`, `async_quality`, `integrity`, source-map coverage, `blocking_caveats`, `degrading_caveats`.
+   - Read frontmatter first: `kinds`, `cpu_quality`, `memory_signal`, `async_quality`, `integrity`, `rerun_required`, source-map coverage, `blocking_caveats`, `degrading_caveats`.
    - If `blocking_caveats` is non-empty, do not diagnose. Explain the blocker and request a corrected capture.
    - If CPU idle ratio is mostly idle, sample count is low, capture is too short, or workload is not representative, request a rerun using `--workload`.
    - If a needed kind is absent, request a new capture with the needed `--kind`.
 
 3. **Build an evidence map**
-   - Read in order, every time: frontmatter → `## Findings` table → each `## Finding N` block in table order → every present `## Kind Review` section (including kinds with no finding) → `## Files To Read First` → `## Next Steps`. Do not skip a `Kind Review` for a kind listed in frontmatter `kinds`.
+   - Read in order, every time: frontmatter → `## Findings` table → each `## Finding N` block in table order → every present `## Kind Review` section (including kinds with no finding) → `## Files To Read First`. Do not skip a `Kind Review` for a kind listed in frontmatter `kinds`.
    - Use `## Files To Read First` as the source inspection queue: `read-first` rows are the primary queue, `inspect-lead` rows need confirmation, `supporting-context` rows explain surrounding evidence.
-   - Classify each lead as `proven/actionable`, `hypothesis needing source confirmation`, `hypothesis needing another measurement`, or `non-representative signal requiring rerun`.
+   - Classify each lead as `proven/actionable`, `hypothesis needing source confirmation`, `hypothesis needing another measurement`, or `non-representative signal requiring rerun`. Treat `rerun_required: true` as the report-level signal for that last class, then use `blocking_caveats`, `degrading_caveats`, and any `decision = rerun` finding to explain why.
 
 4. **Diagnose by subsystem** (see per-kind references for interpretation rules: [cpu-profiling.md](references/cpu-profiling.md), [memory-profiling.md](references/memory-profiling.md), [async-profiling.md](references/async-profiling.md))
    - CPU: check top user hotspot, dependency/runtime hotspot with user caller, sync crypto, blocking I/O, JSON/serialization, require/import in hot path, deopt loops, and GC-correlated CPU.

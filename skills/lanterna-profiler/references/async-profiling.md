@@ -37,7 +37,7 @@ Attach reports can still be useful for new resources created during the capture 
 
 ## Report Paths
 
-These are targeted JSON lookup paths. For analysis, read the agent report first and use its frontmatter, `## Findings` table, `## Finding N` blocks, `Findings.decision` column, `Kind Review`, `Files To Read First`, and `Next Steps` sections as the contract.
+These are targeted JSON lookup paths. For analysis, read the agent report first and use its frontmatter, `## Findings` table, `## Finding N` blocks, `Findings.decision` column, `Kind Review`, and `Files To Read First` sections as the contract.
 
 - `profiles.async.summary`: availability, counts, top kinds, `collectedVia`, dropped record count, and optional `topAsyncHotFile`.
 - `profiles.async.quality`: confidence, reasons, recommendations, dropped records, `attachPartialCapture`, CDP stack coverage.

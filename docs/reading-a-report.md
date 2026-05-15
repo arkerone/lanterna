@@ -12,7 +12,7 @@ lanterna report report.json --format markdown --output report.md
 lanterna report report.json --format agent --output report.agent.md
 ```
 
-Use `--format agent` when an AI agent or automation will consume the report. It preserves Lanterna finding order and turns the JSON into a fixed Markdown contract: frontmatter, `Findings`, per-finding detail blocks, `Kind Review`, `Files To Read First`, and `Next Steps`. See [examples/report.agent.md](./examples/report.agent.md) for a complete rendered example. Use `jq` after that only when you need exact fields, automation, or deeper schema inspection.
+Use `--format agent` when an AI agent or automation will consume the report. It preserves Lanterna finding order and turns the JSON into a fixed Markdown contract: frontmatter with `rerun_required`, `Findings`, per-finding detail blocks, `Kind Review`, and `Files To Read First`. See [examples/report.agent.md](./examples/report.agent.md) for a complete rendered example. Use `jq` after that only when you need exact fields, automation, or deeper schema inspection.
 
 | # | Section | What it tells you | When to distrust it |
 | --- | --- | --- | --- |

@@ -104,7 +104,7 @@ lanterna report report.json --format agent --output report.agent.md
 lanterna report report.json --format json --pretty
 ```
 
-`--format agent` is a deterministic Markdown contract for automated analysis. It contains a signal gate, action queue, evidence pack, files to read first, decision rules, and rerun commands only when the captured signal is insufficient.
+`--format agent` is a deterministic Markdown contract for automated analysis. It contains a signal gate with `rerun_required`, an evidence pack, files to read first, and decision rules. When `rerun_required` is true, use the rendered caveats and any `decision = rerun` findings to choose the next capture command.
 
 ## Options
 
