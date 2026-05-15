@@ -4,6 +4,7 @@ import {
   type KindScopedDetector,
 } from '@lanterna-profiler/core';
 import { blockingIoDetector } from './blocking-io.js';
+import { cpuHotspotDetector } from './cpu-hotspot.js';
 import { deoptLoopDetector } from './deopt-loop.js';
 import { eventLoopStallDetector } from './event-loop-stall.js';
 import { excessiveGcDetector } from './excessive-gc.js';
@@ -21,6 +22,7 @@ export const DETECTORS: KindScopedDetector<'cpu'>[] = [
   deoptLoopDetector,
   requireInHotPathDetector,
   nodeModulesHotspotDetector,
+  cpuHotspotDetector,
 ];
 
 export function createBuiltInFindingAnalyzers(): FindingAnalyzer[] {

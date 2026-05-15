@@ -125,9 +125,13 @@ import {
   findStallCorrelation,
   isBuiltinRuntimeHotspot,
   maxHotspotPct,
+  readFrameSourceText,
   resolveAttribution,
   severityForPct,
 } from './shared.js';
+
+const ZLIB_PROCESS_CHUNK_SYNC = 'processChunkSync';
+const ZLIB_SYNC_APIS = ['gzipSync', 'gunzipSync', 'deflateSync', 'inflateSync'] as const;
 
 export const blockingIoDetector: KindScopedDetector<'cpu'> = {
   id: 'blocking-io',
@@ -136,25 +140,66 @@ export const blockingIoDetector: KindScopedDetector<'cpu'> = {
     const report = cpu.report;
     const context: CpuHotspotContext = cpu.view.hotspotAnalysis;
     const thresholds = DETECTOR_THRESHOLDS.blockingIo;
-    const { categoryTotalPct } = aggregateByPatterns(context.fullHotspots, BLOCKING_IO_PATTERNS, {
+    const aggregate = aggregateByPatterns(context.fullHotspots, BLOCKING_IO_PATTERNS, {
       normalize: stripOptPrefix,
     });
+    const zlibProcessChunkTotalPct = context.fullHotspots
+      .filter(isZlibProcessChunkSyncHotspot)
+      .reduce((sum, hotspot) => sum + hotspot.totalPct, 0);
+    const categoryTotalPct = aggregate.categoryTotalPct + zlibProcessChunkTotalPct;
     const familyExceeded = exceedsCategoryThreshold(categoryTotalPct, thresholds.categoryTotalPct);
     const findings: Finding[] = [];
     for (const hotspot of context.fullHotspots) {
       if (!isBuiltinRuntimeHotspot(hotspot)) continue;
       const normalizedFunctionName = stripOptPrefix(hotspot.function);
-      const patternMatch = BLOCKING_IO_PATTERNS.find((pattern) =>
-        pattern.re.test(normalizedFunctionName),
-      );
+      const patternMatch =
+        BLOCKING_IO_PATTERNS.find((pattern) => pattern.re.test(normalizedFunctionName)) ??
+        zlibProcessChunkPattern(hotspot, context, cpu.view.bundle.target.cwd);
       if (!patternMatch) continue;
       const perFrameHit = exceedsAnyHotspotThreshold(hotspot, thresholds);
       if (!perFrameHit && !familyExceeded) continue;
-      findings.push(buildFinding(hotspot, patternMatch.api, categoryTotalPct, report, context));
+      const callee = 'callee' in patternMatch ? patternMatch.callee : undefined;
+      findings.push(
+        buildFinding(hotspot, patternMatch.api, categoryTotalPct, report, context, { callee }),
+      );
     }
     return findings;
   },
 };
+
+function isZlibProcessChunkSyncHotspot(hotspot: Hotspot): boolean {
+  return (
+    stripOptPrefix(hotspot.function) === ZLIB_PROCESS_CHUNK_SYNC &&
+    (hotspot.file === 'node:zlib' || hotspot.file.endsWith('/zlib.js'))
+  );
+}
+
+function zlibProcessChunkPattern(
+  hotspot: Hotspot,
+  context: CpuHotspotContext,
+  cwd: string,
+): { api: string; callee?: string } | undefined {
+  if (!isZlibProcessChunkSyncHotspot(hotspot)) return undefined;
+  return {
+    api: inferZlibSyncApi(hotspot, context, cwd),
+    callee: 'node:zlib processChunkSync',
+  };
+}
+
+function inferZlibSyncApi(hotspot: Hotspot, context: CpuHotspotContext, cwd: string): string {
+  const attribution = context.userCallerById.get(hotspot.id);
+  const candidates = [attribution, ...(context.candidateCallersById?.get(hotspot.id) ?? [])].filter(
+    (candidate): candidate is NonNullable<typeof candidate> => Boolean(candidate),
+  );
+  for (const candidate of candidates) {
+    const source = readFrameSourceText(candidate, cwd);
+    const match = source?.match(/\b(gzipSync|gunzipSync|deflateSync|inflateSync)\s*\(/);
+    if (match?.[1] && ZLIB_SYNC_APIS.includes(match[1] as (typeof ZLIB_SYNC_APIS)[number])) {
+      return `zlib.${match[1]}`;
+    }
+  }
+  return 'zlib.gzipSync';
+}
 
 function buildFinding(
   hotspot: Hotspot,
@@ -162,12 +207,13 @@ function buildFinding(
   categoryTotalPct: number,
   report: { eventLoop: EventLoopReport },
   context: CpuHotspotContext,
+  options: { callee?: string } = {},
 ): BuiltinFinding<'blocking-io'> {
   const asyncApi = api.replace(/Sync$/, '');
   const { attribution, caller, candidateCallers } = resolveAttribution(hotspot, context);
   const evidenceExtra: BlockingIoEvidenceExtra = {
     api,
-    callee: hotspot.function,
+    callee: options.callee ?? hotspot.function,
     ...buildAttributionEvidence(attribution, caller, candidateCallers),
     eventLoopCorrelation: findStallCorrelation(caller, report),
     categoryTotalPct: categoryTotalPct > 0 ? categoryTotalPct : undefined,

@@ -1,7 +1,9 @@
 import type {
   BuiltinFinding,
+  DeoptEntry,
   DeoptLoopEvidenceExtra,
   Finding,
+  Hotspot,
   KindScopedDetector,
 } from '@lanterna-profiler/core';
 import { defineBuiltinFinding } from '@lanterna-profiler/core';
@@ -18,7 +20,7 @@ export const deoptLoopDetector: KindScopedDetector<'cpu'> = {
     const context: CpuHotspotContext = cpu.view.hotspotAnalysis;
     const thresholds = DETECTOR_THRESHOLDS.deoptLoop;
     const findings: Finding[] = [];
-    for (const deopt of report.deopts) {
+    for (const deopt of aggregateDeopts(report.deopts)) {
       if (deopt.count < thresholds.minCount) continue;
       const matchingHotspot = findHotDeoptHotspot(deopt.function, deopt.file, deopt.line, context);
       if (!matchingHotspot) continue;
@@ -38,8 +40,8 @@ export const deoptLoopDetector: KindScopedDetector<'cpu'> = {
         confidence: 'medium',
         proofLevel: 'trace-only',
         evidence: {
-          file: deopt.file,
-          line: deopt.line,
+          file: deopt.file || matchingHotspot.file,
+          line: deopt.line || matchingHotspot.line,
           function: deopt.function,
           selfPct: 0,
           ...(matchingHotspot.source ? { source: matchingHotspot.source } : {}),
@@ -62,12 +64,49 @@ export const deoptLoopDetector: KindScopedDetector<'cpu'> = {
   },
 };
 
+function aggregateDeopts(deopts: readonly DeoptEntry[]): DeoptEntry[] {
+  const grouped = new Map<string, DeoptEntry>();
+  const output: DeoptEntry[] = [];
+  for (const deopt of deopts) {
+    if (deopt.file && deopt.line > 0) {
+      output.push(deopt);
+      continue;
+    }
+    const key = deopt.function;
+    const existing = grouped.get(key);
+    if (!existing) {
+      grouped.set(key, { ...deopt });
+      continue;
+    }
+    existing.count += deopt.count;
+    existing.reason = mergeLabel(existing.reason, deopt.reason);
+    existing.bailoutType = mergeLabel(existing.bailoutType, deopt.bailoutType);
+  }
+  output.push(...grouped.values());
+  return output.sort((a, b) => b.count - a.count);
+}
+
+function mergeLabel(left: string, right: string): string {
+  if (left === right) return left;
+  const parts = new Set(
+    [...left.split(';'), ...right.split(';')].map((part) => part.trim()).filter(Boolean),
+  );
+  return Array.from(parts).join('; ');
+}
+
 function findHotDeoptHotspot(
   functionName: string,
   file: string,
   line: number,
   context: CpuHotspotContext,
-) {
+): Hotspot | undefined {
+  if (!file || line <= 0) {
+    const matches = context.fullHotspots.filter(
+      (hotspot) =>
+        hotspot.function === functionName && hotspot.category === 'user' && hotspot.totalPct > 1,
+    );
+    return matches.length === 1 ? matches[0] : undefined;
+  }
   return context.fullHotspots.find(
     (hotspot) =>
       hotspot.function === functionName &&

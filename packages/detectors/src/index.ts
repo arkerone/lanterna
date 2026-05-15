@@ -15,6 +15,7 @@ export {
   ASYNC_DETECTORS as defaultAsyncDetectors,
   createBuiltInAsyncFindingAnalyzers,
 } from './detectors/async-index.js';
+export { cpuHotspotDetector } from './detectors/cpu-hotspot.js';
 export { deepAsyncChainDetector } from './detectors/deep-async-chain.js';
 export { externalBufferPressureDetector } from './detectors/external-buffer-pressure.js';
 export { hotAsyncContextDetector } from './detectors/hot-async-context.js';

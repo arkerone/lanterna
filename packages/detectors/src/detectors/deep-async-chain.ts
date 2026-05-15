@@ -21,6 +21,7 @@ export const deepAsyncChainDetector: KindScopedDetector<'async'> = {
     for (const chain of report.chains) {
       if (findings.length >= thresholds.maxFindings) break;
       if (chain.depth < thresholds.minDepth) continue;
+      if (isTimerOnlySyntheticChain(chain)) continue;
       const severity: BaseFinding['severity'] =
         chain.depth >= thresholds.criticalDepth ? 'critical' : 'warning';
       const rootFrame = chain.rootFrame;
@@ -73,3 +74,16 @@ export const deepAsyncChainDetector: KindScopedDetector<'async'> = {
     return findings;
   },
 };
+
+function isTimerOnlySyntheticChain(chain: {
+  deepestPath: readonly string[];
+  rootFrame?: unknown;
+  deepestFrame?: unknown;
+  dominantFile?: string;
+}): boolean {
+  if (chain.rootFrame || chain.deepestFrame || chain.dominantFile) return false;
+  return (
+    chain.deepestPath.length > 0 &&
+    chain.deepestPath.every((kind) => kind === 'timer' || kind === 'immediate')
+  );
+}

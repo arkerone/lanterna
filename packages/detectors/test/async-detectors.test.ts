@@ -211,6 +211,22 @@ describe('deep-async-chain detector', () => {
     const result = pipeline.run(bundle, { command: ['node', 'app.js'], mode: 'spawn' });
     expect(result.findings).toEqual([]);
   });
+
+  it('does not fire on timer-only chains without user or promise evidence', () => {
+    const records: AsyncOperationRecord[] = [];
+    for (let i = 0; i < 35; i++) {
+      const trigger = i === 0 ? 0 : i;
+      records.push(makeRecord(i + 1, trigger, 'timer', 5, i));
+    }
+    const bundle = makeBundle({ records });
+    const pipeline = createAnalysisPipeline({
+      kinds: [createAsyncProfileKind()],
+      findingAnalyzers: [createFindingAnalyzerFromKindScopedDetector(deepAsyncChainDetector)],
+    });
+    const result = pipeline.run(bundle, { command: ['node', 'app.js'], mode: 'spawn' });
+
+    expect(result.findings).toEqual([]);
+  });
 });
 
 describe('microtask-flood detector', () => {
@@ -253,7 +269,7 @@ describe('microtask-flood detector', () => {
     const result = pipeline.run(bundle, { command: ['node', 'app.js'], mode: 'spawn' });
     const finding = result.findings.find((f) => f.id === 'microtask-flood');
 
-    expect(finding?.evidence.file).toBe('file:///app/src/fanout.js');
+    expect(finding?.evidence.file).toBe('/app/src/fanout.js');
     expect(finding?.evidence.function).toBe('scheduleFanout');
     expect(finding?.evidence.extra).toMatchObject({
       asyncQuality: 'high',
@@ -279,7 +295,7 @@ describe('microtask-flood detector', () => {
     const result = pipeline.run(bundle, { command: ['node', 'app.js'], mode: 'spawn' });
     const finding = result.findings.find((f) => f.id === 'long-await:999');
     expect(finding?.evidence.function).toBe('fetchUser');
-    expect(finding?.evidence.file).toBe('file:///app/src/users.js');
+    expect(finding?.evidence.file).toBe('/app/src/users.js');
     expect(finding?.evidence.line).toBe(42);
   });
 
@@ -334,7 +350,7 @@ describe('microtask-flood detector', () => {
     const result = pipeline.run(bundle, { command: ['node', 'app.js'], mode: 'spawn' });
     const finding = result.findings.find((f) => f.id === 'long-await:999');
 
-    expect(finding?.evidence.file).toBe('file:///app/src/queue.js');
+    expect(finding?.evidence.file).toBe('/app/src/queue.js');
     expect(finding?.evidence.function).toBe('queueWork');
     expect(finding?.confidence).toBe('medium');
     expect(finding?.evidence.extra).toMatchObject({
@@ -404,7 +420,7 @@ describe('hot-async-context detector', () => {
     const finding = result.findings.find((f) => f.id.startsWith('hot-async-context:'));
     expect(finding).toBeDefined();
     expect(finding?.evidence.function).toBe('requestHandler');
-    expect(finding?.evidence.file).toBe('file:///app/src/server.js');
+    expect(finding?.evidence.file).toBe('/app/src/server.js');
     expect(finding?.severity).toBe('critical');
   });
 
@@ -448,11 +464,11 @@ describe('deep async chain anchoring', () => {
     const result = pipeline.run(bundle, { command: ['node', 'app.js'], mode: 'spawn' });
     const finding = result.findings.find((f) => f.id.startsWith('deep-async-chain:'));
 
-    expect(finding?.evidence.file).toBe('file:///app/src/deep.js');
+    expect(finding?.evidence.file).toBe('/app/src/deep.js');
     expect(finding?.evidence.extra).toMatchObject({
-      dominantFile: 'file:///app/src/deep.js',
-      rootFrame: expect.objectContaining({ file: 'file:///app/src/root.js' }),
-      deepestFrame: expect.objectContaining({ file: 'file:///app/src/deep.js' }),
+      dominantFile: '/app/src/deep.js',
+      rootFrame: expect.objectContaining({ file: '/app/src/root.js' }),
+      deepestFrame: expect.objectContaining({ file: '/app/src/deep.js' }),
       asyncQuality: 'high',
     });
   });

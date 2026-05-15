@@ -19,8 +19,8 @@ export const allocInHotPathDetector: KindScopedDetector<'cpu' | 'memory'> = {
   kindIds: ['cpu', 'memory'],
   detect({ cpu, memory }): Finding[] {
     const thresholds = DETECTOR_THRESHOLDS.allocInHotPath;
-    const cpuHotspots = cpu.report.hotspots;
-    const memAllocators = memory.report.hotAllocators;
+    const cpuHotspots = cpu.report.hotspots.filter(isActionableFrame);
+    const memAllocators = memory.report.hotAllocators.filter(isActionableFrame);
     if (cpuHotspots.length === 0 || memAllocators.length === 0) return [];
 
     const memByKey = new Map<string, MemoryHotAllocator>();
@@ -103,4 +103,16 @@ function buildFinding(
 
 function frameKey(fn: string, file: string, line: number): string {
   return `${file}::${fn}::${line}`;
+}
+
+function isActionableFrame(
+  frame: Pick<Hotspot | MemoryHotAllocator, 'category' | 'file' | 'function'>,
+) {
+  if (frame.category !== 'user' && frame.category !== 'node_modules') return false;
+  if (frame.file.startsWith('node:')) return false;
+  if (/^(?:native |extensions::|evalmachine\.|node:internal\/)/.test(frame.file)) return false;
+  if (/^\((?:root|idle|program|garbage collector|anonymous)\)$/.test(frame.function)) {
+    return false;
+  }
+  return true;
 }
