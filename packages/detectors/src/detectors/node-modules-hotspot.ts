@@ -50,14 +50,14 @@ function buildFinding(
   report: { eventLoop: EventLoopReport },
   context: CpuHotspotContext,
 ): BuiltinFinding<'node-modules-hotspot'> {
-  const { attribution, caller } = resolveAttribution(hotspot, context);
+  const { attribution, caller, candidateCallers } = resolveAttribution(hotspot, context);
   const evidenceExtra: NodeModulesHotspotEvidenceExtra = {
     package: hotspot.package,
     callee: hotspot.function,
     calleeFile: hotspot.file,
     calleeLine: hotspot.line,
     calleeTotalPct: hotspot.totalPct,
-    ...buildAttributionEvidence(attribution, caller),
+    ...buildAttributionEvidence(attribution, caller, candidateCallers),
     eventLoopCorrelation: findStallCorrelation(caller, report),
     alternativeHotspots: alternatives.map(toAlternativeHotspotEvidence),
   };

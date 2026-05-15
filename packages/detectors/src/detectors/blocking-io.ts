@@ -164,11 +164,11 @@ function buildFinding(
   context: CpuHotspotContext,
 ): BuiltinFinding<'blocking-io'> {
   const asyncApi = api.replace(/Sync$/, '');
-  const { attribution, caller } = resolveAttribution(hotspot, context);
+  const { attribution, caller, candidateCallers } = resolveAttribution(hotspot, context);
   const evidenceExtra: BlockingIoEvidenceExtra = {
     api,
     callee: hotspot.function,
-    ...buildAttributionEvidence(attribution, caller),
+    ...buildAttributionEvidence(attribution, caller, candidateCallers),
     eventLoopCorrelation: findStallCorrelation(caller, report),
     categoryTotalPct: categoryTotalPct > 0 ? categoryTotalPct : undefined,
   };

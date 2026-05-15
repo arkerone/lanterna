@@ -106,6 +106,19 @@ describe('findings – sync-crypto-on-hot-path', () => {
     );
     assert.equal((f.evidence.extra as Record<string, unknown>)?.proofLevel, 'attributed-caller');
   });
+
+  it('recommends the native async pbkdf2 API and notes promisify as optional', () => {
+    const f = findFindingOrFail(
+      report,
+      (finding) => finding.id === 'sync-crypto-on-hot-path',
+      'sync-crypto finding',
+    );
+
+    assert.equal(f.remediation?.replace, 'pbkdf2Sync');
+    assert.equal(f.remediation?.with, 'pbkdf2');
+    assert.equal(f.remediation?.module, 'node:crypto');
+    assert.match(f.remediation?.notes ?? '', /util\.promisify\(pbkdf2\)/);
+  });
 });
 
 describe('findings – sync-crypto false positive suppression', () => {
@@ -243,6 +256,104 @@ describe('findings – sync-crypto aggregate regression', () => {
         (finding) =>
           ((finding.evidence.extra as Record<string, unknown>).categoryTotalPct as number) >= 3,
       ),
+    );
+  });
+});
+
+describe('findings – sync-crypto split caller attribution', () => {
+  const profile: RawCpuProfile = {
+    nodes: [
+      {
+        id: 1,
+        callFrame: {
+          functionName: '(root)',
+          scriptId: '0',
+          url: '',
+          lineNumber: -1,
+          columnNumber: -1,
+        },
+        hitCount: 0,
+        children: [2, 4],
+      },
+      {
+        id: 2,
+        callFrame: {
+          functionName: 'processBatch',
+          scriptId: '1',
+          url: `file://${CWD}/src/batch.js`,
+          lineNumber: 10,
+          columnNumber: 0,
+        },
+        hitCount: 0,
+        children: [3],
+      },
+      {
+        id: 3,
+        callFrame: {
+          functionName: 'pbkdf2Sync',
+          scriptId: '2',
+          url: 'node:crypto',
+          lineNumber: 100,
+          columnNumber: 0,
+        },
+        hitCount: 60,
+        children: [],
+      },
+      {
+        id: 4,
+        callFrame: {
+          functionName: 'hashPassword',
+          scriptId: '1',
+          url: `file://${CWD}/src/auth.js`,
+          lineNumber: 20,
+          columnNumber: 0,
+        },
+        hitCount: 0,
+        children: [5],
+      },
+      {
+        id: 5,
+        callFrame: {
+          functionName: 'pbkdf2Sync',
+          scriptId: '2',
+          url: 'node:crypto',
+          lineNumber: 100,
+          columnNumber: 0,
+        },
+        hitCount: 40,
+        children: [],
+      },
+    ],
+    startTime: 1000000,
+    endTime: 2000000,
+    samples: Array(60).fill(3).concat(Array(40).fill(5)),
+    timeDeltas: [],
+  };
+
+  const report = createReport(makeRaw(profile), {
+    sampleIntervalMicros: 1000,
+    deep: false,
+    command: ['node', 'app.js'],
+  });
+
+  it('exposes candidate callers without inflating confidence to high', () => {
+    const finding = findFindingOrFail(
+      report,
+      (f) => f.id === 'sync-crypto-on-hot-path',
+      'sync-crypto finding',
+    );
+    const extra = finding.evidence.extra as Record<string, unknown>;
+    const candidates = extra.candidateCallers as Array<Record<string, unknown>>;
+
+    assert.equal(extra.attributionConfidence, 'medium');
+    assert.equal(extra.proofLevel, 'direct-builtin');
+    assert.deepEqual(
+      candidates.map((candidate) => candidate.function),
+      ['processBatch', 'hashPassword'],
+    );
+    assert.deepEqual(
+      candidates.map((candidate) => candidate.supportPct),
+      [60, 40],
     );
   });
 });
@@ -402,6 +513,21 @@ describe('findings – event-loop-stall', () => {
     assert.ok(candidates.length > 0);
     assert.match(String(candidates[0]?.function), /hashPassword/);
     assert.equal((f.evidence.extra as Record<string, unknown>).proofLevel, 'aggregate-correlation');
+  });
+
+  it('includes heartbeat sample volume and correlation coverage in event-loop evidence', () => {
+    const f = findFindingOrFail(
+      report,
+      (finding) => finding.id === 'event-loop-stall',
+      'event-loop-stall finding',
+    );
+    const extra = f.evidence.extra as Record<string, unknown>;
+
+    assert.equal(extra.sampleCount, 1);
+    assert.deepEqual(
+      extra.correlationCoverage,
+      getCpuProfile(report).eventLoop.correlationCoverage,
+    );
   });
 });
 
@@ -1259,7 +1385,7 @@ describe('findings – cpu-bound-user-hotspot suppression', () => {
       report.findings.some((f) => f.id.startsWith('cpu-bound-user-hotspot:')),
       false,
     );
-    assert.equal(getCpuProfile(report).summary.topUserHotspot, undefined);
+    assert.match(getCpuProfile(report).summary.topUserHotspot?.function ?? '', /hashPassword/);
   });
 });
 

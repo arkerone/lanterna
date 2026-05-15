@@ -38,10 +38,10 @@ function buildFinding(
   hotspot: Hotspot,
   context: CpuHotspotContext,
 ): BuiltinFinding<'require-in-hot-path'> {
-  const { attribution, caller } = resolveAttribution(hotspot, context);
+  const { attribution, caller, candidateCallers } = resolveAttribution(hotspot, context);
   const evidenceExtra: RequireInHotPathEvidenceExtra = {
     callee: hotspot.function,
-    ...buildAttributionEvidence(attribution, caller),
+    ...buildAttributionEvidence(attribution, caller, candidateCallers),
   };
   const thresholds = DETECTOR_THRESHOLDS.requireInHotPath;
   return defineBuiltinFinding(
