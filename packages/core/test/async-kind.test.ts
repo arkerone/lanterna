@@ -779,6 +779,12 @@ describe('async installer lifecycle', () => {
 });
 
 describe('async probe lifecycle', () => {
+  it('allows slower async snapshot serialization during stop', () => {
+    const probe = createAsyncProbe({ asyncStackDepth: 32 });
+
+    expect(probe.stopTimeoutMs).toBe(15_000);
+  });
+
   it('disables the in-target installer over CDP at dispose()', async () => {
     const evaluated: string[] = [];
     const sent: string[] = [];

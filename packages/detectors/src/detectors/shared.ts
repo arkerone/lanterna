@@ -120,6 +120,62 @@ export function buildAttributionEvidence(
   };
 }
 
+export function selfHotspotUserCaller(
+  hotspot: Pick<Hotspot, 'function' | 'file' | 'line' | 'source'> & {
+    column?: number;
+    totalPct?: number;
+    samplePct?: number;
+  },
+): UserCallerAttribution {
+  return {
+    function: hotspot.function,
+    file: hotspot.file,
+    line: hotspot.line,
+    column: hotspot.column,
+    ...(hotspot.source ? { source: hotspot.source } : {}),
+    stackDistance: 0,
+    profilePct: hotspot.totalPct ?? hotspot.samplePct ?? 0,
+    supportPct: 100,
+    confidence: 'high',
+    basis: 'cpu-sample-path',
+  };
+}
+
+export function pickPrimaryCallerBySource(
+  candidateCallers: readonly UserCallerAttribution[],
+  cwd: string,
+  pattern: RegExp,
+): UserCallerAttribution | undefined {
+  for (const candidate of candidateCallers) {
+    const source = readFrameSourceText(candidate, cwd);
+    const anchorLine = candidate.source?.line ?? candidate.line;
+    const line =
+      findPatternLineNearAnchor(source, anchorLine, pattern) ??
+      findPatternLineInFunctionBlock(source, anchorLine, pattern);
+    if (line === undefined) continue;
+    return {
+      ...candidate,
+      line,
+      ...(candidate.source ? { source: { ...candidate.source, line } } : {}),
+    };
+  }
+  return undefined;
+}
+
+export function sourceCallPatternForApi(api: string): RegExp {
+  const parts = api.split('.').filter(Boolean).map(escapeRegExp);
+  const leaf = parts.at(-1);
+  if (!leaf) return /$a/;
+  const dotted = parts.join('\\s*\\.\\s*');
+  return new RegExp(`\\b(?:${dotted}|${leaf})\\s*\\(`);
+}
+
+export function sourcePatternForTerms(terms: readonly string[]): RegExp {
+  const escaped = terms.filter(Boolean).map(escapeRegExp);
+  if (escaped.length === 0) return /$a/;
+  return new RegExp(escaped.join('|'));
+}
+
 export function toAlternativeHotspotEvidence(hotspot: Hotspot): AlternativeHotspotEvidence {
   return {
     id: hotspot.id,
@@ -304,4 +360,56 @@ export function readFrameSourceText(
     }
   }
   return undefined;
+}
+
+function findPatternLineNearAnchor(
+  sourceText: string | undefined,
+  line: number,
+  pattern: RegExp,
+  radius = 2,
+): number | undefined {
+  if (!sourceText || line <= 0) return undefined;
+  const lines = sourceText.split(/\r?\n/);
+  const index = line - 1;
+  if (index < 0 || index >= lines.length) return undefined;
+  const start = Math.max(0, index - radius);
+  const end = Math.min(lines.length, index + radius + 1);
+  for (let current = start; current < end; current += 1) {
+    if (matchesSourceLine(lines[current] ?? '', pattern)) return current + 1;
+  }
+  return undefined;
+}
+
+function findPatternLineInFunctionBlock(
+  sourceText: string | undefined,
+  line: number,
+  pattern: RegExp,
+): number | undefined {
+  if (!sourceText || line <= 0) return undefined;
+  const lines = sourceText.split(/\r?\n/);
+  let depth = 0;
+  let enteredBlock = false;
+  for (let current = line - 1; current < lines.length; current += 1) {
+    const text = lines[current] ?? '';
+    if (enteredBlock && matchesSourceLine(text, pattern)) return current + 1;
+    for (const char of text) {
+      if (char === '{') {
+        depth += 1;
+        enteredBlock = true;
+      } else if (char === '}') {
+        depth -= 1;
+        if (enteredBlock && depth <= 0) return undefined;
+      }
+    }
+  }
+  return undefined;
+}
+
+function matchesSourceLine(line: string, pattern: RegExp): boolean {
+  pattern.lastIndex = 0;
+  return pattern.test(line);
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }

@@ -20,7 +20,7 @@ export const deoptLoopDetector: KindScopedDetector<'cpu'> = {
     const context: CpuHotspotContext = cpu.view.hotspotAnalysis;
     const thresholds = DETECTOR_THRESHOLDS.deoptLoop;
     const findings: Finding[] = [];
-    for (const deopt of aggregateDeopts(report.deopts)) {
+    for (const deopt of aggregateDeopts(report.deopts, context)) {
       if (deopt.count < thresholds.minCount) continue;
       const matchingHotspot = findHotDeoptHotspot(deopt.function, deopt.file, deopt.line, context);
       if (!matchingHotspot) continue;
@@ -34,7 +34,7 @@ export const deoptLoopDetector: KindScopedDetector<'cpu'> = {
       const finding: BuiltinFinding<'deopt-loop'> = defineBuiltinFinding({
         id: `deopt-loop:${deopt.function}`,
         profileKind: 'cpu',
-        severity: deopt.count > thresholds.criticalCount ? 'critical' : 'warning',
+        severity: deopt.count >= thresholds.criticalCount ? 'critical' : 'warning',
         category: 'deopt-loop',
         title: `Repeated deoptimisation of ${deopt.function} (${deopt.count}×)`,
         confidence: 'medium',
@@ -64,26 +64,25 @@ export const deoptLoopDetector: KindScopedDetector<'cpu'> = {
   },
 };
 
-function aggregateDeopts(deopts: readonly DeoptEntry[]): DeoptEntry[] {
+function aggregateDeopts(deopts: readonly DeoptEntry[], context: CpuHotspotContext): DeoptEntry[] {
   const grouped = new Map<string, DeoptEntry>();
-  const output: DeoptEntry[] = [];
+  const unknownFallbackHotspot = inferUnknownDeoptHotspot(deopts, context);
   for (const deopt of deopts) {
-    if (deopt.file && deopt.line > 0) {
-      output.push(deopt);
-      continue;
-    }
-    const key = deopt.function;
+    const enriched = enrichDeoptWithCpuFrame(deopt, context, unknownFallbackHotspot);
+    const key =
+      enriched.file && enriched.line > 0
+        ? `${enriched.function}:${enriched.file}:${enriched.line}`
+        : enriched.function;
     const existing = grouped.get(key);
     if (!existing) {
-      grouped.set(key, { ...deopt });
+      grouped.set(key, { ...enriched });
       continue;
     }
-    existing.count += deopt.count;
-    existing.reason = mergeLabel(existing.reason, deopt.reason);
-    existing.bailoutType = mergeLabel(existing.bailoutType, deopt.bailoutType);
+    existing.count += enriched.count;
+    existing.reason = mergeLabel(existing.reason, enriched.reason);
+    existing.bailoutType = mergeLabel(existing.bailoutType, enriched.bailoutType);
   }
-  output.push(...grouped.values());
-  return output.sort((a, b) => b.count - a.count);
+  return [...grouped.values()].sort((a, b) => b.count - a.count);
 }
 
 function mergeLabel(left: string, right: string): string {
@@ -114,6 +113,73 @@ function findHotDeoptHotspot(
       Math.abs(hotspot.line - line) <= 1 &&
       hotspot.totalPct > 1,
   );
+}
+
+function inferUnknownDeoptHotspot(
+  deopts: readonly DeoptEntry[],
+  context: CpuHotspotContext,
+): Hotspot | undefined {
+  if (!deopts.some((deopt) => deopt.function === '<unknown>' && (!deopt.file || deopt.line <= 0))) {
+    return undefined;
+  }
+  const candidates = new Map<string, Hotspot>();
+  for (const deopt of deopts) {
+    if (deopt.function === '<unknown>') continue;
+    const hotspot = findUniqueUserHotspotByFunction(deopt.function, context);
+    if (hotspot) candidates.set(hotspot.id, hotspot);
+  }
+  return candidates.size === 1 ? [...candidates.values()][0] : undefined;
+}
+
+function enrichDeoptWithCpuFrame(
+  deopt: DeoptEntry,
+  context: CpuHotspotContext,
+  unknownFallbackHotspot?: Hotspot,
+): DeoptEntry {
+  if (deopt.function !== '<unknown>') {
+    if (deopt.file && deopt.line > 0) return deopt;
+    const matchingHotspot = findUniqueUserHotspotByFunction(deopt.function, context);
+    return matchingHotspot ? deoptFromHotspot(deopt, matchingHotspot) : deopt;
+  }
+  if (!deopt.file || deopt.line <= 0) {
+    return unknownFallbackHotspot ? deoptFromHotspot(deopt, unknownFallbackHotspot) : deopt;
+  }
+  const matchingHotspot = context.fullHotspots.find(
+    (hotspot) =>
+      hotspot.category === 'user' &&
+      matchesDeoptFile(hotspot.file, deopt.file) &&
+      Math.abs(hotspot.line - deopt.line) <= 1 &&
+      hotspot.totalPct > 1,
+  );
+  if (!matchingHotspot) return deopt;
+  return {
+    ...deopt,
+    function: matchingHotspot.function,
+    file: matchingHotspot.file,
+    line: matchingHotspot.line,
+    ...(matchingHotspot.source ? { source: matchingHotspot.source } : {}),
+  };
+}
+
+function findUniqueUserHotspotByFunction(
+  functionName: string,
+  context: CpuHotspotContext,
+): Hotspot | undefined {
+  const matches = context.fullHotspots.filter(
+    (hotspot) =>
+      hotspot.function === functionName && hotspot.category === 'user' && hotspot.totalPct > 1,
+  );
+  return matches.length === 1 ? matches[0] : undefined;
+}
+
+function deoptFromHotspot(deopt: DeoptEntry, hotspot: Hotspot): DeoptEntry {
+  return {
+    ...deopt,
+    function: hotspot.function,
+    file: hotspot.file,
+    line: hotspot.line,
+    ...(hotspot.source ? { source: hotspot.source } : {}),
+  };
 }
 
 function matchesDeoptFile(hotspotFile: string, deoptFile: string): boolean {

@@ -15,7 +15,27 @@ import {
   sourceLocationSchema,
   stallCorrelationSchema,
   stallIntervalSchema,
+  userCallerAttributionSchema,
 } from './primitives.js';
+
+const frameEvidenceSchema = z.object({
+  function: z.string(),
+  file: z.string(),
+  line: z.number().int(),
+  column: z.number().int().optional(),
+  source: sourceLocationSchema.optional(),
+});
+
+const correlatedAllocatorSchema = z.object({
+  function: z.string(),
+  file: z.string(),
+  line: z.number().int(),
+  totalPct: z.number(),
+  selfPct: z.number().optional(),
+  basis: z.enum(['heap-sampled-allocator', 'cpu-top-user-hotspot']).optional(),
+  userCaller: userCallerAttributionSchema.optional(),
+  source: sourceLocationSchema.optional(),
+});
 
 export const blockingIoExtraSchema = attributionEvidenceSchema.extend({
   api: z.string().min(1),
@@ -51,7 +71,29 @@ export const excessiveGcExtraSchema = z.object({
   ratioConfidence: z.enum(['high', 'medium']),
   counts: gcCountSchema,
   candidateHotspots: z.array(correlatedHotspotSchema),
+  userCaller: userCallerAttributionSchema.optional(),
 });
+
+export const memoryGrowthExtraSchema = z
+  .object({
+    metric: z.enum(['rss', 'heapUsed']),
+    correlatedAllocator: correlatedAllocatorSchema.optional(),
+  })
+  .passthrough();
+
+export const externalBufferPressureExtraSchema = z
+  .object({
+    ratio: z.number(),
+    correlatedAllocator: correlatedAllocatorSchema.optional(),
+  })
+  .passthrough();
+
+export const hotAsyncContextExtraSchema = z
+  .object({
+    entryFrame: frameEvidenceSchema.nullable().optional(),
+    userCaller: userCallerAttributionSchema.optional(),
+  })
+  .passthrough();
 
 export const eventLoopStallExtraSchema = z.object({
   proofLevel: z.union([z.literal('aggregate-correlation'), z.literal('hotspot-fallback')]),
@@ -175,6 +217,9 @@ export const findingSchema = z
       'json-on-hot-path': jsonHotPathExtraSchema,
       'node-modules-hotspot': nodeModulesHotspotExtraSchema,
       'cpu-hotspot': cpuHotspotExtraSchema,
+      'memory-growth': memoryGrowthExtraSchema,
+      'external-buffer-pressure': externalBufferPressureExtraSchema,
+      'hot-async-context': hotAsyncContextExtraSchema,
     } as const;
 
     const extraSchema = schemaByCategory[category as keyof typeof schemaByCategory];

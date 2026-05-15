@@ -9,6 +9,7 @@ import type { AnalysisContext, AnalysisSnapshot, FindingAnalyzer } from './core/
 export interface KindScopedDetectorShared {
   readonly findings: readonly Finding[];
   readonly meta: ReportMeta;
+  readonly profiles: Readonly<AnalysisSnapshot['profiles']>;
 }
 
 export type KindScopedDetectorBundle<K extends keyof ProfileSectionMap> = {
@@ -62,6 +63,7 @@ export function createFindingAnalyzerFromKindScopedDetector<K extends keyof Prof
       const shared: KindScopedDetectorShared = {
         findings: snapshot.findings,
         meta: snapshot.meta,
+        profiles: snapshot.profiles,
       };
       const primaryKind = detector.kindIds[0] as string;
       return detector.detect(bundle, shared).map((finding) => ({

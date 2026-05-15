@@ -1,6 +1,11 @@
 import type { BaseFinding, Finding, KindScopedDetector } from '@lanterna-profiler/core';
 import { DETECTOR_THRESHOLDS } from '../config.js';
-import { anchorForFrame, asyncConfidence, asyncEvidenceExtra } from './async-evidence.js';
+import {
+  anchorForFrame,
+  asyncConfidence,
+  asyncEvidenceExtra,
+  resolveAsyncUserCaller,
+} from './async-evidence.js';
 
 /**
  * Fires when many async resources never destroy/resolve before flush. A
@@ -53,6 +58,12 @@ export const orphanAsyncResourceDetector: KindScopedDetector<'async'> = {
       totalOrphans >= thresholds.minOrphans * 2 ? 'high' : 'medium';
     const anchor = anchorForFrame(report, dominantFrame?.sample);
     const frame = anchor.frame;
+    const userCallerConfidence: BaseFinding['confidence'] =
+      dominantFrame && dominantFrame.count === aged.length ? 'high' : baseConfidence;
+    const userCaller = resolveAsyncUserCaller(undefined, frame, {
+      confidence: userCallerConfidence,
+      basis: 'async-stack',
+    });
     const confidence: BaseFinding['confidence'] = dropped
       ? 'low'
       : asyncConfidence(report, baseConfidence);
@@ -80,6 +91,7 @@ export const orphanAsyncResourceDetector: KindScopedDetector<'async'> = {
             byKind,
             dominantKind,
             dominantFrameOccurrences: dominantFrame?.count ?? 0,
+            ...(userCaller ? { userCaller } : {}),
             ...asyncEvidenceExtra(report, anchor),
             samplePeak: aged.slice(0, 10).map((o) => ({
               asyncId: o.asyncId,

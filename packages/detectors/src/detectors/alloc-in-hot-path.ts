@@ -4,8 +4,10 @@ import type {
   Hotspot,
   KindScopedDetector,
   MemoryHotAllocator,
+  UserCallerAttribution,
 } from '@lanterna-profiler/core';
 import { DETECTOR_THRESHOLDS } from '../config.js';
+import { selfHotspotUserCaller } from './shared.js';
 
 /**
  * Cross-kind detector: a frame that appears in the top CPU hotspots AND in the
@@ -20,11 +22,14 @@ export const allocInHotPathDetector: KindScopedDetector<'cpu' | 'memory'> = {
   detect({ cpu, memory }): Finding[] {
     const thresholds = DETECTOR_THRESHOLDS.allocInHotPath;
     const cpuHotspots = cpu.report.hotspots.filter(isActionableFrame);
-    const memAllocators = memory.report.hotAllocators.filter(isActionableFrame);
-    if (cpuHotspots.length === 0 || memAllocators.length === 0) return [];
+    const actionableMemAllocators = memory.report.hotAllocators.filter(isActionableFrame);
+    const dominantAllocator = memory.report.hotAllocators.find(
+      (allocator) => allocator.totalPct >= thresholds.minAllocTotalPct,
+    );
+    if (cpuHotspots.length === 0) return [];
 
     const memByKey = new Map<string, MemoryHotAllocator>();
-    for (const allocator of memAllocators) {
+    for (const allocator of actionableMemAllocators) {
       memByKey.set(frameKey(allocator.function, allocator.file, allocator.line), allocator);
     }
 
@@ -40,6 +45,18 @@ export const allocInHotPathDetector: KindScopedDetector<'cpu' | 'memory'> = {
       seen.add(key);
       findings.push(buildFinding(hotspot, allocator));
     }
+    if (
+      findings.length === 0 &&
+      dominantAllocator &&
+      isDominantSystemAllocator(dominantAllocator)
+    ) {
+      const correlated = findCpuCorrelatedAllocator(
+        cpu.report.hotspots,
+        cpuHotspots,
+        dominantAllocator,
+      );
+      if (correlated) findings.push(buildFinding(correlated, dominantAllocator));
+    }
     return findings;
   },
 };
@@ -52,6 +69,10 @@ function buildFinding(
   const combined = hotspot.totalPct + allocator.totalPct;
   const severity: BaseFinding['severity'] =
     combined >= thresholds.criticalCombinedPct ? 'critical' : 'warning';
+  const userCaller =
+    hotspot.userCaller ??
+    (hotspot.category === 'user' ? selfHotspotUserCaller(hotspot) : undefined) ??
+    allocatorUserCaller(allocator);
   return {
     id: `alloc-in-hot-path:${allocator.id}`,
     profileKind: 'memory',
@@ -77,6 +98,7 @@ function buildFinding(
         allocTotalBytes: allocator.totalBytes,
         combinedPct: combined,
         ...(allocator.package ? { package: allocator.package } : {}),
+        ...(userCaller ? { userCaller } : {}),
       },
     },
     measurements: {
@@ -101,8 +123,84 @@ function buildFinding(
   };
 }
 
+function allocatorUserCaller(allocator: MemoryHotAllocator): UserCallerAttribution | undefined {
+  if (allocator.userCaller) return allocator.userCaller;
+  if (allocator.category !== 'user') return undefined;
+  return {
+    function: allocator.function,
+    file: allocator.file,
+    line: allocator.line,
+    column: allocator.column,
+    ...(allocator.source ? { source: allocator.source } : {}),
+    stackDistance: 0,
+    profilePct: allocator.totalPct,
+    supportPct: 100,
+    confidence: 'high',
+    basis: 'heap-sample-path',
+  };
+}
+
 function frameKey(fn: string, file: string, line: number): string {
   return `${file}::${fn}::${line}`;
+}
+
+function findCpuCorrelatedAllocator(
+  allHotspots: readonly Hotspot[],
+  cpuHotspots: readonly Hotspot[],
+  allocator: MemoryHotAllocator,
+): Hotspot | undefined {
+  const thresholds = DETECTOR_THRESHOLDS.allocInHotPath;
+  const minSystemCpuPct = thresholds.minCpuTotalPct;
+  const hotspotById = new Map(allHotspots.map((hotspot) => [hotspot.id, hotspot]));
+  let best: { hotspot: Hotspot; systemCpuPct: number } | undefined;
+  for (const hotspot of cpuHotspots) {
+    if (hotspot.totalPct < thresholds.minCpuTotalPct) continue;
+    const systemCpuPct = Math.max(
+      attributedSystemCpuPct(allHotspots, hotspot),
+      systemCalleeCpuPct(hotspot, hotspotById),
+    );
+    if (systemCpuPct < minSystemCpuPct) continue;
+    if (!best || hotspot.totalPct + systemCpuPct > best.hotspot.totalPct + best.systemCpuPct) {
+      best = { hotspot, systemCpuPct };
+    }
+  }
+  if (!best) return undefined;
+  if (allocator.totalPct + best.hotspot.totalPct < thresholds.criticalCombinedPct) {
+    return undefined;
+  }
+  return best.hotspot;
+}
+
+function systemCalleeCpuPct(hotspot: Hotspot, hotspotById: ReadonlyMap<string, Hotspot>): number {
+  return hotspot.callees.reduce((total, callee) => {
+    const calleeHotspot = hotspotById.get(callee.id);
+    if (!calleeHotspot || isActionableFrame(calleeHotspot)) return total;
+    return total + callee.pct;
+  }, 0);
+}
+
+function attributedSystemCpuPct(allHotspots: readonly Hotspot[], userHotspot: Hotspot): number {
+  return allHotspots.reduce((total, hotspot) => {
+    if (isActionableFrame(hotspot)) return total;
+    return userCallerMatchesHotspot(hotspot.userCaller, userHotspot)
+      ? total + hotspot.totalPct
+      : total;
+  }, 0);
+}
+
+function userCallerMatchesHotspot(
+  caller: UserCallerAttribution | undefined,
+  hotspot: Hotspot,
+): boolean {
+  return (
+    caller?.function === hotspot.function &&
+    caller.file === hotspot.file &&
+    caller.line === hotspot.line
+  );
+}
+
+function isDominantSystemAllocator(allocator: MemoryHotAllocator): boolean {
+  return !isActionableFrame(allocator) && allocator.totalPct >= 40;
 }
 
 function isActionableFrame(

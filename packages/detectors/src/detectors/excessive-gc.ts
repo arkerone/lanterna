@@ -2,10 +2,12 @@ import type {
   BuiltinFinding,
   ExcessiveGcEvidenceExtra,
   Finding,
+  Hotspot,
   KindScopedDetector,
 } from '@lanterna-profiler/core';
 import { defineBuiltinFinding } from '@lanterna-profiler/core';
 import { DETECTOR_THRESHOLDS } from '../config.js';
+import { selfHotspotUserCaller } from './shared.js';
 
 export const excessiveGcDetector: KindScopedDetector<'cpu'> = {
   id: 'excessive-gc',
@@ -32,7 +34,19 @@ export const excessiveGcDetector: KindScopedDetector<'cpu'> = {
       return [];
     }
 
-    const topCandidate = report.gc.correlatedHotspots?.[0];
+    const correlatedHotspots = report.gc.correlatedHotspots ?? [];
+    const fallbackCandidate =
+      correlatedHotspots.length > 0
+        ? undefined
+        : correlatedHotspotFromHotspot(topUserHotspot(report.hotspots));
+    const candidateHotspots =
+      correlatedHotspots.length > 0
+        ? correlatedHotspots
+        : fallbackCandidate
+          ? [fallbackCandidate]
+          : [];
+    const topCandidate = candidateHotspots[0];
+    const userCaller = topCandidate ? selfHotspotUserCaller(topCandidate) : undefined;
     const severity: Finding['severity'] =
       gcRatio > thresholds.ratioCritical || longestPauseMs > thresholds.longestPauseCritical
         ? 'critical'
@@ -48,7 +62,8 @@ export const excessiveGcDetector: KindScopedDetector<'cpu'> = {
       timedGcEventCount: totalTimedGcEvents,
       ratioConfidence: hasTimedGcEvidence ? 'high' : 'medium',
       counts: report.gc.count,
-      candidateHotspots: report.gc.correlatedHotspots ?? [],
+      candidateHotspots,
+      ...(userCaller ? { userCaller } : {}),
     };
 
     return [
@@ -87,3 +102,30 @@ export const excessiveGcDetector: KindScopedDetector<'cpu'> = {
     ];
   },
 };
+
+function topUserHotspot(hotspots: readonly Hotspot[]): Hotspot | undefined {
+  return hotspots.find(
+    (hotspot) =>
+      hotspot.category === 'user' &&
+      hotspot.totalPct > 1 &&
+      hotspot.function !== '(anonymous)' &&
+      hotspot.function.trim() !== '',
+  );
+}
+
+function correlatedHotspotFromHotspot(
+  hotspot: Hotspot | undefined,
+): ExcessiveGcEvidenceExtra['candidateHotspots'][number] | undefined {
+  if (!hotspot) return undefined;
+  return {
+    id: `${hotspot.file}:${hotspot.line}:${hotspot.function}`,
+    function: hotspot.function,
+    file: hotspot.file,
+    line: hotspot.line,
+    overlapPct: hotspot.totalPct,
+    samplePct: hotspot.totalPct,
+    rank: 1,
+    confidence: 'medium',
+    ...(hotspot.source ? { source: hotspot.source } : {}),
+  };
+}

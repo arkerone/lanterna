@@ -125,9 +125,11 @@ import {
   findStallCorrelation,
   isBuiltinRuntimeHotspot,
   maxHotspotPct,
+  pickPrimaryCallerBySource,
   readFrameSourceText,
   resolveAttribution,
   severityForPct,
+  sourceCallPatternForApi,
 } from './shared.js';
 
 const ZLIB_PROCESS_CHUNK_SYNC = 'processChunkSync';
@@ -160,7 +162,15 @@ export const blockingIoDetector: KindScopedDetector<'cpu'> = {
       if (!perFrameHit && !familyExceeded) continue;
       const callee = 'callee' in patternMatch ? patternMatch.callee : undefined;
       findings.push(
-        buildFinding(hotspot, patternMatch.api, categoryTotalPct, report, context, { callee }),
+        buildFinding(
+          hotspot,
+          patternMatch.api,
+          categoryTotalPct,
+          report,
+          context,
+          cpu.view.bundle.target.cwd,
+          { callee },
+        ),
       );
     }
     return findings;
@@ -207,15 +217,24 @@ function buildFinding(
   categoryTotalPct: number,
   report: { eventLoop: EventLoopReport },
   context: CpuHotspotContext,
+  cwd: string,
   options: { callee?: string } = {},
 ): BuiltinFinding<'blocking-io'> {
   const asyncApi = api.replace(/Sync$/, '');
   const { attribution, caller, candidateCallers } = resolveAttribution(hotspot, context);
+  const sourceCaller = pickPrimaryCallerBySource(
+    candidateCallers,
+    cwd,
+    sourceCallPatternForApi(api),
+  );
+  const evidenceAttribution = sourceCaller ?? attribution;
+  const highConfidenceCaller =
+    evidenceAttribution?.confidence === 'high' ? evidenceAttribution : undefined;
   const evidenceExtra: BlockingIoEvidenceExtra = {
     api,
     callee: options.callee ?? hotspot.function,
-    ...buildAttributionEvidence(attribution, caller, candidateCallers),
-    eventLoopCorrelation: findStallCorrelation(caller, report),
+    ...buildAttributionEvidence(evidenceAttribution, highConfidenceCaller, candidateCallers),
+    eventLoopCorrelation: findStallCorrelation(sourceCaller ?? caller ?? attribution, report),
     categoryTotalPct: categoryTotalPct > 0 ? categoryTotalPct : undefined,
   };
   const thresholds = DETECTOR_THRESHOLDS.blockingIo;
@@ -226,7 +245,7 @@ function buildFinding(
       severity: severityForPct(maxHotspotPct(hotspot), thresholds.criticalPct),
       title: `Blocking I/O call on hot path (${api})`,
       hotspot,
-      caller,
+      caller: sourceCaller ?? caller,
       selfPct: maxHotspotPct(hotspot),
       extra: evidenceExtra,
       measurements: {

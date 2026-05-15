@@ -261,7 +261,7 @@ export interface UserCallerAttribution {
   line: number;
   column?: number;
   source?: SourceLocation;
-  /** 1 means the closest user frame to the external callee; larger values are outer callers. */
+  /** 0 means the sampled user frame itself; 1 means the closest user frame to an external callee. */
   stackDistance?: number;
   /** Percent of the whole profile attributed to this user caller. */
   profilePct: number;
@@ -328,6 +328,7 @@ export interface ExcessiveGcEvidenceExtra {
   ratioConfidence: 'high' | 'medium';
   counts: GcReport['count'];
   candidateHotspots: CorrelatedHotspot[];
+  userCaller?: UserCallerAttribution;
 }
 
 export interface EventLoopStallEvidenceExtra {

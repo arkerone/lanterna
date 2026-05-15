@@ -3,6 +3,7 @@ import type {
   AsyncProfileReport,
   AsyncStackFrameReport,
   BaseFinding,
+  UserCallerAttribution,
 } from '@lanterna-profiler/core';
 
 export interface AsyncAnchor {
@@ -62,6 +63,28 @@ export function asyncEvidenceExtra(
     cpuAttributionCoveragePct: report.quality.cpuAttributionCoveragePct,
     cpuAmbiguousSamples: report.quality.cpuAmbiguousSamples,
     clockSyncUncertaintyMs: report.quality.clockSyncUncertaintyMs,
+  };
+}
+
+export function resolveAsyncUserCaller(
+  entity: { userCaller?: UserCallerAttribution } | undefined,
+  fallbackFrame: AsyncStackFrameReport | undefined,
+  options: Partial<
+    Pick<UserCallerAttribution, 'profilePct' | 'supportPct' | 'confidence' | 'basis'>
+  > = {},
+): UserCallerAttribution | undefined {
+  if (entity?.userCaller) return entity.userCaller;
+  if (!fallbackFrame) return undefined;
+  return {
+    function: fallbackFrame.function,
+    file: fallbackFrame.file,
+    line: fallbackFrame.line,
+    column: fallbackFrame.column,
+    ...(fallbackFrame.source ? { source: fallbackFrame.source } : {}),
+    profilePct: options.profilePct ?? 0,
+    supportPct: options.supportPct ?? 100,
+    confidence: options.confidence ?? 'high',
+    basis: options.basis ?? 'async-stack',
   };
 }
 

@@ -103,7 +103,7 @@ When present, prefer `source.file:source.line` for human diagnosis and patching,
 
 `source?: SourceLocation` can appear on CPU hotspots, hot-stack frames and anchors, memory allocators and memory summaries, async frame-bearing entries, deopts, and `findings[].evidence`.
 
-`userCaller?: UserCallerAttribution` can appear when the visible cost is outside user code but Lanterna can identify the nearest user frame that led there. It contains `function`, `file`, `line`, optional `column`/`source`/`stackDistance`, `profilePct`, `supportPct`, `confidence` (`low`/`medium`/`high`), and `basis` (`cpu-sample-path`, `heap-sample-path`, `async-stack`, or `async-cpu-window`). `stackDistance: 1` means the closest user frame to the external callee. Attributed findings may also expose `evidence.extra.candidateCallers[]`, ordered by proximity first and support second. Treat low-confidence attribution as an inspection lead, not automatically as the line to patch.
+`userCaller?: UserCallerAttribution` can appear when Lanterna can identify the user frame that explains a finding. It contains `function`, `file`, `line`, optional `column`/`source`/`stackDistance`, `profilePct`, `supportPct`, `confidence` (`low`/`medium`/`high`), and `basis` (`cpu-sample-path`, `heap-sample-path`, `async-stack`, or `async-cpu-window`). `stackDistance: 1` means the closest user frame to an external callee; `stackDistance: 0` means the sampled user frame itself is the fix location. Attributed findings may also expose `evidence.extra.candidateCallers[]`, ordered by proximity first and support second. Treat low-confidence attribution as an inspection lead, not automatically as the line to patch.
 
 ## `profiles.cpu`
 
@@ -126,7 +126,7 @@ Detail: [kinds/cpu.md](./kinds/cpu.md).
 | --- | --- |
 | `summary` | Total sampled bytes, top allocator, RSS / heapUsed / external / arrayBuffers stats (start/end/min/max/mean/p95) plus linear `slopeBytesPerSec`. |
 | `quality` | Memory confidence gate — `confidence`, `reasons[]`, `recommendations[]`. |
-| `hotAllocators` | Frames ranked by `selfBytes` / `totalBytes`, with file/line, frame category, and optional `userCaller` for external allocators. |
+| `hotAllocators` | Frames ranked by `selfBytes` / `totalBytes`, with file/line, frame category, and optional `userCaller`. |
 | `memoryUsage` | Compact `process.memoryUsage()` metadata (`sampleCount`, first/last sample). Raw samples present only with `--include-memory-samples`. |
 | `heapSnapshotAnalysis` | Optional start/end retained-growth summary when `--heap-snapshot-analysis` is enabled. Very large snapshots return `available: false` with a warning instead of being parsed unbounded. |
 
@@ -159,6 +159,15 @@ Each finding has the same shape regardless of which kind produced it:
 | `references` | Links to docs or related findings. |
 
 Findings are sorted by `priority.score`, then severity, then attributed weight.
+
+Common `evidence.extra` anchors:
+
+| Field | Meaning |
+| --- | --- |
+| `userCaller` | User-code caller or self frame that should usually be inspected before the callee/runtime frame. |
+| `candidateCallers[]` | Alternative caller candidates for attributed CPU findings. |
+| `correlatedAllocator` | Memory trend findings (`memory-growth:*`, `external-buffer-pressure`) use this to point from process-level growth back to an editable allocator lead. `basis` distinguishes heap-sampled allocators from CPU fallback attribution. |
+| `entryFrame` | `hot-async-context:*` keeps the hot CPU frame in `evidence.*` and exposes the async chain entry point here. |
 
 The full catalog of built-in findings, grouped by kind, is in [extending/detectors.md](./extending/detectors.md#built-in-findings).
 

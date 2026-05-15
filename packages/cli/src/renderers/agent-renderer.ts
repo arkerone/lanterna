@@ -26,6 +26,7 @@ type ReadTargetReason =
   | 'user-caller'
   | 'dependency-hotspot-caller'
   | 'runtime-hotspot-caller'
+  | 'correlated-allocator'
   | 'cpu-user-stack'
   | 'top-cpu-culprit'
   | 'top-cpu-hotspot'
@@ -37,6 +38,7 @@ type ReadTargetReason =
   | 'top-async-hot-file-caller'
   | 'long-async-operation'
   | 'long-async-operation-caller'
+  | 'async-entry-frame'
   | 'async-hot-file'
   | 'async-hot-file-caller'
   | 'async-cpu-attribution-root'
@@ -191,6 +193,16 @@ function appendFindingDetail(
   const candidateCallers = candidateCallersFromEvidenceExtra(finding.evidence.extra);
   if (candidateCallers.length > 0) {
     lines.push(`- candidate_callers: ${candidateCallers.map(formatUserCallerCompact).join('; ')}`);
+  }
+  const correlatedAllocator = correlatedAllocatorFromEvidenceExtra(finding.evidence.extra);
+  if (correlatedAllocator) {
+    lines.push(
+      `- correlated_allocator: ${frameLabel(correlatedAllocator)} at ${frameLocation(correlatedAllocator)}${basisSuffix(correlatedAllocator.basis)}${userCallerSuffix(correlatedAllocator.userCaller)}`,
+    );
+  }
+  const entryFrame = entryFrameFromEvidenceExtra(finding.evidence.extra);
+  if (entryFrame) {
+    lines.push(`- entry_frame: ${frameLabel(entryFrame)} at ${frameLocation(entryFrame)}`);
   }
   const userStack = cpuUserStackForFinding(finding, report);
   if (userStack) lines.push(`- user_stack: ${userStack}`);
@@ -563,6 +575,28 @@ function candidateCallersFromEvidenceExtra(extra: unknown): UserCallerAttributio
   return Array.isArray(value) ? (value as UserCallerAttribution[]) : [];
 }
 
+function correlatedAllocatorFromEvidenceExtra(
+  extra: unknown,
+): (Frame & { basis?: string; userCaller?: UserCallerAttribution; totalPct?: number }) | undefined {
+  if (!extra || typeof extra !== 'object') return undefined;
+  const value = Reflect.get(extra, 'correlatedAllocator');
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  const frame = value as Partial<
+    Frame & { basis?: string; userCaller?: UserCallerAttribution; totalPct?: number }
+  >;
+  if (typeof frame.file !== 'string' || typeof frame.line !== 'number') return undefined;
+  return frame as Frame & { basis?: string; userCaller?: UserCallerAttribution; totalPct?: number };
+}
+
+function entryFrameFromEvidenceExtra(extra: unknown): Frame | undefined {
+  if (!extra || typeof extra !== 'object') return undefined;
+  const value = Reflect.get(extra, 'entryFrame');
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  const frame = value as Partial<Frame>;
+  if (typeof frame.file !== 'string' || typeof frame.line !== 'number') return undefined;
+  return frame as Frame;
+}
+
 function cpuUserStackForFinding(finding: Finding, report: LanternaReport): string | undefined {
   const stack = matchedCpuUserStackForFinding(finding, report);
   if (!stack) return undefined;
@@ -734,6 +768,10 @@ function userCallerSuffix(caller: UserCallerAttribution | undefined): string {
   return ` — user_caller ${formatUserCallerCompact(caller)}`;
 }
 
+function basisSuffix(basis: string | undefined): string {
+  return basis ? ` (${basis})` : '';
+}
+
 function formatUserCallerCompact(caller: UserCallerAttribution): string {
   const stackDistance =
     caller.stackDistance !== undefined ? `, distance ${caller.stackDistance}` : '';
@@ -766,6 +804,7 @@ function collectFindingReadTargets(targets: ReadTarget[], report: LanternaReport
         decision: findingIsActionable ? 'read-first' : 'inspect-lead',
         rank: findingIsActionable ? index : 100 + index,
       });
+      collectExtraFindingReadTargets(targets, finding, index, signal);
       collectCpuUserStackReadTargets(targets, finding, report, index);
       return;
     }
@@ -804,7 +843,34 @@ function collectFindingReadTargets(targets: ReadTarget[], report: LanternaReport
           rank: 150 + index * 10 + candidateIndex,
         });
       });
+    collectExtraFindingReadTargets(targets, finding, index, signal);
     collectCpuUserStackReadTargets(targets, finding, report, index);
+  });
+}
+
+function collectExtraFindingReadTargets(
+  targets: ReadTarget[],
+  finding: Finding,
+  findingIndex: number,
+  signal: string,
+): void {
+  const correlatedAllocator = correlatedAllocatorFromEvidenceExtra(finding.evidence.extra);
+  const allocatorTarget = correlatedAllocator?.userCaller ?? correlatedAllocator;
+  pushReadTarget(targets, allocatorTarget, {
+    reason: 'correlated-allocator',
+    source: 'finding',
+    signal,
+    decision:
+      correlatedAllocator?.userCaller?.confidence === 'high' ? 'read-first' : 'inspect-lead',
+    rank: 60 + findingIndex * 20,
+  });
+
+  pushReadTarget(targets, entryFrameFromEvidenceExtra(finding.evidence.extra), {
+    reason: 'async-entry-frame',
+    source: 'finding',
+    signal,
+    decision: 'inspect-lead',
+    rank: 65 + findingIndex * 20,
   });
 }
 
@@ -1090,6 +1156,8 @@ function formatReadTargetReason(reason: ReadTargetReason): string {
       return 'user caller for dependency hotspot';
     case 'runtime-hotspot-caller':
       return 'user caller for runtime hotspot';
+    case 'correlated-allocator':
+      return 'correlated allocator';
     case 'cpu-user-stack':
       return 'CPU user stack';
     case 'top-cpu-culprit':
@@ -1112,6 +1180,8 @@ function formatReadTargetReason(reason: ReadTargetReason): string {
       return 'long async operation';
     case 'long-async-operation-caller':
       return 'long async operation caller';
+    case 'async-entry-frame':
+      return 'async entry frame';
     case 'async-hot-file':
       return 'async hot file';
     case 'async-hot-file-caller':

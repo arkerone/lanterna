@@ -1,5 +1,17 @@
-import type { BaseFinding, Finding, KindScopedDetector } from '@lanterna-profiler/core';
+import type {
+  BaseFinding,
+  Finding,
+  KindScopedDetector,
+  KindScopedDetectorShared,
+  MemoryHotAllocator,
+  MemorySummary,
+} from '@lanterna-profiler/core';
 import { DETECTOR_THRESHOLDS } from '../config.js';
+import {
+  type CorrelatedAllocatorEvidence,
+  correlatedAllocatorFromCpuHotspot,
+  correlatedAllocatorFromMemory,
+} from './memory-evidence.js';
 
 const BYTES_PER_MB = 1024 * 1024;
 
@@ -12,7 +24,7 @@ const BYTES_PER_MB = 1024 * 1024;
 export const externalBufferPressureDetector: KindScopedDetector<'memory'> = {
   id: 'external-buffer-pressure',
   kindIds: ['memory'],
-  detect({ memory }): Finding[] {
+  detect({ memory }, shared): Finding[] {
     const thresholds = DETECTOR_THRESHOLDS.externalBufferPressure;
     const series = memory.view.series;
     const heapUsed = series.heapUsed;
@@ -30,6 +42,7 @@ export const externalBufferPressureDetector: KindScopedDetector<'memory'> = {
       ratio >= thresholds.criticalRatio ? 'critical' : 'warning';
     const peakExternalMB = external.maxBytes / BYTES_PER_MB;
     const heapMeanMB = heapUsed.meanBytes / BYTES_PER_MB;
+    const allocator = correlatedExternalAllocator(memory, shared);
 
     const finding: BaseFinding<string, Record<string, unknown>> = {
       id: 'external-buffer-pressure',
@@ -53,6 +66,7 @@ export const externalBufferPressureDetector: KindScopedDetector<'memory'> = {
           externalMeanBytes: external.meanBytes,
           arrayBuffersMeanBytes: arrayBuffers.meanBytes,
           heapUsedMeanBytes: heapUsed.meanBytes,
+          ...(allocator ? { correlatedAllocator: allocator } : {}),
         },
       },
       measurements: {
@@ -79,3 +93,23 @@ export const externalBufferPressureDetector: KindScopedDetector<'memory'> = {
     return [finding];
   },
 };
+
+function correlatedExternalAllocator(
+  memory: { report: { summary: MemorySummary; hotAllocators: readonly MemoryHotAllocator[] } },
+  shared: KindScopedDetectorShared,
+): CorrelatedAllocatorEvidence | undefined {
+  return (
+    correlatedAllocatorFromCpuHotspot(topCpuUserHotspot(shared)) ??
+    correlatedAllocatorFromMemory(memory.report.summary, memory.report.hotAllocators)
+  );
+}
+
+function topCpuUserHotspot(shared: KindScopedDetectorShared) {
+  return shared.profiles.cpu?.hotspots.find(
+    (hotspot) =>
+      hotspot.category === 'user' &&
+      hotspot.totalPct > 1 &&
+      hotspot.function !== '(anonymous)' &&
+      hotspot.function.trim() !== '',
+  );
+}

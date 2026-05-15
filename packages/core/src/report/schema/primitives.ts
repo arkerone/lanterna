@@ -45,7 +45,7 @@ export const userCallerAttributionSchema = z.object({
   line: z.number().int(),
   column: z.number().int().optional(),
   source: sourceLocationSchema.optional(),
-  stackDistance: z.number().int().positive().optional(),
+  stackDistance: z.number().int().nonnegative().optional(),
   profilePct: z.number(),
   supportPct: z.number(),
   confidence: z.enum(['low', 'medium', 'high']),
