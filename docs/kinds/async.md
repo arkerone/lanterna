@@ -77,3 +77,4 @@ Async-specific options:
 - **Microtasks default to off.** Enabling `--async-include-microtasks` produces very noisy reports. Use it only for the `microtask-flood` finding.
 - **Dropped records are sampled, not lost forever.** `quality.recordsDropped > 0` means raise `--async-max-events` for the next run if completeness matters.
 - **User callers are anchors, not proof.** Async `userCaller` is derived from already captured user frames. Prefer high-confidence CPU-window attribution when present; stack-only callers should guide inspection rather than be treated as the definitive line to edit.
+- **Public async file paths are normalized.** When V8/CDP reports `file://` URLs, Lanterna converts them to normal filesystem paths before grouping hot files, chains, and finding evidence. Virtual bundler URLs are kept as-is.

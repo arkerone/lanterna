@@ -40,8 +40,8 @@ Lanterna produces agent-facing Node.js profiling reports. Your job is not to sum
    - Classify each lead as `proven/actionable`, `hypothesis needing source confirmation`, `hypothesis needing another measurement`, or `non-representative signal requiring rerun`. Treat `rerun_required: true` as the report-level signal for that last class, then use `blocking_caveats`, `degrading_caveats`, and any `decision = rerun` finding to explain why.
 
 4. **Diagnose by subsystem** (see per-kind references for interpretation rules: [cpu-profiling.md](references/cpu-profiling.md), [memory-profiling.md](references/memory-profiling.md), [async-profiling.md](references/async-profiling.md))
-   - CPU: check top user hotspot, dependency/runtime hotspot with user caller, sync crypto, blocking I/O, JSON/serialization, require/import in hot path, deopt loops, and GC-correlated CPU.
-   - Event loop: only claim causality when event-loop timing is available and hotspot correlation is strong.
+   - CPU: check `top_cpu_culprit` first for the self-heavy line, then `top_request_entry` / `top_user_hotspot` for caller context, dependency/runtime hotspot with user caller, sync crypto, blocking I/O, JSON/serialization, require/import in hot path, generic `cpu-hotspot:*`, deopt loops, and GC-correlated CPU.
+   - Event loop: only claim causality when event-loop timing is available and hotspot correlation is strong. If `event-loop-stall` is rendered with `hotspot-fallback`, treat the file/line as the best CPU lead, not proof that it caused every stall.
    - Memory: distinguish allocation churn, JS heap growth, RSS/off-heap growth, external Buffer pressure, snapshot-retained growth, and weak short-window slopes.
    - Async/I/O: distinguish CPU work from long awaits, deep chains, orphan resources, low concurrency, external service waits, and attach-mode partial capture.
    - Architecture/dependency/environment: separate app code defects, dependency hotspots, architectural bottlenecks, insufficient load, machine/container limits, and capture artifacts.
@@ -50,6 +50,7 @@ Lanterna produces agent-facing Node.js profiling reports. Your job is not to sum
    - Open `read-first` files before proposing changes.
    - Treat `inspect-lead` as confirmation targets, not patch targets.
    - For `node_modules`, `node:`, native, generated output, or virtual source-map frames, follow the rendered `user_caller` to editable user code.
+   - For `cpu-hotspot:*`, inspect `evidence.extra.mode`: `self` means inspect the reported function body directly; `inclusive-entry` means inspect callees and hot stacks before blaming the wrapper.
    - Confirm whether hot code is on the critical request/job path, repeated per request, unbounded, synchronous, allocation-heavy, or missing backpressure/concurrency control.
 
 6. **Iterate**

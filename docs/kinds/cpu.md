@@ -41,7 +41,9 @@ CPU-specific options:
 | `idleRatio` | Fraction of samples spent idle. |
 | `topCategory` | Dominant non-idle category. |
 | `dominantBlockingKind` | Coarse summary derived from emitted findings (e.g. `sync-crypto`, `blocking-io`). |
-| `topUserHotspot` | Set when a single user function dominates user CPU. |
+| `topCpuCulprit` | Strongest self-heavy user-code CPU frame. This is the first place to inspect when the question is "which line is burning CPU?". |
+| `topRequestEntry` | Dominant user-code request/caller entry after accounting for existing findings and stall correlation. Useful when the hottest work happens below a wrapper or builtin. |
+| `topUserHotspot` | Backward-compatible contextual hotspot. It currently mirrors `topRequestEntry` and remains useful for consumers that have not adopted the newer split fields. |
 
 ### `quality`
 
@@ -83,8 +85,9 @@ V8 deoptimisation clusters with `function`, `file`, `line`, `reason`, `bailoutTy
 | `blocking-io:<api>` | Sampled sync `fs` / `child_process` / `zlib` frame with meaningful CPU. |
 | `json-on-hot-path:<api>` | `JSON.parse` / `JSON.stringify` consuming meaningful CPU. |
 | `node-modules-hotspot:<package>` | A dependency frame dominates meaningful CPU time. |
+| `cpu-hotspot:<frame>` | Generic fallback for user-code CPU not explained by a more specific CPU detector. Self-heavy frames are direct hotspots; inclusive-only frames are lower-confidence caller leads. |
 | `excessive-gc` | `gcRatio > 10%` or `longestPauseMs > 100ms`. |
-| `event-loop-stall` | `p99LagMs >= 100` or `maxLagMs >= 200`. |
+| `event-loop-stall` | `p99LagMs >= 100` or `maxLagMs >= 200`; evidence points at a strongly correlated frame when possible, otherwise the hottest user CPU fallback. |
 | `deopt-loop:<function>` | Same deoptimised function seen ≥ 5 times (`--deep`) and hot in the CPU profile. |
 | `require-in-hot-path` | Module loading functions sampled on the hot path. |
 
@@ -93,7 +96,7 @@ Each finding ships with `confidence`, `proofLevel`, `evidence.file/line/function
 ## Reading order
 
 1. `quality.confidence` and `quality.reasons[]` — is the profile worth acting on?
-2. `summary.topCategory` and `summary.dominantBlockingKind` — where is CPU concentrated?
+2. `summary.topCpuCulprit`, `summary.topRequestEntry`, `summary.topCategory`, and `summary.dominantBlockingKind` — where CPU is concentrated and which line to inspect first.
 3. `findings[]` filtered to `profileKind === "cpu"` — prioritized hypotheses.
 4. Top 5 `hotspots` even when no finding fired — direct evidence.
 5. `eventLoop` — translates CPU pressure into latency.
@@ -124,5 +127,6 @@ The classification feeds `summary` ratios and several finding heuristics. Self-n
 ## Caveats
 
 - A hotspot in `node_modules` or `node:builtin` is often a **symptom**. Inspect the user caller before blaming the dependency.
+- A `cpu-hotspot:*` finding means no specialized detector explained the user-code CPU lead. If `evidence.extra.mode === "self"`, inspect the function body for tight loops, repeated transformations, cache misses, or CPU-bound algorithms. If `mode === "inclusive-entry"`, inspect the callees and hot stacks before blaming the wrapper body.
 - High `nativeRatio` is normal for CPU work that lives in C++ (crypto, compression, JSON). Look at user callers, not just the leaf.
 - `cwd` mismatch between Lanterna and the target can mis-classify your code as `node_modules`. Check `meta.cwd`.

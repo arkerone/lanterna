@@ -87,6 +87,21 @@ Use top-level `confidence` and `proofLevel` when the detector can characterize i
 
 Set `confidence` to `high`, `medium`, or `low` based on sample volume, attribution strength, and whether the detector points to a direct edit location.
 
+Finding analyzers run incrementally: after each analyzer completes, the in-progress `snapshot.findings` contains findings emitted so far. Later detectors can use that shared state to avoid duplicates or defer to stronger evidence. The built-in `cpu-hotspot` detector relies on this to suppress generic CPU findings when `sync-crypto`, `blocking-io`, `json-on-hot-path`, `node-modules-hotspot`, or `require-in-hot-path` already explains the frame.
+
+## Built-In CPU Fallback
+
+`cpu-hotspot:<frame>` is the generic CPU detector for plain user-code hotspots. It emits when a user frame crosses the configured self/inclusive CPU gates and no more specific CPU detector has already claimed it. Use `evidence.extra.mode` to interpret it: `self` is a direct body hotspot for custom loops, scoring functions, transformations, parsers, and other CPU-bound code; `inclusive-entry` is a caller/context lead for downstream CPU that still needs callees or hot stacks.
+
+The threshold block is `DETECTOR_THRESHOLDS.cpuHotspot`:
+
+- `minSelfPct`: self-heavy user-code gate.
+- `minTotalPct`: inclusive fallback when no self-heavy candidate exists; emits `mode: "inclusive-entry"` and top-level `proofLevel: "heuristic"`.
+- `criticalPct`: severity escalation.
+- `maxFindings`: cap to avoid noisy generic output.
+
+`event-loop-stall` also has two evidence modes in `evidence.extra.proofLevel`: `aggregate-correlation` for strong stall-window attribution, and `hotspot-fallback` when the event-loop lag is real but the source location is only the hottest user CPU lead.
+
 ## Multi-Kind Contract
 
 - `ProfileKind.id`: CLI/runtime identity and `meta.kinds.<kindId>`; it appears in `meta.profileKinds[]` only when capture data was produced.

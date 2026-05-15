@@ -2,6 +2,8 @@
 
 Use this only for targeted JSON field lookup after reading the agent report. The agent report drives the interactive investigation; this schema is a fallback when a specific field is needed and not rendered. For CPU-specific interpretation, see [cpu-profiling.md](cpu-profiling.md).
 
+Current built-in report schema version is `2.0.0`. Schema v2 stores built-in data under `profiles.<kind>.*` and per-kind metadata under `meta.kinds.<kind>.*`. Additive optional fields can appear without changing the major shape.
+
 For agent analysis, capture in JSON (`--format json --output report.json`), then render the agent contract with `$LANTERNA report report.json --format agent --output report.agent.md` (set `$LANTERNA` per the SKILL prefix block), and read that output in skill order. Do not start with `--format text`, `--format markdown`, or raw JSON. The JSON paths below are a schema dictionary for targeted clarification only when the agent report omits a field you need. The agent format renders the contract sections: frontmatter with `rerun_required`, `## Findings` table, `## Finding N` blocks, `Findings.decision` column, `Kind Review`, and `Files To Read First`.
 
 ## Top-Level Shape
@@ -51,7 +53,7 @@ Common fields:
 
 | Field | Meaning |
 |---|---|
-| `schemaVersion` | Report schema version |
+| `schemaVersion` | Report schema version, currently `2.0.0` |
 | `nodeVersion`, `v8Version`, `platform`, `arch` | Target runtime metadata |
 | `pid`, `cwd`, `startedAt`, `durationMs` | Capture context |
 | `command` | Spawned command, or `[]` in attach mode |
@@ -75,13 +77,13 @@ Important global integrity flags:
 
 ### `SourceLocation`
 
-Optional field on every frame-bearing object (`hotspots[]`, `summary.topUserHotspot`, `hotStacks[].frames[]`, `hotStackClusters[].anchor`, `hotAllocators[]`, async frame-bearing entries such as `topOperations[]` / `chains[]` / `orphans[]`, `findings[].evidence`):
+Optional field on every frame-bearing object (`hotspots[]`, `summary.topCpuCulprit`, `summary.topRequestEntry`, `summary.topUserHotspot`, `hotStacks[].frames[]`, `hotStackClusters[].anchor`, `hotAllocators[]`, async frame-bearing entries such as `topOperations[]` / `chains[]` / `orphans[]`, `findings[].evidence`):
 
 ```json
 { "file": "src/server.ts", "line": 42, "column": 18, "name": "handleRequest" }
 ```
 
-- `file` — relative to capture cwd when on disk; otherwise the raw map source URL (`webpack://app/src/...`, `vite:/src/...`).
+- `file` — relative to capture cwd when on disk; otherwise the raw map source URL (`webpack://app/src/...`, `vite:/src/...`). Public async frame paths from V8/CDP `file://` URLs are normalized to normal filesystem paths when possible.
 - `line` — 1-based.
 - `column` — 1-based, optional.
 - `name` — original symbol name from the map's `names` array, useful when the generated `function` is `(anonymous)`.
@@ -127,7 +129,11 @@ Location rule: use the agent report's rendered `User caller` first. If targeted 
 {
   "profiles": {
     "cpu": {
-      "summary": {},
+      "summary": {
+        "topCpuCulprit": {},
+        "topRequestEntry": {},
+        "topUserHotspot": {}
+      },
       "hotspots": [],
       "hotStacks": [],
       "gc": {},
@@ -212,6 +218,8 @@ Common fields:
 Rules:
 
 - Read the agent report's `Source` and `Generated fallback` before proposing code changes.
+- `cpu-hotspot:<frame>` is the built-in generic CPU fallback for hot user code not explained by a more specific detector. `evidence.extra.mode: "self"` is a direct source-inspection lead. `mode: "inclusive-entry"` is a lower-confidence caller/context lead and should be confirmed through callees or hot stacks.
+- `event-loop-stall` can include `evidence.extra.proofLevel: "aggregate-correlation"` or `"hotspot-fallback"`. The fallback form anchors lag to the hottest user CPU frame when direct stall-window attribution is not strong enough.
 - In agent reports, `## Findings` table may include `User caller: <fn> (<location>) [confidence, support X%]`. Use that location before dependency/runtime frames, but only treat high-confidence user callers as potentially actionable.
 - `Files To Read First` is a table of `location`, `reason`, `source`, `signal`, and `decision`. It excludes `node_modules`, `node:`, pnpm store, virtual source-map paths, pseudo-files, and runtime locations unless an editable user-code `userCaller` location is available. Generated output folders such as `dist/`, `build/`, `out/`, `.next/`, `.nuxt/`, `.svelte-kit/`, `.vite/`, and `coverage/` are rendered as `generated output fallback` with `decision = inspect-lead`, not `read-first`. Treat `read-first` as the source-reading queue, `inspect-lead` as a confirmation lead, and `supporting-context` as surrounding evidence. Reasons distinguish finding locations, dependency callers, runtime callers, CPU hotspots/stacks, memory allocators, and async leads such as `top async hot file`, `long async operation`, and `async CPU attribution`.
 - Use `confidence`, `proofLevel`, `measurements`, and `priority`, not severity alone.

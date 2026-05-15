@@ -89,6 +89,8 @@ Prefer findings that the `Findings.decision` column marks actionable, with high 
 
 Await sites, resource origins, and async findings may carry a resolved `source` object. Prefer `source.file:source.line` over the raw `file:line` — raw coordinates point at compiled JS, `source.*` at the original TypeScript or bundled source. Fall back when `source` is missing. Use `source.name` for anonymous frames. Treat virtual paths (`webpack://`, `vite:/`) as bundler labels, not editable files, unless they resolve on disk. Quality gate: `meta.captureIntegrity.sourceMaps`; when `applicable !== false` and `coverage` is low, treat mapped positions as hints. `applicable: false` means plain JS without source maps, not degraded mapping.
 
+When V8/CDP supplies `file://` URLs for async frames, Lanterna normalizes public report paths to normal filesystem paths before grouping hot files, chains, and finding evidence. Virtual bundler URLs remain virtual.
+
 For analysis, use the rendered agent location first. Consult raw async frames only as a targeted JSON lookup when `Kind Review` does not render the specific frame or `userCaller` you need.
 
 In `## Files To Read First`, async rows use specific reasons such as `top async hot file`, `long async operation`, `long async operation caller`, `async hot file`, and `async CPU attribution`. Prefer `read-first` user callers for external async work; treat `inspect-lead` rows as places to confirm the async chain before editing. Pseudo/runtime async frames are filtered out of Kind Review tables unless an editable user caller can anchor the operation.

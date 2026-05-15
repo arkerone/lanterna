@@ -117,6 +117,8 @@ Common fixes:
 3. **Deopts not detected — missing `--deep`.** The `deopt-loop` detector only fires when `--deep` is passed and only for functions also hot in the CPU profile. Without `--deep`, `deopts[]` is empty by design.
 4. **GC findings suppressed on very short captures.** If `durationMs < 250` and no timed GC events were captured, the `excessive-gc` detector suppresses findings to avoid false positives. Run for longer.
 
+If `findings[]` is empty but `profiles.cpu.summary.topCpuCulprit` or `profiles.cpu.hotspots[0]` is strong, inspect that frame anyway. A missing specialized finding only means Lanterna did not match a known pattern; custom CPU-heavy code can still be the bottleneck.
+
 ---
 
 ## Low-confidence CPU profile
@@ -182,6 +184,7 @@ Low confidence does not make the report useless — use it to choose what to ins
 1. **Low-confidence histogram measurement.** If `eventLoop.measurementBasis === "histogram"` and `confidence === "low"`, thresholds are already raised (p99 ≥ 200 ms, max ≥ 400 ms). Check `eventLoop.histogram` directly.
 2. **One-off startup cost inflated the max.** The very first event-loop tick after module loading may be long. If `stallIntervals` shows a single stall near `atMs: 0`, it may be startup, not steady-state behavior.
 3. **Heartbeats not available.** When `measurementBasis === "histogram"`, Lanterna cannot reconstruct which user-code frames ran during the stall window. `correlatedHotspots` is then based on overall CPU overlap, not temporal overlap.
+4. **Fallback attribution is not direct causality.** If `findings[].evidence.extra.proofLevel === "hotspot-fallback"`, the lag crossed the threshold but no stall window had strong attribution. Treat the reported file/line as the best CPU lead and confirm with source or a longer rerun.
 
 ---
 

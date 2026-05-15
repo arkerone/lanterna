@@ -1,4 +1,4 @@
-# Report Schema (v2)
+# Report Schema (v2.0.0)
 
 A `LanternaReport` is the structured JSON Lanterna emits after every capture. This page describes its shape. For interpretation rules, see [reading-a-report.md](./reading-a-report.md).
 
@@ -99,7 +99,7 @@ interface SourceLocation {
 }
 ```
 
-When present, prefer `source.file:source.line` for human diagnosis and patching, but keep the generated `file:line` as fallback context. On-disk sources are relative to `meta.cwd` when possible. Bundler virtual sources such as `webpack://app/src/server.ts` or `vite:/src/server.ts` are kept verbatim and may not exist on disk.
+When present, prefer `source.file:source.line` for human diagnosis and patching, but keep the generated `file:line` as fallback context. On-disk sources are relative to `meta.cwd` when possible. `file://` URLs observed from V8/CDP are normalized back to normal filesystem paths in public report entries when possible. Bundler virtual sources such as `webpack://app/src/server.ts` or `vite:/src/server.ts` are kept verbatim and may not exist on disk.
 
 `source?: SourceLocation` can appear on CPU hotspots, hot-stack frames and anchors, memory allocators and memory summaries, async frame-bearing entries, deopts, and `findings[].evidence`.
 
@@ -109,7 +109,7 @@ When present, prefer `source.file:source.line` for human diagnosis and patching,
 
 | Section | Purpose |
 | --- | --- |
-| `summary` | High-level CPU ratios (user / node_modules / builtin / native / GC / idle), `topCategory`, `dominantBlockingKind`, `topUserHotspot`. |
+| `summary` | High-level CPU ratios (user / node_modules / builtin / native / GC / idle), `topCategory`, `dominantBlockingKind`, `topCpuCulprit`, `topRequestEntry`, `topUserHotspot`. |
 | `quality` | Confidence gate for CPU evidence — `confidence`, `sampleCount`, `durationMs`, `idleRatio`, `samplesTimed`, `durationBasis`, `reasons[]`, `recommendations[]`. |
 | `hotspots` | Aggregated functions with `selfMs`/`selfPct` and `totalMs`/`totalPct`, `callers[]`/`callees[]`, `category`, `optimizationState`, and optional `userCaller` for non-user frames. |
 | `hotStacks` | Most frequent complete sampled stacks with `weightPct` and `frames[]`. |
@@ -125,6 +125,7 @@ Detail: [kinds/cpu.md](./kinds/cpu.md).
 | Section | Purpose |
 | --- | --- |
 | `summary` | Total sampled bytes, top allocator, RSS / heapUsed / external / arrayBuffers stats (start/end/min/max/mean/p95) plus linear `slopeBytesPerSec`. |
+| `quality` | Memory confidence gate — `confidence`, `reasons[]`, `recommendations[]`. |
 | `hotAllocators` | Frames ranked by `selfBytes` / `totalBytes`, with file/line, frame category, and optional `userCaller` for external allocators. |
 | `memoryUsage` | Compact `process.memoryUsage()` metadata (`sampleCount`, first/last sample). Raw samples present only with `--include-memory-samples`. |
 | `heapSnapshotAnalysis` | Optional start/end retained-growth summary when `--heap-snapshot-analysis` is enabled. Very large snapshots return `available: false` with a warning instead of being parsed unbounded. |
@@ -143,7 +144,7 @@ Each finding has the same shape regardless of which kind produced it:
 
 | Field | Purpose |
 | --- | --- |
-| `id` | Detector-specific identifier (e.g. `blocking-io:fs.readFileSync`). |
+| `id` | Detector-specific identifier (e.g. `blocking-io:fs.readFileSync`, `cpu-hotspot:<frame>`). |
 | `profileKind` | Source kind (`"cpu"`, `"memory"`, `"async"`, …). |
 | `severity` | `critical`, `warning`, or `info`. |
 | `category` | Grouping for filtering. |
@@ -163,7 +164,7 @@ The full catalog of built-in findings, grouped by kind, is in [extending/detecto
 
 ## Schema versioning
 
-This is **schema v2**. The defining trait of v2 is per-kind nesting under `profiles.<reportSectionKey>.*` and `meta.kinds.<kindId>.*`. Future schema changes will bump the version; consumers should branch on the discriminator they need rather than on the version itself.
+This is **schema v2.0.0**. The defining trait of v2 is per-kind nesting under `profiles.<reportSectionKey>.*` and `meta.kinds.<kindId>.*`. Additive optional fields can appear within the same major schema; breaking changes should bump the version. Consumers should branch on the fields they need rather than on the version alone.
 
 ## See also
 

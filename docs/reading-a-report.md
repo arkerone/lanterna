@@ -18,7 +18,7 @@ Use `--format agent` when an AI agent or automation will consume the report. It 
 | --- | --- | --- | --- |
 | 1 | `meta` | What was captured (mode, duration, `profileKinds`, integrity flags). | `durationMs` very short, or `captureIntegrity.*` flags `false`. |
 | 2 | `profiles.cpu.quality` | Whether CPU evidence is strong enough to trust. | `confidence = low`, high idle, low samples, untimed samples. |
-| 3 | `profiles.cpu.summary` | Where CPU time went (ratios, top category). | `idleRatio` > 0.8 — the profile is mostly idle. |
+| 3 | `profiles.cpu.summary` | Where CPU time went and the best first line to inspect (`topCpuCulprit`, `topRequestEntry`). | `idleRatio` > 0.8 — the profile is mostly idle. |
 | 4 | `findings` | Prioritized hypotheses backed by the capture (tagged `profileKind`). | Empty `findings[]` does not prove a healthy profile. |
 | 5 | `profiles.cpu.hotspots` | Where CPU is actually spent (self + inclusive). | A hot leaf in `node_modules` is usually a symptom, not a cause. |
 | 6 | `profiles.cpu.eventLoop` | Latency signal + stall windows. | `confidence = low` or `measurementBasis = histogram` alone. |
@@ -34,7 +34,7 @@ Use `--format agent` when an AI agent or automation will consume the report. It 
 
 1. **Read `meta` and `captureIntegrity`** — sanity-check what you're about to interpret. Short `durationMs`, `controlChannel: false` in spawn mode, or missing `gcTimed` change how strongly you should weight downstream sections. See [signal-quality.md](./signal-quality.md).
 2. **Read `profiles.cpu.quality`** before `findings[]` — a low-confidence profile can identify leads but not prove root causes.
-3. **Filter `findings[]` by severity and `profileKind`** — start with `severity != "info"`; group by kind to know which specialist page to consult.
+3. **Filter `findings[]` by severity and `profileKind`** — start with `severity != "info"`; group by kind to know which specialist page to consult. A `cpu-hotspot:*` finding is the generic fallback when no more specific CPU detector explains a user-code CPU lead.
 4. **Open the implicated source file** — `evidence.file` and `evidence.line` are where the action should happen. For some detectors that points at the user caller rather than a builtin callee.
 5. **Cross-reference kinds when both were captured** — `alloc-in-hot-path` is the canonical example: a frame hot on CPU **and** in top allocators is the highest-leverage fix you can make.
 6. **Use `hotStacks` only when a hotspot is ambiguous** — it surfaces the surrounding call path without manual reconstruction.
@@ -55,8 +55,9 @@ The full catalog (with triggers and remediations) lives in [extending/detectors.
 | `blocking-io:<api>` | cpu | Sync `fs` / `child_process` / `zlib` on the hot path. Use the async equivalent. |
 | `json-on-hot-path:<api>` | cpu | `JSON.parse` / `JSON.stringify` is a meaningful share of CPU. Cache, stream, or reduce. |
 | `node-modules-hotspot:<package>` | cpu | A dependency dominates CPU. **Inspect the user caller path first.** |
+| `cpu-hotspot:<frame>` | cpu | Plain user code dominates CPU without matching a known anti-pattern. `mode: "self"` is a direct body hotspot; `mode: "inclusive-entry"` is a caller/context lead. |
 | `excessive-gc` | cpu | GC ratio or longest pause is too high. Hunt allocations in top user hotspots. |
-| `event-loop-stall` | cpu | The main thread stopped servicing tasks. Check `correlatedHotspots`. |
+| `event-loop-stall` | cpu | The main thread stopped servicing tasks. Prefer strong `correlatedHotspots`; otherwise treat the fallback hotspot as the best CPU lead, not proven stall causality. |
 | `deopt-loop:<function>` | cpu | A hot function keeps deoptimising under `--deep`. Stabilise shapes/types. |
 | `require-in-hot-path` | cpu | Module loading on the hot path. Hoist or memoize the lazy load. |
 | `memory-growth:rss` / `memory-growth:heapUsed` | memory | Sustained linear growth ≥ 1 MB/s. Inspect top allocators and lifetimes. |
@@ -90,6 +91,12 @@ For some detectors (e.g. `sync-crypto-on-hot-path`, `blocking-io:<api>`), `evide
 
 When `measurementBasis === "histogram"`, `correlatedHotspots[]` is based on overall CPU overlap — not temporal overlap with stall windows. Read [signal-quality.md](./signal-quality.md#profilescpueventloop) before claiming causality.
 
+`event-loop-stall` can also expose `evidence.extra.proofLevel: "hotspot-fallback"` plus `fallbackHotspots[]`. That means the event-loop lag is real, but no measured stall window dominated enough to blame one frame directly; Lanterna anchored the finding to the hottest user CPU frame so the report still points at a useful source line.
+
+#### `topCpuCulprit` vs `topRequestEntry`
+
+`profiles.cpu.summary.topCpuCulprit` is self-CPU first: it tries to answer "which function body burned CPU?". `topRequestEntry` is finding-aware and caller-oriented: it keeps the request/user entry that explains why the hot work happened. If they differ, inspect `topCpuCulprit` for the local algorithmic problem and `topRequestEntry` for call frequency, payload size, or routing context.
+
 #### `deopt-loop:<function>`
 
 Fires only when a function is **both** hot in the CPU profile **and** repeatedly deoptimised under `--deep`. Focus on stabilising shapes and types, then reprofile. One-off deopt entries are noise.
@@ -103,6 +110,8 @@ A dependency hotspot is often a symptom — your code controls when and how ofte
 > **Treating `topCategory` as a diagnosis.** `topCategory` is a summary, not a root cause. High `native` often just means CPU work happened below JS wrappers.
 
 > **Assuming no findings means no problem.** Lanterna's detectors are heuristic. A clean `findings[]` lowers the odds of the usual issues; it does not prove the profile is healthy.
+
+> **Ignoring `cpu-hotspot:*` because it is generic.** This finding intentionally covers custom CPU-heavy code. `mode: "self"` is often the most direct file/line when the workload is a loop, scoring function, transformation, or algorithm instead of a known Node API misuse. `mode: "inclusive-entry"` should be treated as a lead to inspect callees/hot stacks.
 
 > **Blaming `node_modules` immediately.** A dependency hotspot is often just where the CPU landed. The caller path is usually your code.
 

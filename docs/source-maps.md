@@ -52,6 +52,8 @@ Whenever a frame is mapped successfully, a `source` object is attached:
 `source` appears on:
 
 - `profiles.cpu.hotspots[].source`
+- `profiles.cpu.summary.topCpuCulprit.source`
+- `profiles.cpu.summary.topRequestEntry.source`
 - `profiles.cpu.summary.topUserHotspot.source`
 - `profiles.cpu.hotStacks[].frames[].source`
 - `profiles.cpu.hotStackClusters[].anchor.source`

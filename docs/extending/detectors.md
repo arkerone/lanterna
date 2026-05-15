@@ -144,8 +144,9 @@ The default pack lives in `@lanterna-profiler/detectors` and pre-wires detectors
 | `blocking-io:<api>` | Sampled sync `fs` / `child_process` / `zlib` frame on the hot path. |
 | `json-on-hot-path:<api>` | `JSON.parse` / `JSON.stringify` consuming meaningful CPU. |
 | `node-modules-hotspot:<package>` | A dependency frame dominates CPU time. |
+| `cpu-hotspot:<frame>` | User-code self CPU ≥ 10%, or inclusive CPU ≥ 25% as a lower-confidence caller lead, when no more specific CPU detector already explains the frame. |
 | `excessive-gc` | `gcRatio > 10%` or `longestPauseMs > 100ms`. |
-| `event-loop-stall` | `p99LagMs >= 100` or `maxLagMs >= 200`. |
+| `event-loop-stall` | `p99LagMs >= 100` or `maxLagMs >= 200`; anchors to strong stall correlation when available, otherwise to the hottest user CPU fallback. |
 | `deopt-loop:<function>` | Same deoptimised function seen ≥ 5 times (`--deep`) and hot in the profile. |
 | `require-in-hot-path` | Module loading functions sampled on the hot path. |
 
@@ -191,6 +192,8 @@ import {
 - `buildAttributedFinding(...)` — one-shot helper that returns a fully-shaped `Finding`.
 - `CpuHotspotContext` — the attribution view (`fullHotspots`, `hotspotById`, `userCallerById`, `candidateCallersById`) reachable from a kind-scoped detector via `kinds.cpu.view.hotspotAnalysis`.
 
+Finding analyzers run incrementally: after each detector, `snapshot.findings` includes findings emitted so far. Use that shared state to avoid duplicate generic findings when a specific rule has already explained the same frame. The built-in `cpu-hotspot` detector uses this to defer to `sync-crypto`, `blocking-io`, `json-on-hot-path`, `node-modules-hotspot`, and `require-in-hot-path`.
+
 ## Thresholds
 
 `DETECTOR_THRESHOLDS` from `@lanterna-profiler/detectors` is the source of truth for tunable values:
@@ -202,6 +205,8 @@ console.log(DETECTOR_THRESHOLDS.eventLoopStall.p99);
 ```
 
 You can read these values in your own detectors so users get consistent thresholds across the pack.
+
+The generic CPU fallback is configured under `DETECTOR_THRESHOLDS.cpuHotspot`: `minSelfPct` gates self-heavy user functions (`evidence.extra.mode: "self"`), `minTotalPct` catches inclusive-only user callers when no self-heavy candidate exists (`mode: "inclusive-entry"`), `criticalPct` escalates severity, and `maxFindings` caps noise. Inclusive-entry findings use top-level `proofLevel: "heuristic"` so agents treat them as source-inspection leads rather than direct proof that the wrapper body is expensive.
 
 ## Where to next
 
