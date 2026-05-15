@@ -1,6 +1,6 @@
 {
   "name": "@lanterna-profiler/cli",
-  "version": "1.11.0",
+  "version": "1.11.1",
   "description": "Agent-first Node.js CPU, memory & experimental async profiler — CLI",
   "type": "module",
   "bin": {

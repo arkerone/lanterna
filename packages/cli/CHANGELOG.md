@@ -1,5 +1,11 @@
 # @lanterna-profiler/cli
 
+## 1.11.1
+
+### Patch Changes
+
+- e2a22d2: Remove the agent report `Next Steps` section and expose rerun need as `rerun_required` frontmatter.
+
 ## 1.11.0
 
 ### Minor Changes
