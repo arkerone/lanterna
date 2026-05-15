@@ -64,8 +64,6 @@ export class AgentReportRenderer implements ReportRenderer {
     appendKindReview(lines, report);
     lines.push('');
     appendFilesToReadFirst(lines, report);
-    lines.push('');
-    appendNextSteps(lines, report);
     return `${lines.join('\n').trimEnd()}\n`;
   }
 }
@@ -95,6 +93,7 @@ function appendFrontmatter(lines: string[], report: LanternaReport): void {
     `async_quality: ${yamlScalar(report.profiles?.async?.quality?.confidence ?? 'absent')}`,
   );
   lines.push(`integrity: ${yamlScalar(integrityLabel(integrity, blockingCaveats))}`);
+  lines.push(`rerun_required: ${yamlScalar(hasInsufficientSignal(report))}`);
   if (sourceMaps?.enabled) {
     lines.push(`sourcemap_coverage: ${formatRatio01(sourceMaps.coverage)}`);
     lines.push(`sourcemap_maps_loaded: ${yamlScalar(sourceMaps.mapsLoaded)}`);
@@ -399,7 +398,7 @@ function appendAsyncKindReview(lines: string[], report: LanternaReport): void {
 }
 
 // ---------------------------------------------------------------------------
-// Files To Read First + Next Steps.
+// Files To Read First.
 // ---------------------------------------------------------------------------
 
 function appendFilesToReadFirst(lines: string[], report: LanternaReport): void {
@@ -420,54 +419,6 @@ function appendFilesToReadFirst(lines: string[], report: LanternaReport): void {
       target.signal,
       target.decision,
     ]),
-  );
-}
-
-function appendNextSteps(lines: string[], report: LanternaReport): void {
-  lines.push('## Next Steps');
-  lines.push('');
-  if (!hasInsufficientSignal(report)) {
-    lines.push('- The capture signal is sufficient; no rerun is required by this report.');
-    lines.push(
-      '- Read the files listed in `## Files To Read First`, then validate the hot path against the finding details and Kind Review tables.',
-    );
-    lines.push(
-      '- If the source does not explain the hotspot, trace callers and callees named in the Kind Review before changing code.',
-    );
-    return;
-  }
-  const command = report.meta?.command;
-  const duration = recommendedDuration(report);
-  lines.push(
-    '- Signal is degraded; collect a new capture under representative load before patching from this report.',
-  );
-  if (command && command.length > 0 && report.meta?.mode === 'spawn') {
-    lines.push(
-      `- Rerun Lanterna: \`lanterna run --duration ${duration} --output report.json -- ${escapeBackticks(formatCommand(command))}\``,
-    );
-    lines.push(
-      '- Confirm the readiness URL and representative workload before rerunning if this command starts an HTTP server.',
-    );
-    lines.push(
-      '- After capture, render the agent report: `lanterna report report.json --format agent --output report.agent.md`',
-    );
-    return;
-  }
-  if (report.meta?.mode === 'attach' && report.meta.pid) {
-    lines.push(
-      '- Confirm the representative application workload before rerunning an attach capture; do not infer an HTTP benchmark target from this report.',
-    );
-    lines.push(
-      `- Rerun Lanterna: \`lanterna attach --pid ${report.meta.pid} --duration ${duration} --output report.json\``,
-    );
-    lines.push(
-      '- After capture, render the agent report: `lanterna report report.json --format agent --output report.agent.md`',
-    );
-    return;
-  }
-  lines.push('- Rerun is recommended, but the report does not contain enough launch context.');
-  lines.push(
-    '- Ask for the target command or PID, duration, readiness signal, and representative workload.',
   );
 }
 
@@ -1045,12 +996,6 @@ function formatRatio01(value: number | undefined): string {
   return value.toFixed(3).replace(/0+$/, '').replace(/\.$/, '');
 }
 
-function recommendedDuration(report: LanternaReport): string {
-  const current = report.meta?.durationMs;
-  if (typeof current !== 'number' || !Number.isFinite(current)) return '5s';
-  return `${Math.max(5, Math.ceil(current / 1000))}s`;
-}
-
 function isNonEmpty(value: string | undefined): value is string {
   return typeof value === 'string' && value.length > 0;
 }
@@ -1122,10 +1067,6 @@ function isVirtualSourcePath(file: string): boolean {
     file.startsWith('rollup://') ||
     file.startsWith('parcel://')
   );
-}
-
-function escapeBackticks(value: string): string {
-  return value.replaceAll('`', '\\`');
 }
 
 // ---------------------------------------------------------------------------

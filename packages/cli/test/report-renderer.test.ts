@@ -569,6 +569,7 @@ describe('renderReport', () => {
     expect(output).toContain('kinds: [cpu, memory]');
     expect(output).toContain('cpu_quality: low');
     expect(output).toContain('integrity: degraded');
+    expect(output).toContain('rerun_required: true');
     expect(output).toContain('sourcemap_coverage: 0.9');
     expect(output).toContain('"control channel unavailable"');
     expect(output).toContain('## Findings');
@@ -600,19 +601,8 @@ describe('renderReport', () => {
     expect(filesSection).toMatch(
       /\| src\/worker\.ts:31 +\| finding location +\| finding \| 8\.00% self \| inspect-lead \|/,
     );
-    expect(output).toContain('## Next Steps');
-    expect(output).toContain(
-      '- Signal is degraded; collect a new capture under representative load before patching from this report.',
-    );
-    expect(output).toContain(
-      '- Rerun Lanterna: `lanterna run --duration 5s --output report.json -- node server.js`',
-    );
-    expect(output).toContain(
-      '- Confirm the readiness URL and representative workload before rerunning if this command starts an HTTP server.',
-    );
-    expect(output).toContain(
-      '- After capture, render the agent report: `lanterna report report.json --format agent --output report.agent.md`',
-    );
+    expect(output).not.toContain('## Next Steps');
+    expect(output).not.toContain('Rerun Lanterna:');
     expect(output).not.toContain('## Kind Review — async');
   });
 
@@ -641,13 +631,9 @@ describe('renderReport', () => {
 
     expect(output).toContain('## Findings\n\n_no findings_');
     expect(output).toContain('## Kind Review — cpu');
-    expect(output).toContain('## Next Steps');
-    expect(output).toContain(
-      '- The capture signal is sufficient; no rerun is required by this report.',
-    );
-    expect(output).toContain(
-      '- Read the files listed in `## Files To Read First`, then validate the hot path against the finding details and Kind Review tables.',
-    );
+    expect(output).toContain('rerun_required: false');
+    expect(output).not.toContain('## Next Steps');
+    expect(output).not.toContain('The capture signal is sufficient');
     expect(output).not.toContain('## Kind Review — memory');
     expect(output).not.toContain('## Kind Review — async');
   });
@@ -1522,10 +1508,9 @@ describe('renderReport', () => {
     );
 
     expect(output).toContain('degrading_caveats: ["CPU profile mostly idle (92.0%)"]');
-    expect(output).toContain('## Next Steps');
-    expect(output).toContain(
-      '- Signal is degraded; collect a new capture under representative load before patching from this report.',
-    );
+    expect(output).toContain('rerun_required: true');
+    expect(output).not.toContain('## Next Steps');
+    expect(output).not.toContain('Signal is degraded; collect a new capture');
   });
 
   it('renders specific async read-target reasons and signals', () => {
@@ -1921,7 +1906,7 @@ describe('renderReport', () => {
     expect(docsExample).toBe(expected);
   });
 
-  it('asks attach users to confirm representative workload instead of inventing HTTP load', () => {
+  it('marks degraded attach captures as requiring rerun without inventing HTTP load', () => {
     const output = renderReport(
       {
         meta: { ...baseMeta, mode: 'attach', command: undefined, pid: 4242 },
@@ -1944,16 +1929,9 @@ describe('renderReport', () => {
       { format: 'agent' },
     );
 
-    expect(output).toContain('## Next Steps');
-    expect(output).toContain(
-      '- Confirm the representative application workload before rerunning an attach capture; do not infer an HTTP benchmark target from this report.',
-    );
-    expect(output).toContain(
-      '- Rerun Lanterna: `lanterna attach --pid 4242 --duration 5s --output report.json`',
-    );
-    expect(output).toContain(
-      '- After capture, render the agent report: `lanterna report report.json --format agent --output report.agent.md`',
-    );
+    expect(output).toContain('rerun_required: true');
+    expect(output).not.toContain('## Next Steps');
+    expect(output).not.toContain('Rerun Lanterna:');
     expect(output).not.toContain('autocannon');
   });
 });

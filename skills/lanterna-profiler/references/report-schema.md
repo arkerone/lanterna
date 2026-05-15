@@ -2,7 +2,7 @@
 
 Use this only for targeted JSON field lookup after reading the agent report. The agent report drives the interactive investigation; this schema is a fallback when a specific field is needed and not rendered. For CPU-specific interpretation, see [cpu-profiling.md](cpu-profiling.md).
 
-For agent analysis, capture in JSON (`--format json --output report.json`), then render the agent contract with `$LANTERNA report report.json --format agent --output report.agent.md` (set `$LANTERNA` per the SKILL prefix block), and read that output in skill order. Do not start with `--format text`, `--format markdown`, or raw JSON. The JSON paths below are a schema dictionary for targeted clarification only when the agent report omits a field you need. The agent format renders the contract sections: frontmatter, `## Findings` table, `## Finding N` blocks, `Findings.decision` column, `Kind Review`, `Files To Read First`, and `Next Steps`.
+For agent analysis, capture in JSON (`--format json --output report.json`), then render the agent contract with `$LANTERNA report report.json --format agent --output report.agent.md` (set `$LANTERNA` per the SKILL prefix block), and read that output in skill order. Do not start with `--format text`, `--format markdown`, or raw JSON. The JSON paths below are a schema dictionary for targeted clarification only when the agent report omits a field you need. The agent format renders the contract sections: frontmatter with `rerun_required`, `## Findings` table, `## Finding N` blocks, `Findings.decision` column, `Kind Review`, and `Files To Read First`.
 
 ## Top-Level Shape
 

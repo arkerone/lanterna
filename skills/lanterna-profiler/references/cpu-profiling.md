@@ -11,12 +11,12 @@ The current built-in kind id and report section key are both `cpu`, so CPU analy
 - Use `--deep` only with `lanterna run`; it enables deopt tracing and can make target diagnostics noisier.
 - Attach mode cannot enable `--deep`; `profiles.cpu.deopts[]` will stay empty.
 - Use `--sample-interval <us>` below `1000` only for suspected sub-millisecond hotspots; minimum is `50`.
-- Use the report frontmatter as the primary confidence gate. It summarizes CPU quality, low samples, short duration, high idle ratio, untimed samples, and rerun guidance.
+- Use the report frontmatter as the primary confidence gate. It summarizes CPU quality, whether a rerun is required, low samples, short duration, high idle ratio, untimed samples, and caveats.
 - If the frontmatter reports low CPU quality, treat findings as leads, not proof, unless corroborated by source inspection and a stronger rerun.
 
 ## Report Paths
 
-These are targeted JSON lookup paths. For analysis, read the agent report first and use its frontmatter, `## Findings` table, `## Finding N` blocks, `Findings.decision` column, `Kind Review`, `Files To Read First`, and `Next Steps` sections as the contract.
+These are targeted JSON lookup paths. For analysis, read the agent report first and use its frontmatter, `## Findings` table, `## Finding N` blocks, `Findings.decision` column, `Kind Review`, and `Files To Read First` sections as the contract.
 
 - `profiles.cpu.summary`: on-CPU ratio, idle ratio, category ratios, top user hotspot.
 - `profiles.cpu.hotspots[]`: aggregated frames by `(file, function, line)`.
@@ -45,7 +45,7 @@ Before prescribing, check the report frontmatter. If it omits a needed CPU detai
 - `meta.captureIntegrity.heartbeatDropped`
 - `meta.captureIntegrity.kinds.cpu.samplesTimed`
 
-When the needed signal is degraded, say so explicitly and avoid strong causal language. If the agent frontmatter reports `CPU profile mostly idle (...)`, follow `## Next Steps` and rerun under representative load before treating CPU hotspots as representative. The agent renderer emits this caveat at CPU idle ratio ≥ 90%.
+When the needed signal is degraded, say so explicitly and avoid strong causal language. If the agent frontmatter has `rerun_required: true` with `CPU profile mostly idle (...)`, rerun under representative load before treating CPU hotspots as representative. The agent renderer emits this caveat at CPU idle ratio ≥ 90%.
 
 ## Event Loop
 
@@ -88,11 +88,11 @@ Every CPU frame may carry an optional `source` object resolved from a source map
 
 ## Interpretation Order
 
-1. Read agent frontmatter and frontmatter.
+1. Read agent frontmatter.
 2. Summarize actionable findings from `## Findings` table, `## Finding N` blocks, and `Findings.decision` column.
 3. Use `## Kind Review` for top user-relevant hotspots, even when no detector fired.
 4. Use `## Files To Read First` as a table, not a plain list: `read-first` rows are the source-reading queue, `inspect-lead` rows need confirmation, and `supporting-context` rows explain the sampled stack. Generated output fallbacks (`dist/`, `build/`, `.next/`, etc.) are `inspect-lead` rows until resolved back to editable source.
-5. Follow `## Next Steps` before patching when the report asks for a better capture.
+5. If frontmatter has `rerun_required: true`, explain the caveat or `decision = rerun` finding and request a better capture before patching.
 6. Summarize GC only when pauses or ratios are materially high and supported by the agent report or a targeted JSON lookup.
 7. Summarize event-loop impact only when signal quality supports it.
 8. Surface deopts only when shown by the report or confirmed via targeted JSON lookup.

@@ -32,11 +32,11 @@ Stop conditions specific to memory:
 
 Start from the agent report, not from JSON:
 
-1. frontmatter — memory usage availability, heap snapshot warnings, integrity and source-map caveats.
+1. frontmatter — memory usage availability, heap snapshot warnings, `rerun_required`, integrity and source-map caveats.
 2. `## Findings` table / `## Finding N` blocks / `Findings.decision` column — memory findings, proof level, measurements, and actionability.
 3. `Kind Review` -> `memory` — memory usage, top allocator, hot allocators, user callers, and heap snapshot summary.
 4. `Files To Read First` — table of editable source locations to inspect before proposing patches. `read-first` rows are the primary queue; `inspect-lead` rows need confirmation; `supporting-context` rows provide surrounding evidence.
-5. `Next Steps` — rerun guidance when the report signal is degraded, mostly idle, or missing representative workload.
+5. Use `rerun_required`, caveats, and any `decision = rerun` finding to decide whether to request a better capture before diagnosis.
 
 Use the JSON shape below only when the agent report does not render a memory field you need to clarify.
 

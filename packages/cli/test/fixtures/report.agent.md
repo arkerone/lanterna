@@ -10,6 +10,7 @@ cpu_quality: high
 memory_signal: present
 async_quality: high
 integrity: ok
+rerun_required: false
 sourcemap_coverage: 0.75
 sourcemap_maps_loaded: 1
 blocking_caveats: []
@@ -65,9 +66,3 @@ degrading_caveats: []
 | src/server.ts:42 | user caller for dependency hotspot | finding | 120ms      | read-first   |
 | src/cache.ts:18  | memory allocator                   | memory  | 35.0% self | read-first   |
 | src/users.ts:27  | top async hot file                 | async   | score 80   | inspect-lead |
-
-## Next Steps
-
-- The capture signal is sufficient; no rerun is required by this report.
-- Read the files listed in `## Files To Read First`, then validate the hot path against the finding details and Kind Review tables.
-- If the source does not explain the hotspot, trace callers and callees named in the Kind Review before changing code.
