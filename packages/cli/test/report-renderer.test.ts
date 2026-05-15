@@ -614,7 +614,7 @@ describe('renderReport', () => {
     expect(output).toContain('rerun_required: true');
     expect(output).toContain('sourcemap_coverage: 0.9');
     expect(output).toContain('sourcemap_status: ok');
-    expect(output).toContain('sourcemap_applicable: true');
+    expect(output).not.toContain('sourcemap_applicable:');
     expect(output).toContain('"control channel unavailable"');
     expect(output).toContain('## Findings');
     expect(output).toMatch(
