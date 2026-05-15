@@ -1,5 +1,13 @@
 # @lanterna-profiler/detectors
 
+## 2.1.1
+
+### Patch Changes
+
+- 7c5fceb: Improve CPU hot-path diagnostics for synchronous crypto findings. Source map integrity now distinguishes non-applicable plain JavaScript from failed source-map resolution, CPU attribution exposes user caller candidates with stack distance, event-loop stall evidence reports heartbeat sample coverage, and CLI report formats surface the new reliability signals.
+- Updated dependencies [7c5fceb]
+  - @lanterna-profiler/core@2.1.1
+
 ## 2.1.0
 
 ### Minor Changes
