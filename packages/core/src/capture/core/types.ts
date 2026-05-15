@@ -1,4 +1,5 @@
 import type { CaptureKindDataMap } from '../../kinds/core/types.js';
+import type { MemoryUsageSample } from '../../report/types.js';
 import type {
   EventLoopSampleData,
   ParsedTargetInfo,
@@ -147,6 +148,8 @@ export interface LiveSourceSignals {
   eventLoopSamplesAbs: EventLoopSample[];
   eventLoopAvailable: boolean;
   eventLoopResolutionMs?: number;
+  memoryUsageSamples?: MemoryUsageSample[];
+  memoryUsageSampleIntervalMs?: number;
   integrityCounters?: {
     controlChannelWriteErrors: number;
     gcObserverSetupFailed: number;

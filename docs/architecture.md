@@ -157,8 +157,8 @@ The pipeline transforms `CaptureBundle` into `LanternaReport` in four phases:
 
 1. **Kind contributors** — each `ProfileKind` writes its report section into `profiles.<reportSectionKey>` and publishes a typed view consumable via `context.forKind(id)`.
 2. **Section analyzers** — optional extensions write under `extensions.<namespace>` (not kind-specific).
-3. **Finding analyzers** — cross-cutting rules emit `Finding`s, each tagged with a `profileKind` string.
-4. **Finalize** — each kind's optional `finalize` hook mutates its own section based on the final findings (e.g. CPU sets `profiles.cpu.summary.dominantBlockingKind` and `topUserHotspot`).
+3. **Finding analyzers** — cross-cutting rules emit `Finding`s, each tagged with a `profileKind` string. After every analyzer, the in-progress `snapshot.findings` is updated so later detectors can suppress duplicates or build on earlier evidence.
+4. **Finalize** — each kind's optional `finalize` hook mutates its own section based on the final findings (e.g. CPU sets `profiles.cpu.summary.dominantBlockingKind`, `topCpuCulprit`, `topRequestEntry`, and `topUserHotspot`).
 
 ### Frame classification
 
@@ -200,7 +200,7 @@ Correlation is conservative: if no single user frame dominates, Lanterna reports
 
 Findings are detectors running on the enriched snapshot, not on the raw bundle. Each finding carries a required `profileKind: string` tag so consumers can filter by kind. The full catalog of built-in findings, grouped by kind, lives in [extending/detectors.md](./extending/detectors.md#built-in-findings).
 
-Findings are sorted by `priority.score` first, then by severity and attributed weight. Dominant user-code CPU is exposed as `profiles.cpu.summary.topUserHotspot` for context instead of as an actionable finding.
+Findings are sorted by `priority.score` first, then by severity and attributed weight. Known anti-pattern detectors own specific categories such as blocking I/O or sync crypto; the generic `cpu-hotspot:*` detector is the fallback for plain user-code CPU that still needs a file/line or caller lead. CPU summaries also expose `profiles.cpu.summary.topCpuCulprit` for the self-heavy culprit and `topRequestEntry` / `topUserHotspot` for caller context.
 
 Built-in findings may also expose:
 

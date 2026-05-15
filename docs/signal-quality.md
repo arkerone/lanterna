@@ -66,9 +66,13 @@ The event-loop section has its own confidence pair so consumers can judge stall 
 
 When `measurementBasis === "histogram"`, `correlatedHotspots[]` is based on overall CPU overlap, not temporal overlap with stall windows — interpret accordingly.
 
-## `profiles.memory.*` quality
+The `event-loop-stall` finding mirrors this distinction in `evidence.extra.proofLevel`. `aggregate-correlation` means a measured stall window had a dominant user hotspot. `hotspot-fallback` means lag crossed the threshold but correlation was not strong enough, so the finding is anchored to the hottest user CPU frame as an inspection lead.
 
-The memory kind exposes statistical signals rather than a discrete confidence enum:
+## `profiles.memory.quality`
+
+The memory kind uses the same top-level quality shape as other kinds: `confidence`, `reasons[]`, and `recommendations[]`. Its confidence is derived from the availability and volume of memory-usage samples, heap-sampling data, and heap-snapshot warnings when snapshot analysis is enabled.
+
+Memory-specific signals to inspect alongside `profiles.memory.quality`:
 
 - `summary.rss.slopeBytesPerSec` — linear growth slope. Sustained slopes ≥ 1 MB/s trigger a `memory-growth` finding (warning); ≥ 5 MB/s upgrades to critical. Short captures with warm-up phases can produce artificially steep slopes.
 - `memoryUsage.sampleCount` — how many `process.memoryUsage()` samples landed. Below ~10 samples, the slope is unreliable.

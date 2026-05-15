@@ -16,6 +16,8 @@ type Frame = {
   source?: { file: string; line: number };
 };
 
+type CpuStackFrame = Frame & { category?: string };
+
 type ReadTargetSource = 'finding' | 'cpu' | 'memory' | 'async';
 type ReadTargetDecision = 'read-first' | 'inspect-lead' | 'supporting-context';
 type ReadTargetReason =
@@ -24,7 +26,11 @@ type ReadTargetReason =
   | 'user-caller'
   | 'dependency-hotspot-caller'
   | 'runtime-hotspot-caller'
+  | 'cpu-user-stack'
+  | 'top-cpu-culprit'
   | 'top-cpu-hotspot'
+  | 'top-request-entry'
+  | 'top-user-hotspot'
   | 'hot-stack-cluster'
   | 'memory-allocator'
   | 'top-async-hot-file'
@@ -55,11 +61,10 @@ export class AgentReportRenderer implements ReportRenderer {
   readonly format: RenderableFormat = 'agent';
 
   render(report: LanternaReport): string {
-    const findings = report.findings ?? [];
     const lines: string[] = [];
     appendFrontmatter(lines, report);
     lines.push('');
-    appendFindings(lines, findings);
+    appendFindings(lines, report);
     lines.push('');
     appendKindReview(lines, report);
     lines.push('');
@@ -88,6 +93,9 @@ function appendFrontmatter(lines: string[], report: LanternaReport): void {
   lines.push(`kinds: ${yamlInlineList(meta?.profileKinds ?? [])}`);
   lines.push(`lanterna_version: ${yamlScalar(meta?.lanternaVersion ?? 'unknown')}`);
   lines.push(`cpu_quality: ${yamlScalar(report.profiles?.cpu?.quality?.confidence ?? 'absent')}`);
+  lines.push(
+    `memory_quality: ${yamlScalar(report.profiles?.memory?.quality?.confidence ?? 'absent')}`,
+  );
   lines.push(`memory_signal: ${yamlScalar(memorySignalLabel(report.profiles?.memory))}`);
   lines.push(
     `async_quality: ${yamlScalar(report.profiles?.async?.quality?.confidence ?? 'absent')}`,
@@ -128,7 +136,8 @@ function integrityLabel(
 // Findings — table summary + per-finding detail block.
 // ---------------------------------------------------------------------------
 
-function appendFindings(lines: string[], findings: Finding[]): void {
+function appendFindings(lines: string[], report: LanternaReport): void {
+  const findings = report.findings ?? [];
   lines.push('## Findings');
   lines.push('');
   if (findings.length === 0) {
@@ -162,12 +171,17 @@ function appendFindings(lines: string[], findings: Finding[]): void {
   appendTable(lines, headers, rows);
   lines.push('');
   findings.forEach((finding, index) => {
-    appendFindingDetail(lines, finding, index + 1);
+    appendFindingDetail(lines, finding, index + 1, report);
     if (index < findings.length - 1) lines.push('');
   });
 }
 
-function appendFindingDetail(lines: string[], finding: Finding, position: number): void {
+function appendFindingDetail(
+  lines: string[],
+  finding: Finding,
+  position: number,
+  report: LanternaReport,
+): void {
   lines.push(`## Finding ${position} — ${finding.id}`);
   lines.push('');
   lines.push(`- title: ${finding.title}`);
@@ -178,6 +192,8 @@ function appendFindingDetail(lines: string[], finding: Finding, position: number
   if (candidateCallers.length > 0) {
     lines.push(`- candidate_callers: ${candidateCallers.map(formatUserCallerCompact).join('; ')}`);
   }
+  const userStack = cpuUserStackForFinding(finding, report);
+  if (userStack) lines.push(`- user_stack: ${userStack}`);
   lines.push(`- observed: ${formatMeasurements(finding.measurements?.observed)}`);
   lines.push(`- thresholds: ${formatMeasurements(finding.measurements?.thresholds)}`);
   lines.push(`- impact: ${formatImpact(finding)}`);
@@ -227,7 +243,24 @@ function appendCpuKindReview(lines: string[], report: LanternaReport): void {
     return;
   }
   lines.push(`- quality: ${cpu.quality?.confidence ?? 'unknown'}`);
-  if (isRenderableReviewFrame(cpu.summary?.topUserHotspot)) {
+  if (isRenderableReviewFrame(cpu.summary?.topCpuCulprit)) {
+    lines.push(
+      `- top_cpu_culprit: ${frameLabel(cpu.summary.topCpuCulprit)} at ${frameLocation(cpu.summary.topCpuCulprit)} (${formatPct(cpu.summary.topCpuCulprit.selfPct)} self, ${formatPct(cpu.summary.topCpuCulprit.totalPct)} total)`,
+    );
+  }
+  if (
+    isRenderableReviewFrame(cpu.summary?.topRequestEntry) &&
+    !sameFrameLocation(cpu.summary.topRequestEntry, cpu.summary?.topCpuCulprit)
+  ) {
+    lines.push(
+      `- top_request_entry: ${frameLabel(cpu.summary.topRequestEntry)} at ${frameLocation(cpu.summary.topRequestEntry)} (${formatPct(cpu.summary.topRequestEntry.totalPct)} total)`,
+    );
+  }
+  if (
+    isRenderableReviewFrame(cpu.summary?.topUserHotspot) &&
+    !sameFrameLocation(cpu.summary.topUserHotspot, cpu.summary?.topCpuCulprit) &&
+    !sameFrameLocation(cpu.summary.topUserHotspot, cpu.summary?.topRequestEntry)
+  ) {
     lines.push(
       `- top_user_hotspot: ${frameLabel(cpu.summary.topUserHotspot)} at ${frameLocation(cpu.summary.topUserHotspot)}`,
     );
@@ -287,6 +320,7 @@ function appendMemoryKindReview(lines: string[], report: LanternaReport): void {
     return;
   }
   const usage = memory.memoryUsage;
+  lines.push(`- quality: ${memory.quality?.confidence ?? 'unknown'}`);
   lines.push(
     `- memory_usage: ${
       usage?.available
@@ -460,6 +494,9 @@ function degradingSignalCaveats(report: LanternaReport): string[] {
   if (report.profiles?.memory?.memoryUsage?.available === false) {
     caveats.push('memory usage series unavailable');
   }
+  if (report.profiles?.memory?.quality?.confidence === 'low') {
+    caveats.push('memory confidence low');
+  }
   const heapSnapshotWarnings = report.profiles?.memory?.heapSnapshotAnalysis?.warnings ?? [];
   if (heapSnapshotWarnings.length > 0) {
     caveats.push(`heap snapshot warnings: ${heapSnapshotWarnings.join('; ')}`);
@@ -484,8 +521,14 @@ function degradingSignalCaveats(report: LanternaReport): string[] {
 function hasInsufficientSignal(report: LanternaReport): boolean {
   return (
     blockingIntegrityCaveats(report).length > 0 ||
-    degradingSignalCaveats(report).length > 0 ||
+    rerunRequiredSignalCaveats(report).length > 0 ||
     (report.findings ?? []).some((finding) => decisionForFinding(finding) === 'rerun')
+  );
+}
+
+function rerunRequiredSignalCaveats(report: LanternaReport): string[] {
+  return degradingSignalCaveats(report).filter(
+    (caveat) => caveat !== 'event-loop timing unavailable' && caveat !== 'GC timing unavailable',
   );
 }
 
@@ -520,6 +563,135 @@ function candidateCallersFromEvidenceExtra(extra: unknown): UserCallerAttributio
   return Array.isArray(value) ? (value as UserCallerAttribution[]) : [];
 }
 
+function cpuUserStackForFinding(finding: Finding, report: LanternaReport): string | undefined {
+  const stack = matchedCpuUserStackForFinding(finding, report);
+  if (!stack) return undefined;
+  const leafSuffix =
+    stack.leaf && !isUserStackFrame(stack.leaf)
+      ? `, leaf ${frameLabel(stack.leaf)} at ${frameLocation(stack.leaf)}`
+      : '';
+  return `${formatCpuStackFrames(stack.userFrames)} (${formatPct(stack.weightPct)} stack${leafSuffix})`;
+}
+
+function matchedCpuUserStackForFinding(
+  finding: Finding,
+  report: LanternaReport,
+): { userFrames: CpuStackFrame[]; leaf?: CpuStackFrame; weightPct: number } | undefined {
+  if (finding.profileKind !== 'cpu') return undefined;
+  const hotStacks = report.profiles?.cpu?.hotStacks ?? [];
+  const matches = hotStacks
+    .map((stack) => ({
+      stack,
+      score: scoreCpuStackForFinding(stack.frames, finding),
+    }))
+    .filter((match) => match.score > 0)
+    .sort(
+      (left, right) => right.score - left.score || right.stack.weightPct - left.stack.weightPct,
+    );
+  const best = matches[0];
+  if (!best) return undefined;
+  const stack = trimCpuUserStackForFinding(best.stack.frames, finding);
+  if (stack.userFrames.length === 0) return undefined;
+  return { ...stack, weightPct: best.stack.weightPct };
+}
+
+function scoreCpuStackForFinding(frames: readonly CpuStackFrame[], finding: Finding): number {
+  let score = frames.some((frame) => frameMatchesTarget(frame, finding.evidence)) ? 100 : 0;
+  const callee = calleeNameFromExtra(finding.evidence.extra);
+  if (callee && frames.some((frame) => frameMatchesFunction(frame, callee))) score += 50;
+  for (const caller of candidateCallersFromEvidenceExtra(finding.evidence.extra)) {
+    if (frames.some((frame) => frameMatchesTarget(frame, caller))) {
+      score += caller.stackDistance === 1 ? 12 : 8;
+    }
+  }
+  return score;
+}
+
+function trimCpuUserStackForFinding(
+  frames: readonly CpuStackFrame[],
+  finding: Finding,
+): { userFrames: CpuStackFrame[]; leaf?: CpuStackFrame } {
+  const causalFrames = [...frames].reverse();
+  const endIndex = cpuStackEndIndex(causalFrames, finding);
+  const prefix = causalFrames.slice(0, endIndex + 1);
+  const firstUserIndex = prefix.findIndex(isUserStackFrame);
+  if (firstUserIndex < 0) return { userFrames: [], leaf: prefix[prefix.length - 1] };
+  const userFrames = prefix.slice(firstUserIndex).filter(isUserStackFrame);
+  return { userFrames, leaf: prefix[prefix.length - 1] };
+}
+
+function cpuStackEndIndex(frames: readonly CpuStackFrame[], finding: Finding): number {
+  const callee = calleeNameFromExtra(finding.evidence.extra);
+  if (callee) {
+    const calleeIndex = frames.findIndex((frame) => frameMatchesFunction(frame, callee));
+    if (calleeIndex >= 0) return calleeIndex;
+  }
+  const evidenceIndex = frames.findIndex((frame) => frameMatchesTarget(frame, finding.evidence));
+  return evidenceIndex >= 0 ? evidenceIndex : frames.length - 1;
+}
+
+function formatCpuStackFrames(frames: readonly CpuStackFrame[]): string {
+  const labels = frames.map((frame) => `${frameLabel(frame)} at ${frameLocation(frame)}`);
+  if (labels.length <= 12) return labels.join(' -> ');
+  return [...labels.slice(0, 5), '...', ...labels.slice(-6)].join(' -> ');
+}
+
+function calleeNameFromExtra(extra: unknown): string | undefined {
+  if (!extra || typeof extra !== 'object') return undefined;
+  const value = Reflect.get(extra, 'callee');
+  return typeof value === 'string' && value.length > 0 ? value : undefined;
+}
+
+function frameMatchesTarget(
+  frame: CpuStackFrame,
+  target: {
+    function?: string;
+    file: string;
+    line: number;
+    source?: { file: string; line: number };
+  },
+): boolean {
+  const locationMatches =
+    sameFrameFileLine(frame, target.file, target.line) ||
+    (target.source ? sameFrameFileLine(frame, target.source.file, target.source.line) : false);
+  if (!locationMatches) return false;
+  if (!target.function || !frame.function) return true;
+  return frameMatchesFunction(frame, target.function);
+}
+
+function sameFrameFileLine(frame: CpuStackFrame, file: string, line: number): boolean {
+  return (
+    (frame.file === file && frame.line === line) ||
+    (frame.source?.file === file && frame.source.line === line)
+  );
+}
+
+function frameMatchesFunction(
+  frame: Pick<CpuStackFrame, 'function'>,
+  functionName: string,
+): boolean {
+  const normalizedFrameName = stripV8OptimizationPrefix(frame.function ?? '');
+  const normalizedTargetName = stripV8OptimizationPrefix(functionName);
+  return (
+    normalizedFrameName === normalizedTargetName ||
+    normalizedFrameName.endsWith(`.${normalizedTargetName}`)
+  );
+}
+
+function stripV8OptimizationPrefix(functionName: string): string {
+  return functionName.replace(/^[*~]/, '');
+}
+
+function isUserStackFrame(frame: CpuStackFrame): boolean {
+  return frame.category === 'user';
+}
+
+function isAnonymousUserStackFrame(frame: CpuStackFrame): boolean {
+  return (
+    isUserStackFrame(frame) && (frame.function === '(anonymous)' || frame.function?.trim() === '')
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Location, files, frames helpers.
 // ---------------------------------------------------------------------------
@@ -552,6 +724,11 @@ function userCallerCell(caller: UserCallerAttribution | undefined): string {
   return `${frameLocation(caller)} (${caller.confidence})`;
 }
 
+function sameFrameLocation(left: Frame | undefined, right: Frame | undefined): boolean {
+  if (!left || !right) return false;
+  return frameLocation(left) === frameLocation(right) && left.function === right.function;
+}
+
 function userCallerSuffix(caller: UserCallerAttribution | undefined): string {
   if (!caller) return '';
   return ` — user_caller ${formatUserCallerCompact(caller)}`;
@@ -565,14 +742,15 @@ function formatUserCallerCompact(caller: UserCallerAttribution): string {
 
 function collectReadTargets(report: LanternaReport): ReadTarget[] {
   const targets: ReadTarget[] = [];
-  collectFindingReadTargets(targets, report.findings ?? []);
+  collectFindingReadTargets(targets, report);
   collectAggregateReadTargets(targets, report);
   return dedupeReadTargets(targets)
     .sort((a, b) => a.rank - b.rank || a.location.localeCompare(b.location))
     .slice(0, 10);
 }
 
-function collectFindingReadTargets(targets: ReadTarget[], findings: Finding[]): void {
+function collectFindingReadTargets(targets: ReadTarget[], report: LanternaReport): void {
+  const findings = report.findings ?? [];
   findings.forEach((finding, index) => {
     const signal = formatImpact(finding);
     const findingDecision = decisionForFinding(finding);
@@ -588,6 +766,7 @@ function collectFindingReadTargets(targets: ReadTarget[], findings: Finding[]): 
         decision: findingIsActionable ? 'read-first' : 'inspect-lead',
         rank: findingIsActionable ? index : 100 + index,
       });
+      collectCpuUserStackReadTargets(targets, finding, report, index);
       return;
     }
     const userCaller = userCallerFromEvidenceExtra(finding.evidence.extra);
@@ -625,58 +804,100 @@ function collectFindingReadTargets(targets: ReadTarget[], findings: Finding[]): 
           rank: 150 + index * 10 + candidateIndex,
         });
       });
+    collectCpuUserStackReadTargets(targets, finding, report, index);
+  });
+}
+
+function collectCpuUserStackReadTargets(
+  targets: ReadTarget[],
+  finding: Finding,
+  report: LanternaReport,
+  findingIndex: number,
+): void {
+  const stack = matchedCpuUserStackForFinding(finding, report);
+  if (!stack) return;
+  const hasNamedUserFrame = stack.userFrames.some((frame) => !isAnonymousUserStackFrame(frame));
+  stack.userFrames.forEach((frame, frameIndex) => {
+    if (hasNamedUserFrame && isAnonymousUserStackFrame(frame)) return;
+    const target = readTargetFrame(frame);
+    if (!target) return;
+    targets.push({
+      ...target,
+      reason: 'cpu-user-stack',
+      source: 'finding',
+      signal: `${formatPct(stack.weightPct)} stack`,
+      decision: frameMatchesTarget(frame, finding.evidence) ? 'inspect-lead' : 'supporting-context',
+      rank: 80 + findingIndex * 20 + frameIndex,
+    });
   });
 }
 
 function collectAggregateReadTargets(targets: ReadTarget[], report: LanternaReport): void {
   const cpu = report.profiles?.cpu;
   if (cpu) {
-    pushReadTarget(targets, cpu.summary?.topUserHotspot, {
-      reason: 'top-cpu-hotspot',
+    const hasCpuFinding = (report.findings ?? []).some((finding) => finding.profileKind === 'cpu');
+    pushReadTarget(targets, cpu.summary?.topCpuCulprit, {
+      reason: 'top-cpu-culprit',
       source: 'cpu',
-      signal: signalFromPctFrame(cpu.summary?.topUserHotspot),
-      decision: 'inspect-lead',
-      rank: 200,
+      signal: signalFromPctFrame(cpu.summary?.topCpuCulprit),
+      decision: 'read-first',
+      rank: 180,
     });
-    for (const hotspot of cpu.hotspots ?? []) {
-      const userCaller = readTargetFrame(hotspot.userCaller);
-      if (userCaller && isExternalOrRuntimeFrame(hotspot)) {
-        targets.push({
-          ...userCaller,
-          reason: reasonForExternalUserCaller(hotspot),
+    if (!hasCpuFinding) {
+      pushReadTarget(targets, cpu.summary?.topRequestEntry, {
+        reason: 'top-request-entry',
+        source: 'cpu',
+        signal: signalFromTotalPctFrame(cpu.summary?.topRequestEntry),
+        decision: 'inspect-lead',
+        rank: 195,
+      });
+      pushReadTarget(targets, cpu.summary?.topUserHotspot, {
+        reason: 'top-user-hotspot',
+        source: 'cpu',
+        signal: signalFromTotalPctFrame(cpu.summary?.topUserHotspot),
+        decision: 'inspect-lead',
+        rank: 200,
+      });
+      for (const hotspot of cpu.hotspots ?? []) {
+        const userCaller = readTargetFrame(hotspot.userCaller);
+        if (userCaller && isExternalOrRuntimeFrame(hotspot)) {
+          targets.push({
+            ...userCaller,
+            reason: reasonForExternalUserCaller(hotspot),
+            source: 'cpu',
+            signal: signalFromPctFrame(hotspot),
+            decision: hotspot.userCaller?.confidence === 'high' ? 'read-first' : 'inspect-lead',
+            rank: hotspot.userCaller?.confidence === 'high' ? 210 : 230,
+          });
+        } else {
+          pushReadTarget(targets, hotspot, {
+            reason: 'top-cpu-hotspot',
+            source: 'cpu',
+            signal: signalFromPctFrame(hotspot),
+            decision: 'inspect-lead',
+            rank: 220,
+          });
+        }
+      }
+      for (const stack of cpu.hotStacks ?? []) {
+        const frame = stack.frames.find((candidate) => Boolean(readTargetFrame(candidate)));
+        pushReadTarget(targets, frame, {
+          reason: 'hot-stack-cluster',
           source: 'cpu',
-          signal: signalFromPctFrame(hotspot),
-          decision: hotspot.userCaller?.confidence === 'high' ? 'read-first' : 'inspect-lead',
-          rank: hotspot.userCaller?.confidence === 'high' ? 210 : 230,
-        });
-      } else {
-        pushReadTarget(targets, hotspot, {
-          reason: 'top-cpu-hotspot',
-          source: 'cpu',
-          signal: signalFromPctFrame(hotspot),
-          decision: 'inspect-lead',
-          rank: 220,
+          signal: signalFromWeight(stack.weightPct),
+          decision: 'supporting-context',
+          rank: 240,
         });
       }
-    }
-    for (const stack of cpu.hotStacks ?? []) {
-      const frame = stack.frames.find((candidate) => Boolean(readTargetFrame(candidate)));
-      pushReadTarget(targets, frame, {
-        reason: 'hot-stack-cluster',
-        source: 'cpu',
-        signal: signalFromWeight(stack.weightPct),
-        decision: 'supporting-context',
-        rank: 240,
-      });
-    }
-    for (const cluster of cpu.hotStackClusters ?? []) {
-      pushReadTarget(targets, cluster.anchor, {
-        reason: 'hot-stack-cluster',
-        source: 'cpu',
-        signal: signalFromWeight(cluster.weightPct),
-        decision: 'supporting-context',
-        rank: 250,
-      });
+      for (const cluster of cpu.hotStackClusters ?? []) {
+        pushReadTarget(targets, cluster.anchor, {
+          reason: 'hot-stack-cluster',
+          source: 'cpu',
+          signal: signalFromWeight(cluster.weightPct),
+          decision: 'supporting-context',
+          rank: 250,
+        });
+      }
     }
   }
   const memory = report.profiles?.memory;
@@ -813,7 +1034,7 @@ function pushReadTarget(
 function readTargetFrame(
   frame: Frame | undefined,
 ): Pick<ReadTarget, 'file' | 'location' | 'generatedOutput'> | undefined {
-  if (!frame || isPseudoFrameFunction(frame.function)) return undefined;
+  if (!frame) return undefined;
   if (frame.source && isEditableUserFile(frame.source.file)) {
     return {
       file: frame.source.file,
@@ -869,8 +1090,16 @@ function formatReadTargetReason(reason: ReadTargetReason): string {
       return 'user caller for dependency hotspot';
     case 'runtime-hotspot-caller':
       return 'user caller for runtime hotspot';
+    case 'cpu-user-stack':
+      return 'CPU user stack';
+    case 'top-cpu-culprit':
+      return 'top CPU culprit';
     case 'top-cpu-hotspot':
       return 'top CPU hotspot';
+    case 'top-request-entry':
+      return 'top request entry';
+    case 'top-user-hotspot':
+      return 'top user hotspot';
     case 'hot-stack-cluster':
       return 'hot stack cluster';
     case 'memory-allocator':
@@ -921,6 +1150,13 @@ function signalFromPctFrame(frame: (Frame & { selfPct?: number }) | undefined): 
     return `${formatPct(frame.selfPct)} self`;
   }
   return '—';
+}
+
+function signalFromTotalPctFrame(frame: (Frame & { totalPct?: number }) | undefined): string {
+  if (typeof frame?.totalPct === 'number' && Number.isFinite(frame.totalPct)) {
+    return `${formatPct(frame.totalPct)} total`;
+  }
+  return signalFromPctFrame(frame);
 }
 
 function signalFromWeight(weightPct: number | undefined): string {
@@ -1037,7 +1273,23 @@ function isNonEmpty(value: string | undefined): value is string {
 
 function isEditableUserFile(value: string | undefined): value is string {
   if (!isNonEmpty(value)) return false;
-  return !isPseudoFile(value) && !isDependencyOrRuntimePath(value) && !isVirtualSourcePath(value);
+  return (
+    looksLikeFilePath(value) &&
+    !isPseudoFile(value) &&
+    !isDependencyOrRuntimePath(value) &&
+    !isVirtualSourcePath(value)
+  );
+}
+
+function looksLikeFilePath(value: string): boolean {
+  return (
+    value.startsWith('/') ||
+    value.startsWith('./') ||
+    value.startsWith('../') ||
+    value.includes('/') ||
+    value.includes('\\') ||
+    /\.[A-Za-z0-9]+$/.test(value)
+  );
 }
 
 function isGeneratedOutputPath(file: string): boolean {

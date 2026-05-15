@@ -1,4 +1,4 @@
-import { createWriteStream, mkdirSync, readFileSync, statSync } from 'node:fs';
+import { createWriteStream, mkdirSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { isNoiseRetainerPath, shouldKeepNoiseFrames } from '../../analysis/noise-filters.js';
 import type { CdpClient } from '../../inspector/client.js';
@@ -107,6 +107,7 @@ const DEFAULT_MAX_RETAINER_DEPTH = 8;
 const DEFAULT_MAX_GROUPS = 20;
 const DEFAULT_MAX_PATHS_PER_GROUP = 3;
 const DEFAULT_MAX_SNAPSHOT_BYTES = 512 * 1024 * 1024;
+export const DEFAULT_HEAP_SNAPSHOT_CAPTURE_TIMEOUT_MS = 30_000;
 const WEAK_EDGE_TYPE = 'weak';
 
 export function normalizeHeapSnapshotAnalysisOptions(
@@ -329,8 +330,8 @@ export function buildHeapSnapshotAnalysisReport(
     );
   }
   try {
-    assertSnapshotWithinLimit(captured.start.path, options.maxSnapshotBytes);
-    assertSnapshotWithinLimit(captured.end.path, options.maxSnapshotBytes);
+    assertSnapshotUsable(captured.start.path, options.maxSnapshotBytes);
+    assertSnapshotUsable(captured.end.path, options.maxSnapshotBytes);
     const start = parseHeapSnapshot(JSON.parse(readFileSync(captured.start.path, 'utf8')));
     const end = parseHeapSnapshot(JSON.parse(readFileSync(captured.end.path, 'utf8')));
     const analysis = analyzeHeapSnapshotGrowth(start, end, options);
@@ -352,8 +353,12 @@ export function buildHeapSnapshotAnalysisReport(
   }
 }
 
-function assertSnapshotWithinLimit(path: string, maxSnapshotBytes: number): void {
+function assertSnapshotUsable(path: string, maxSnapshotBytes: number): void {
   const size = statSync(path).size;
+  if (size === 0) {
+    rmSync(path, { force: true });
+    throw new Error(`heap snapshot ${path} is 0 bytes; ignoring it`);
+  }
   if (size > maxSnapshotBytes) {
     throw new Error(
       `heap snapshot ${path} is ${size} bytes, above the ${maxSnapshotBytes} byte analysis limit`,
@@ -405,13 +410,21 @@ export function resolveHeapSnapshotPath(outputDir: string, label: 'start' | 'end
 export async function takeHeapSnapshotToFile(
   cdp: CdpClient,
   path: string,
-  options: { abortSignal?: AbortSignal } = {},
+  options: { abortSignal?: AbortSignal; timeoutMs?: number } = {},
 ): Promise<void> {
   mkdirSync(dirname(path), { recursive: true });
   await cdp.send('HeapProfiler.enable');
   await new Promise<void>((resolve, reject) => {
     const stream = createWriteStream(path, { encoding: 'utf8' });
     let settled = false;
+    const timeoutMs = options.timeoutMs ?? DEFAULT_HEAP_SNAPSHOT_CAPTURE_TIMEOUT_MS;
+    const timeout =
+      timeoutMs > 0
+        ? setTimeout(() => {
+            finish(new Error(`heap snapshot capture timed out after ${timeoutMs}ms`));
+          }, timeoutMs)
+        : undefined;
+    if (typeof timeout?.unref === 'function') timeout.unref();
     const offChunk = cdp.on('HeapProfiler.addHeapSnapshotChunk', (params) => {
       const chunk = (params as { chunk?: unknown }).chunk;
       if (typeof chunk === 'string') stream.write(chunk);
@@ -427,9 +440,11 @@ export async function takeHeapSnapshotToFile(
       settled = true;
       offChunk();
       offClose();
+      if (timeout) clearTimeout(timeout);
       options.abortSignal?.removeEventListener('abort', onAbort);
       if (error) {
         stream.destroy();
+        rmSync(path, { force: true });
         reject(error);
       } else {
         stream.end(() => resolve());

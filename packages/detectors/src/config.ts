@@ -98,6 +98,7 @@ export interface DetectorThresholds {
     readonly minTotalPct: number;
     readonly warningSelfPct: number;
   };
+  readonly cpuHotspot: CpuHotspotThresholds;
   readonly deoptLoop: {
     readonly minCount: number;
     readonly criticalCount: number;
@@ -123,6 +124,17 @@ export interface HotAsyncContextThresholds {
   /** Don't fire unless attributed coverage is at least this %. */
   readonly minAttributedCoveragePct: number;
   /** Cap on emitted findings. */
+  readonly maxFindings: number;
+}
+
+export interface CpuHotspotThresholds {
+  /** User-code self CPU that is actionable without a pattern-specific detector. */
+  readonly minSelfPct: number;
+  /** User-code inclusive CPU that becomes a lower-confidence caller lead when no self hotspot exists. */
+  readonly minTotalPct: number;
+  /** Above either value the generic hotspot is `critical`. */
+  readonly criticalPct: number;
+  /** Emit at most this many generic hotspots. */
   readonly maxFindings: number;
 }
 
@@ -261,6 +273,10 @@ export const DETECTOR_THRESHOLDS: DetectorThresholds = {
   // module resolution is happening per request. warningSelfPct escalates
   // when the resolver itself is churning (3% self = lots of cache misses).
   requireInHotPath: { minSelfPct: 0.5, minTotalPct: 1, warningSelfPct: 3 },
+  // Generic user-code CPU hotspot fallback. Pattern detectors should own
+  // known anti-patterns; self-heavy user frames are actionable, inclusive-only
+  // user frames are emitted as lower-confidence caller/context leads.
+  cpuHotspot: { minSelfPct: 10, minTotalPct: 25, criticalPct: 40, maxFindings: 3 },
   // 5 deopts for the same function is meaningful (V8 stops optimising
   // after a few tries); 20+ is pathological.
   deoptLoop: { minCount: 5, criticalCount: 20 },

@@ -5,6 +5,7 @@ import type {
   FindingRemediation,
   Hotspot,
   SyncCryptoEvidenceExtra,
+  UserCallerAttribution,
 } from '@lanterna-profiler/core';
 import { defineBuiltinFinding, stripOptPrefix } from '@lanterna-profiler/core';
 import { DETECTOR_THRESHOLDS, SYNC_CRYPTO_FNS, SYNC_CRYPTO_PATTERNS } from '../config.js';
@@ -62,6 +63,7 @@ import {
   exceedsCategoryThreshold,
   findStallCorrelation,
   isBuiltinRuntimeHotspot,
+  readFrameSourceText,
   resolveAttribution,
   severityForPct,
 } from './shared.js';
@@ -91,7 +93,9 @@ export const syncCryptoDetector: KindScopedDetector<'cpu'> = {
         continue;
       }
       if (hotspot.totalPct < thresholds.minTotalPct && !familyExceeded) continue;
-      findings.push(buildFinding(hotspot, categoryTotalPct, report, context));
+      findings.push(
+        buildFinding(hotspot, categoryTotalPct, report, context, cpu.view.bundle.target.cwd),
+      );
     }
     return findings;
   },
@@ -102,13 +106,16 @@ function buildFinding(
   categoryTotalPct: number,
   report: { eventLoop: EventLoopReport },
   context: CpuHotspotContext,
+  cwd: string,
 ): BuiltinFinding<'sync-crypto'> {
   const { attribution, caller, candidateCallers } = resolveAttribution(hotspot, context);
+  const sourceCallsiteCaller =
+    findSourceCallsiteCaller(candidateCallers, hotspot.function, cwd) ?? caller;
   const evidenceExtra: SyncCryptoEvidenceExtra = {
     callee: hotspot.function,
     calleeTotalPct: hotspot.totalPct,
     ...buildAttributionEvidence(attribution, caller, candidateCallers),
-    eventLoopCorrelation: findStallCorrelation(attribution, report),
+    eventLoopCorrelation: findStallCorrelation(caller ?? attribution, report),
     categoryTotalPct: categoryTotalPct > 0 ? categoryTotalPct : undefined,
   };
   const thresholds = DETECTOR_THRESHOLDS.syncCrypto;
@@ -119,7 +126,7 @@ function buildFinding(
       severity: severityForPct(hotspot.totalPct, thresholds.criticalPct),
       title: `Synchronous crypto on hot path (${hotspot.function})`,
       hotspot,
-      caller,
+      caller: sourceCallsiteCaller,
       selfPct: hotspot.totalPct,
       extra: evidenceExtra,
       measurements: {
@@ -143,4 +150,79 @@ function buildFinding(
       ],
     }),
   );
+}
+
+function findSourceCallsiteCaller(
+  candidates: readonly UserCallerAttribution[],
+  callee: string,
+  cwd: string,
+): UserCallerAttribution | undefined {
+  const pattern = new RegExp(`\\b${escapeRegExp(callExpressionName(callee))}\\s*\\(`);
+  for (const candidate of candidates) {
+    const source = readFrameSourceText(candidate, cwd);
+    const anchorLine = candidate.source?.line ?? candidate.line;
+    const line =
+      findPatternLineNearAnchor(source, anchorLine, pattern) ??
+      findPatternLineInFunctionBlock(source, anchorLine, pattern);
+    if (line !== undefined) {
+      return {
+        ...candidate,
+        line,
+        ...(candidate.source ? { source: { ...candidate.source, line } } : {}),
+      };
+    }
+  }
+  return undefined;
+}
+
+function callExpressionName(callee: string): string {
+  const normalized = stripOptPrefix(callee);
+  return normalized.split('.').at(-1) ?? normalized;
+}
+
+function findPatternLineNearAnchor(
+  sourceText: string | undefined,
+  line: number,
+  pattern: RegExp,
+  radius = 2,
+): number | undefined {
+  if (!sourceText || line <= 0) return undefined;
+  const lines = sourceText.split(/\r?\n/);
+  const index = line - 1;
+  if (index < 0 || index >= lines.length) return undefined;
+  const start = Math.max(0, index - radius);
+  const end = Math.min(lines.length, index + radius + 1);
+  for (let current = start; current < end; current += 1) {
+    if (pattern.test(lines[current] ?? '')) return current + 1;
+  }
+  return undefined;
+}
+
+function findPatternLineInFunctionBlock(
+  sourceText: string | undefined,
+  line: number,
+  pattern: RegExp,
+): number | undefined {
+  if (!sourceText || line <= 0) return undefined;
+  const lines = sourceText.split(/\r?\n/);
+  let depth = 0;
+  let enteredBlock = false;
+  for (let current = line - 1; current < lines.length; current += 1) {
+    const text = lines[current] ?? '';
+    if (enteredBlock && pattern.test(text)) return current + 1;
+    for (const char of text) {
+      if (char === '{') {
+        depth += 1;
+        enteredBlock = true;
+      } else if (char === '}') {
+        depth -= 1;
+        if (enteredBlock && depth <= 0) return undefined;
+      }
+    }
+  }
+  return undefined;
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }

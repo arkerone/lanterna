@@ -140,6 +140,7 @@ export class AnalysisPipeline {
     for (const analyzer of sortAnalyzers(this.findingAnalyzers)) {
       try {
         findings.push(...analyzer.run(context, snapshot));
+        snapshot.findings = findings;
       } catch (error) {
         logger.warn({ analyzerId: analyzer.id, err: error }, 'analysis finding analyzer failed');
         recordCaptureDiagnostic(bundle.captureIntegrity, {

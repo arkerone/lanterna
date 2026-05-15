@@ -14,6 +14,7 @@ import {
   buildAttributionEvidence,
   type CpuHotspotContext,
   findStallCorrelation,
+  readFrameSourceText,
   resolveAttribution,
 } from './shared.js';
 
@@ -25,11 +26,13 @@ export const jsonOnHotPathDetector: KindScopedDetector<'cpu'> = {
     const report = cpu.report;
     const context: CpuHotspotContext = cpu.view.hotspotAnalysis;
     const thresholds = DETECTOR_THRESHOLDS.jsonHotPath;
+    const cwd = cpu.view.bundle.target.cwd;
     const { categoryTotalPct } = aggregateByPatterns(context.fullHotspots, JSON_FUNCTION_PATTERNS, {
       normalize: stripOptPrefix,
     });
     const familyExceeded = categoryTotalPct >= thresholds.categoryTotalPct;
     const findings: Finding[] = [];
+    const seen = new Set<string>();
     for (const hotspot of context.fullHotspots) {
       const normalizedFunctionName = stripOptPrefix(hotspot.function);
       const patternMatch = JSON_FUNCTION_PATTERNS.find((pattern) =>
@@ -38,11 +41,53 @@ export const jsonOnHotPathDetector: KindScopedDetector<'cpu'> = {
       if (!patternMatch) continue;
       if (hotspot.category !== 'node:builtin' && hotspot.category !== 'native') continue;
       if (hotspot.totalPct < thresholds.minTotalPct && !familyExceeded) continue;
-      findings.push(buildFinding(hotspot, patternMatch.api, categoryTotalPct, report, context));
+      const finding = buildFinding(hotspot, patternMatch.api, categoryTotalPct, report, context);
+      if (seen.has(finding.id)) continue;
+      seen.add(finding.id);
+      findings.push(finding);
+    }
+    for (const hotspot of context.fullHotspots) {
+      if (hotspot.category !== 'user') continue;
+      if (hotspot.totalPct < thresholds.minTotalPct && !familyExceeded) continue;
+      if (!hasDominantSelfCost(hotspot, thresholds.minTotalPct)) continue;
+      const api = inlinedJsonApi(readFrameSourceText(hotspot, cwd), hotspot.line);
+      if (!api) continue;
+      const finding = buildFinding(hotspot, api, categoryTotalPct, report, context);
+      if (seen.has(finding.id)) continue;
+      seen.add(finding.id);
+      findings.push(finding);
     }
     return findings;
   },
 };
+
+function hasDominantSelfCost(hotspot: Hotspot, minSelfPct: number): boolean {
+  if (hotspot.selfPct < minSelfPct) return false;
+  if (hotspot.totalPct <= 0) return true;
+  return hotspot.selfPct / hotspot.totalPct >= 0.5;
+}
+
+function inlinedJsonApi(sourceText: string | undefined, line: number): string | undefined {
+  const sourceWindow = sourceTextAroundLine(sourceText, line);
+  if (!sourceWindow) return undefined;
+  if (/\bJSON\.stringify\s*\(/.test(sourceWindow)) return 'JSON.stringify';
+  if (/\bJSON\.parse\s*\(/.test(sourceWindow)) return 'JSON.parse';
+  return undefined;
+}
+
+function sourceTextAroundLine(
+  sourceText: string | undefined,
+  line: number,
+  radius = 3,
+): string | undefined {
+  if (!sourceText || line <= 0) return undefined;
+  const lines = sourceText.split(/\r?\n/);
+  const index = line - 1;
+  if (index < 0 || index >= lines.length) return undefined;
+  const start = Math.max(0, index - radius);
+  const end = Math.min(lines.length, index + radius + 1);
+  return lines.slice(start, end).join('\n');
+}
 
 function buildFinding(
   hotspot: Hotspot,
@@ -53,7 +98,7 @@ function buildFinding(
 ): BuiltinFinding<'json-on-hot-path'> {
   const { attribution, caller, candidateCallers } = resolveAttribution(hotspot, context);
   const evidenceExtra: JsonHotPathEvidenceExtra = {
-    callee: hotspot.function,
+    callee: hotspot.category === 'user' ? api : hotspot.function,
     calleeTotalPct: hotspot.totalPct,
     ...buildAttributionEvidence(attribution, caller, candidateCallers),
     eventLoopCorrelation: findStallCorrelation(caller, report),

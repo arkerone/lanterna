@@ -1,4 +1,8 @@
 import assert from 'node:assert/strict';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import {
   buildLanternaReport,
   type CaptureBundle,
@@ -358,6 +362,139 @@ describe('findings – sync-crypto split caller attribution', () => {
   });
 });
 
+describe('findings – sync-crypto exact source callsite', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'lanterna-sync-source-'));
+  const sourcePath = join(dir, 'app.mjs');
+  writeFileSync(
+    sourcePath,
+    [
+      "import { pbkdf2Sync } from 'node:crypto';",
+      '',
+      'function hashPassword(password, salt) {',
+      "  return pbkdf2Sync(password, salt, 100_000, 32, 'sha256').toString('hex');",
+      '}',
+      '',
+      'function processBatch(size) {',
+      '  const out = [];',
+      '  for (let i = 0; i < size; i++) {',
+      '    out.push(hashPassword(`user-${i}`, `salt-${i}`));',
+      '  }',
+      '  return out;',
+      '}',
+      '',
+      'processBatch(20);',
+    ].join('\n'),
+  );
+
+  const profile: RawCpuProfile = {
+    nodes: [
+      {
+        id: 1,
+        callFrame: {
+          functionName: '(root)',
+          scriptId: '0',
+          url: '',
+          lineNumber: -1,
+          columnNumber: -1,
+        },
+        hitCount: 0,
+        children: [2],
+      },
+      {
+        id: 2,
+        callFrame: {
+          functionName: '(anonymous)',
+          scriptId: '1',
+          url: pathToFileURL(sourcePath).href,
+          lineNumber: 0,
+          columnNumber: 0,
+        },
+        hitCount: 0,
+        children: [3],
+      },
+      {
+        id: 3,
+        callFrame: {
+          functionName: 'processBatch',
+          scriptId: '1',
+          url: pathToFileURL(sourcePath).href,
+          lineNumber: 6,
+          columnNumber: 0,
+        },
+        hitCount: 2,
+        children: [4, 5],
+      },
+      {
+        id: 4,
+        callFrame: {
+          functionName: 'pbkdf2Sync',
+          scriptId: '2',
+          url: 'node:crypto',
+          lineNumber: 100,
+          columnNumber: 0,
+        },
+        hitCount: 60,
+        children: [],
+      },
+      {
+        id: 5,
+        callFrame: {
+          functionName: 'hashPassword',
+          scriptId: '1',
+          url: pathToFileURL(sourcePath).href,
+          lineNumber: 2,
+          columnNumber: 0,
+        },
+        hitCount: 0,
+        children: [6],
+      },
+      {
+        id: 6,
+        callFrame: {
+          functionName: 'pbkdf2Sync',
+          scriptId: '2',
+          url: 'node:crypto',
+          lineNumber: 100,
+          columnNumber: 0,
+        },
+        hitCount: 40,
+        children: [],
+      },
+    ],
+    startTime: 1000000,
+    endTime: 2000000,
+    samples: Array(60).fill(4).concat(Array(40).fill(6)).concat(Array(2).fill(3)),
+    timeDeltas: [],
+  };
+
+  const report = createReport(makeRaw(profile, { target: { cwd: dir } }), {
+    sampleIntervalMicros: 1000,
+    deep: false,
+    command: ['node', sourcePath],
+  });
+
+  it('uses the source line that directly calls the sync API as finding location', () => {
+    const finding = findFindingOrFail(
+      report,
+      (f) => f.id === 'sync-crypto-on-hot-path',
+      'sync-crypto finding',
+    );
+
+    assert.equal(finding.evidence.function, 'hashPassword');
+    assert.equal(finding.evidence.file, 'app.mjs');
+    assert.equal(finding.evidence.line, 4);
+  });
+
+  it('does not add an anonymous inclusive cpu-hotspot when sync-crypto explains the work', () => {
+    assert.equal(
+      report.findings.some((finding) => finding.category === 'cpu-hotspot'),
+      false,
+    );
+  });
+
+  rmSync(dir, { recursive: true, force: true });
+});
+
 describe('capture integrity – attach mode clean regression', () => {
   const report = makeReport('sync-crypto', {
     captureIntegrity: {
@@ -627,6 +764,67 @@ describe('findings – blocking-io', () => {
     );
     assert.equal((f.evidence.extra as Record<string, unknown>)?.proofLevel, 'attributed-caller');
   });
+
+  it('detects Node 24 zlib sync work reported as processChunkSync', () => {
+    const zlibProfile: RawCpuProfile = {
+      nodes: [
+        {
+          id: 1,
+          callFrame: {
+            functionName: '(root)',
+            scriptId: '0',
+            url: '',
+            lineNumber: -1,
+            columnNumber: -1,
+          },
+          hitCount: 0,
+          children: [2],
+        },
+        {
+          id: 2,
+          callFrame: {
+            functionName: 'compressPayload',
+            scriptId: '1',
+            url: `file://${CWD}/src/zlib.js`,
+            lineNumber: 10,
+            columnNumber: 0,
+          },
+          hitCount: 5,
+          children: [3],
+        },
+        {
+          id: 3,
+          callFrame: {
+            functionName: 'processChunkSync',
+            scriptId: '0',
+            url: 'node:zlib',
+            lineNumber: 0,
+            columnNumber: 0,
+          },
+          hitCount: 95,
+          children: [],
+        },
+      ],
+      startTime: 1000000,
+      endTime: 2000000,
+      samples: Array(95).fill(3).concat(Array(5).fill(2)),
+      timeDeltas: [],
+    };
+    const zlibReport = createReport(makeRaw(zlibProfile), {
+      sampleIntervalMicros: 1000,
+      deep: false,
+      command: ['node', 'app.js'],
+    });
+
+    const finding = findFindingOrFail(
+      zlibReport,
+      (f) => f.id.startsWith('blocking-io:zlib.'),
+      'zlib blocking-io finding',
+    );
+
+    assert.match(String((finding.evidence.extra as Record<string, unknown>)?.callee), /zlib/);
+    assert.equal(finding.evidence.function, 'compressPayload');
+  });
 });
 
 describe('findings – blocking-io false positive suppression', () => {
@@ -797,6 +995,77 @@ describe('findings – deopt-loop', () => {
       'deopt-loop finding',
     );
     assert.equal(f.severity, 'critical');
+  });
+
+  it('aggregates deopt traces without file and line by function name', () => {
+    const raw = makeRaw(
+      {
+        nodes: [
+          {
+            id: 1,
+            callFrame: {
+              functionName: '(root)',
+              scriptId: '0',
+              url: '',
+              lineNumber: -1,
+              columnNumber: -1,
+            },
+            hitCount: 0,
+            children: [2],
+          },
+          {
+            id: 2,
+            callFrame: {
+              functionName: 'shapeShift',
+              scriptId: '1',
+              url: `file://${CWD}/src/shapes.js`,
+              lineNumber: 22,
+              columnNumber: 0,
+            },
+            hitCount: 100,
+            children: [],
+          },
+        ],
+        startTime: 1000000,
+        endTime: 2000000,
+        samples: Array(100).fill(2),
+        timeDeltas: [],
+      },
+      {
+        deopts: [
+          {
+            function: 'shapeShift',
+            file: '',
+            line: 0,
+            reason: 'wrong map',
+            bailoutType: 'soft',
+            count: 3,
+          },
+          {
+            function: 'shapeShift',
+            file: '',
+            line: 0,
+            reason: 'not a Smi',
+            bailoutType: 'soft',
+            count: 3,
+          },
+        ],
+      },
+    );
+    const deoptReport = createReport(raw, {
+      sampleIntervalMicros: 1000,
+      deep: true,
+      command: ['node', 'app.js'],
+    });
+
+    const finding = findFindingOrFail(
+      deoptReport,
+      (f) => f.id.startsWith('deopt-loop:shapeShift'),
+      'deopt-loop finding without file/line',
+    );
+
+    assert.equal((finding.evidence.extra as Record<string, unknown>).count, 6);
+    assert.equal(finding.evidence.file, 'src/shapes.js');
   });
 
   it('does not emit deopt-loop without --deep mode', () => {
@@ -1069,6 +1338,247 @@ describe('findings – json-on-hot-path', () => {
     assert.match(String((f.evidence.extra as Record<string, unknown>)?.callee), /JSON\.stringify/);
     assert.equal((f.evidence.extra as Record<string, unknown>)?.proofLevel, 'attributed-caller');
   });
+
+  it('detects JSON work inlined into a hot user frame when source contains JSON calls', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'lanterna-json-inline-'));
+    try {
+      const sourcePath = join(dir, 'http.js');
+      writeFileSync(
+        sourcePath,
+        [
+          'export function serializeResponse(payload) {',
+          '  return JSON.stringify(payload);',
+          '}',
+        ].join('\n'),
+      );
+      const inlineProfile: RawCpuProfile = {
+        nodes: [
+          {
+            id: 1,
+            callFrame: {
+              functionName: '(root)',
+              scriptId: '0',
+              url: '',
+              lineNumber: -1,
+              columnNumber: -1,
+            },
+            hitCount: 0,
+            children: [2],
+          },
+          {
+            id: 2,
+            callFrame: {
+              functionName: 'serializeResponse',
+              scriptId: '1',
+              url: pathToFileURL(sourcePath).href,
+              lineNumber: 1,
+              columnNumber: 0,
+            },
+            hitCount: 100,
+            children: [],
+          },
+        ],
+        startTime: 1000000,
+        endTime: 2000000,
+        samples: Array(100).fill(2),
+        timeDeltas: [],
+      };
+      const inlineReport = createReport(
+        makeRaw(inlineProfile, {
+          target: {
+            pid: 99999,
+            nodeVersion: 'v24.0.0',
+            v8Version: '12.0.0',
+            platform: 'linux',
+            arch: 'x64',
+            cwd: dir,
+          },
+        }),
+        {
+          sampleIntervalMicros: 1000,
+          deep: false,
+          command: ['node', 'http.js'],
+        },
+      );
+
+      const finding = findFindingOrFail(
+        inlineReport,
+        (f) => f.id === 'json-on-hot-path:JSON.stringify',
+        'inlined json-on-hot-path finding',
+      );
+
+      assert.equal(finding.evidence.function, 'serializeResponse');
+      assert.equal((finding.evidence.extra as Record<string, unknown>).callee, 'JSON.stringify');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('does not report JSON for a hot user frame when JSON appears only elsewhere in the file', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'lanterna-json-nearby-'));
+    try {
+      const sourcePath = join(dir, 'worker.js');
+      writeFileSync(
+        sourcePath,
+        [
+          'export function compute(payload) {',
+          '  let total = 0;',
+          '  for (let i = 0; i < payload.length; i += 1) total += payload[i];',
+          '  return total;',
+          '}',
+          '',
+          'export function logPayload(payload) {',
+          '  return JSON.stringify(payload);',
+          '}',
+        ].join('\n'),
+      );
+      const profileWithUnrelatedJson: RawCpuProfile = {
+        nodes: [
+          {
+            id: 1,
+            callFrame: {
+              functionName: '(root)',
+              scriptId: '0',
+              url: '',
+              lineNumber: -1,
+              columnNumber: -1,
+            },
+            hitCount: 0,
+            children: [2],
+          },
+          {
+            id: 2,
+            callFrame: {
+              functionName: 'compute',
+              scriptId: '1',
+              url: pathToFileURL(sourcePath).href,
+              lineNumber: 0,
+              columnNumber: 0,
+            },
+            hitCount: 100,
+            children: [],
+          },
+        ],
+        startTime: 1000000,
+        endTime: 2000000,
+        samples: Array(100).fill(2),
+        timeDeltas: [],
+      };
+      const unrelatedReport = createReport(
+        makeRaw(profileWithUnrelatedJson, {
+          target: {
+            pid: 99999,
+            nodeVersion: 'v24.0.0',
+            v8Version: '12.0.0',
+            platform: 'linux',
+            arch: 'x64',
+            cwd: dir,
+          },
+        }),
+        {
+          sampleIntervalMicros: 1000,
+          deep: false,
+          command: ['node', 'worker.js'],
+        },
+      );
+
+      assert.equal(
+        unrelatedReport.findings.some((f) => f.id.startsWith('json-on-hot-path:')),
+        false,
+      );
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('does not report source-only JSON for a wrapper frame dominated by child work', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'lanterna-json-wrapper-'));
+    try {
+      const sourcePath = join(dir, 'worker.js');
+      writeFileSync(
+        sourcePath,
+        [
+          'export function expensiveWork() {',
+          '  return 42;',
+          '}',
+          '',
+          'export function wrapper(payload) {',
+          '  const value = expensiveWork();',
+          '  console.error(JSON.stringify({ value, payload }));',
+          '  return value;',
+          '}',
+        ].join('\n'),
+      );
+      const wrapperProfile: RawCpuProfile = {
+        nodes: [
+          {
+            id: 1,
+            callFrame: {
+              functionName: '(root)',
+              scriptId: '0',
+              url: '',
+              lineNumber: -1,
+              columnNumber: -1,
+            },
+            hitCount: 0,
+            children: [2],
+          },
+          {
+            id: 2,
+            callFrame: {
+              functionName: 'wrapper',
+              scriptId: '1',
+              url: pathToFileURL(sourcePath).href,
+              lineNumber: 4,
+              columnNumber: 0,
+            },
+            hitCount: 3,
+            children: [3],
+          },
+          {
+            id: 3,
+            callFrame: {
+              functionName: 'expensiveWork',
+              scriptId: '1',
+              url: pathToFileURL(sourcePath).href,
+              lineNumber: 0,
+              columnNumber: 0,
+            },
+            hitCount: 97,
+            children: [],
+          },
+        ],
+        startTime: 1000000,
+        endTime: 2000000,
+        samples: Array(97).fill(3).concat(Array(3).fill(2)),
+        timeDeltas: [],
+      };
+      const wrapperReport = createReport(
+        makeRaw(wrapperProfile, {
+          target: {
+            pid: 99999,
+            nodeVersion: 'v24.0.0',
+            v8Version: '12.0.0',
+            platform: 'linux',
+            arch: 'x64',
+            cwd: dir,
+          },
+        }),
+        {
+          sampleIntervalMicros: 1000,
+          deep: false,
+          command: ['node', 'worker.js'],
+        },
+      );
+
+      assert.equal(
+        wrapperReport.findings.some((f) => f.id.startsWith('json-on-hot-path:')),
+        false,
+      );
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });
 
 describe('findings – node-modules-hotspot', () => {
@@ -1257,7 +1767,7 @@ describe('findings – node-modules-hotspot selection uses inclusive cost', () =
   });
 });
 
-describe('summary – topUserHotspot', () => {
+describe('findings – cpu-hotspot direct user code', () => {
   const profile: RawCpuProfile = {
     nodes: [
       {
@@ -1297,14 +1807,93 @@ describe('summary – topUserHotspot', () => {
     command: ['node', 'app.js'],
   });
 
-  it('exposes a dominant user-code hotspot in summary instead of findings', () => {
+  it('emits an actionable cpu-hotspot for self-heavy user code', () => {
     const cpuProfile = getCpuProfile(report);
-    assert.equal(
-      report.findings.some((f) => f.id.startsWith('cpu-bound-user-hotspot:')),
-      false,
+    const finding = findFindingOrFail(
+      report,
+      (f) => f.category === 'cpu-hotspot',
+      'cpu-hotspot finding',
     );
+    assert.equal(finding.proofLevel, 'direct-sample');
+    assert.equal(finding.confidence, 'high');
+    assert.equal((finding.evidence.extra as Record<string, unknown>)?.mode, 'self');
+    assert.match(finding.evidence.function, /computeRanking/);
+    assert.match(cpuProfile.summary.topCpuCulprit?.function ?? '', /computeRanking/);
     assert.match(cpuProfile.summary.topUserHotspot?.function ?? '', /computeRanking/);
     assert.equal(cpuProfile.summary.topUserHotspot?.totalPct, 100);
+  });
+});
+
+describe('findings – cpu-hotspot inclusive fallback', () => {
+  const profile: RawCpuProfile = {
+    nodes: [
+      {
+        id: 1,
+        callFrame: {
+          functionName: '(root)',
+          scriptId: '0',
+          url: '',
+          lineNumber: -1,
+          columnNumber: -1,
+        },
+        hitCount: 0,
+        children: [2],
+      },
+      {
+        id: 2,
+        callFrame: {
+          functionName: 'handleRequest',
+          scriptId: '1',
+          url: `file://${CWD}/src/handler.js`,
+          lineNumber: 12,
+          columnNumber: 0,
+        },
+        hitCount: 0,
+        children: [3],
+      },
+      {
+        id: 3,
+        callFrame: {
+          functionName: 'unknownBuiltinWork',
+          scriptId: '0',
+          url: 'node:internal/custom',
+          lineNumber: 99,
+          columnNumber: 0,
+        },
+        hitCount: 100,
+        children: [],
+      },
+    ],
+    startTime: 1000000,
+    endTime: 2000000,
+    samples: Array(100).fill(3),
+    timeDeltas: [],
+  };
+
+  const report = createReport(makeRaw(profile), {
+    sampleIntervalMicros: 1000,
+    deep: false,
+    command: ['node', 'app.js'],
+  });
+
+  it('emits inclusive-only callers as hypotheses, not direct body hotspots', () => {
+    const finding = findFindingOrFail(
+      report,
+      (f) => f.category === 'cpu-hotspot',
+      'cpu-hotspot finding',
+    );
+
+    assert.equal(finding.evidence.function, 'handleRequest');
+    assert.equal(finding.proofLevel, 'heuristic');
+    assert.equal(finding.confidence, 'medium');
+    assert.equal((finding.evidence.extra as Record<string, unknown>)?.mode, 'inclusive-entry');
+    assert.equal(
+      (finding.evidence.extra as Record<string, unknown>)?.proofLevel,
+      'inclusive-user-entry',
+    );
+    assert.match(finding.why, /caller\/context lead/);
+    assert.equal(getCpuProfile(report).summary.topCpuCulprit, undefined);
+    assert.match(getCpuProfile(report).summary.topRequestEntry?.function ?? '', /handleRequest/);
   });
 });
 
@@ -1380,9 +1969,9 @@ describe('summary – topUserHotspot selection uses inclusive cost', () => {
 describe('findings – cpu-bound-user-hotspot suppression', () => {
   const report = makeReport('sync-crypto');
 
-  it('does not emit cpu-bound-user-hotspot when a more specific detector explains the work', () => {
+  it('does not emit cpu-hotspot when a more specific detector explains the work', () => {
     assert.equal(
-      report.findings.some((f) => f.id.startsWith('cpu-bound-user-hotspot:')),
+      report.findings.some((f) => f.category === 'cpu-hotspot'),
       false,
     );
     assert.match(getCpuProfile(report).summary.topUserHotspot?.function ?? '', /hashPassword/);

@@ -28,7 +28,9 @@ export const memoryGrowthDetector: KindScopedDetector<'memory'> = {
     const heapUsed = memory.view.series.heapUsed;
 
     if (rss) {
-      const finding = buildGrowthFinding('rss', rss, durationMs, sampleCount);
+      const finding = hasRssRetentionCorroboration(memory.view.series)
+        ? buildGrowthFinding('rss', rss, durationMs, sampleCount)
+        : null;
       if (finding) findings.push(finding);
     }
     if (heapUsed) {
@@ -39,13 +41,27 @@ export const memoryGrowthDetector: KindScopedDetector<'memory'> = {
   },
 };
 
+function hasRssRetentionCorroboration(series: {
+  rss?: MemorySeriesStats;
+  heapUsed?: MemorySeriesStats;
+  external?: MemorySeriesStats;
+  arrayBuffers?: MemorySeriesStats;
+}): boolean {
+  const thresholds = DETECTOR_THRESHOLDS.memoryGrowth;
+  return (
+    toMBPerSec(series.heapUsed) >= thresholds.heapGrowthWarnMBPerSec ||
+    toMBPerSec(series.external) >= thresholds.rssGrowthWarnMBPerSec ||
+    toMBPerSec(series.arrayBuffers) >= thresholds.rssGrowthWarnMBPerSec
+  );
+}
+
 function buildGrowthFinding(
   metric: 'rss' | 'heapUsed',
   stats: MemorySeriesStats,
   durationMs: number,
   sampleCount: number,
 ): BaseFinding<string, Record<string, unknown>> | null {
-  const slopeMBPerSec = stats.slopeBytesPerSec / BYTES_PER_MB;
+  const slopeMBPerSec = toMBPerSec(stats);
   const thresholds = DETECTOR_THRESHOLDS.memoryGrowth;
   const warn =
     metric === 'rss' ? thresholds.rssGrowthWarnMBPerSec : thresholds.heapGrowthWarnMBPerSec;
@@ -104,6 +120,10 @@ function buildGrowthFinding(
       'https://nodejs.org/api/process.html#processmemoryusage',
     ],
   };
+}
+
+function toMBPerSec(stats: MemorySeriesStats | undefined): number {
+  return (stats?.slopeBytesPerSec ?? 0) / BYTES_PER_MB;
 }
 
 function formatRate(mbPerSec: number): string {

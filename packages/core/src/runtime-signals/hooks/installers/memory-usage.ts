@@ -22,6 +22,7 @@ export function createMemoryUsageInstaller(
 
 interface MemoryUsageInstallerApi {
   performance: typeof globalThis.performance;
+  controlChannel: { emit(event: object): boolean };
   registerGlobal(name: string, value: unknown): void;
   addResetHook(fn: () => void): void;
   addDisposeHook?(fn: () => void): void;
@@ -39,18 +40,26 @@ function installMemoryUsage(api: MemoryUsageInstallerApi, sampleIntervalMs: numb
   }> = [];
   let intervalMs = sampleIntervalMs;
   let captureStartMs = api.performance.now();
+  let captureStarted = false;
 
   const sample = () => {
     try {
       const now = api.performance.now();
       const usage = process.memoryUsage();
-      samples.push({
+      const entry = {
         atMs: Math.max(0, now - captureStartMs),
         rss: usage.rss,
         heapTotal: usage.heapTotal,
         heapUsed: usage.heapUsed,
         external: usage.external,
         arrayBuffers: usage.arrayBuffers ?? 0,
+      };
+      samples.push(entry);
+      api.controlChannel.emit({
+        type: 'memory-usage',
+        ...entry,
+        sampleIntervalMs: intervalMs,
+        captureStarted,
       });
     } catch {
       // process.memoryUsage() can throw in unusual hosts (e.g. workers without
@@ -66,6 +75,7 @@ function installMemoryUsage(api: MemoryUsageInstallerApi, sampleIntervalMs: numb
 
   api.addResetHook(() => {
     captureStartMs = api.performance.now();
+    captureStarted = true;
     samples.length = 0;
     sample();
   });

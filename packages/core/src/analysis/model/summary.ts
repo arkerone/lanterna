@@ -112,6 +112,33 @@ export function deriveTopUserHotspot(
   return summary;
 }
 
+export function deriveTopCpuCulprit(
+  hotspots: readonly Hotspot[],
+  correlatedHotspots: readonly CorrelatedHotspot[] = [],
+): SummaryUserHotspot | undefined {
+  const candidates = hotspots
+    .filter(
+      (hotspot) => hotspot.category === 'user' && hotspot.selfPct >= TOP_USER_HOTSPOT_MIN_SELF_PCT,
+    )
+    .map((hotspot) => ({
+      hotspot,
+      correlated: findCorrelatedHotspot(hotspot, correlatedHotspots),
+    }));
+  const namedPool = candidates.some((candidate) => !isAnonymousWrapper(candidate.hotspot))
+    ? candidates.filter((candidate) => !isAnonymousWrapper(candidate.hotspot))
+    : candidates;
+  const matches = namedPool.sort(compareCpuCulpritCandidates);
+  const topCandidate = matches[0];
+  const top = topCandidate?.hotspot;
+  if (!top) return undefined;
+
+  return toSummaryUserHotspot(
+    top,
+    topCandidate.correlated,
+    matches.slice(1, 3).map(({ hotspot }) => hotspot),
+  );
+}
+
 function compareTopHotspotCandidates(
   left: { hotspot: Hotspot; correlated?: CorrelatedHotspot },
   right: { hotspot: Hotspot; correlated?: CorrelatedHotspot },
@@ -121,6 +148,17 @@ function compareTopHotspotCandidates(
   const totalDelta = right.hotspot.totalPct - left.hotspot.totalPct;
   if (totalDelta !== 0) return totalDelta;
   return right.hotspot.selfPct - left.hotspot.selfPct;
+}
+
+function compareCpuCulpritCandidates(
+  left: { hotspot: Hotspot; correlated?: CorrelatedHotspot },
+  right: { hotspot: Hotspot; correlated?: CorrelatedHotspot },
+): number {
+  const selfDelta = right.hotspot.selfPct - left.hotspot.selfPct;
+  if (selfDelta !== 0) return selfDelta;
+  const correlationDelta = correlationScore(right.correlated) - correlationScore(left.correlated);
+  if (correlationDelta !== 0) return correlationDelta;
+  return right.hotspot.totalPct - left.hotspot.totalPct;
 }
 
 function correlationScore(correlated: CorrelatedHotspot | undefined): number {
@@ -140,6 +178,40 @@ function findCorrelatedHotspot(
       candidate.line === hotspot.line &&
       candidate.function === hotspot.function,
   );
+}
+
+function toSummaryUserHotspot(
+  hotspot: Hotspot,
+  correlated: CorrelatedHotspot | undefined,
+  alternativeHotspots: readonly Hotspot[],
+): SummaryUserHotspot {
+  const alternatives = alternativeHotspots.map((alternative) => {
+    const alt: SummaryUserHotspot['alternativeHotspots'] extends (infer T)[] | undefined
+      ? T
+      : never = {
+      id: alternative.id,
+      function: alternative.function,
+      file: alternative.file,
+      line: alternative.line,
+      selfPct: alternative.selfPct,
+      totalPct: alternative.totalPct,
+    };
+    if (alternative.source) alt.source = alternative.source;
+    return alt;
+  });
+  const summary: SummaryUserHotspot = {
+    function: hotspot.function,
+    file: hotspot.file,
+    line: hotspot.line,
+    selfPct: hotspot.selfPct,
+    totalPct: hotspot.totalPct,
+    eventLoopCorrelation: correlated
+      ? { overlapPct: correlated.overlapPct, samplePct: correlated.samplePct }
+      : undefined,
+    alternativeHotspots: alternatives.length > 0 ? alternatives : undefined,
+  };
+  if (hotspot.source) summary.source = hotspot.source;
+  return summary;
 }
 
 function isAnonymousWrapper(hotspot: Hotspot): boolean {

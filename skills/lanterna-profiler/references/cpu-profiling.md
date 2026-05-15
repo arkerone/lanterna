@@ -18,7 +18,7 @@ The current built-in kind id and report section key are both `cpu`, so CPU analy
 
 These are targeted JSON lookup paths. For analysis, read the agent report first and use its frontmatter, `## Findings` table, `## Finding N` blocks, `Findings.decision` column, `Kind Review`, and `Files To Read First` sections as the contract.
 
-- `profiles.cpu.summary`: on-CPU ratio, idle ratio, category ratios, top user hotspot.
+- `profiles.cpu.summary`: on-CPU ratio, idle ratio, category ratios, `topCpuCulprit`, `topRequestEntry`, and backward-compatible `topUserHotspot`.
 - `profiles.cpu.hotspots[]`: aggregated frames by `(file, function, line)`.
 - `profiles.cpu.hotStacks[]`: frequent full sampled stacks, leaf-to-root.
 - `profiles.cpu.hotStackClusters[]`: hot stacks grouped by user-code anchor.
@@ -54,6 +54,7 @@ When the needed signal is degraded, say so explicitly and avoid strong causal la
 - `measurementBasis === "heartbeats" | "both"`: timed heartbeats are available.
 - `confidence === "low" | "none"`: name suspects, but do not assert root cause.
 - Treat a specific hotspot as causal only when its correlation `confidence === "high"` and the report has timed stall intervals.
+- For `event-loop-stall`, check `evidence.extra.proofLevel`: `aggregate-correlation` is stronger; `hotspot-fallback` means lag crossed the threshold but Lanterna anchored the finding to the hottest user CPU frame because no stall window had strong attribution.
 
 Prefer `eventLoop.correlatedHotspots[]` over generic hotspot guesses. If `correlatedHotspots[].overlapPct` is absent or weak, frame the result as a hypothesis.
 
@@ -67,6 +68,7 @@ Start with the `## Findings` table, which renders findings in priority order. Va
 - Compare `measurements.observed` to `measurements.thresholds`; a large threshold ratio is stronger than severity alone.
 - Patch mechanically only when attribution is high-confidence and `remediation` is populated.
 - For attributed findings (`blocking-io`, `sync-crypto`, `require-in-hot-path`, `node-modules-hotspot`, `json-on-hot-path`), do not patch the user caller when `evidence.extra.attributionConfidence === "low"`.
+- For `cpu-hotspot:*`, check `evidence.extra.mode`. `self` is direct user-code CPU evidence: inspect the reported function body for loops, repeated transformations, CPU-bound scoring/parsing, cache misses, or work that belongs in `worker_threads` / Piscina. `inclusive-entry` is lower-confidence caller evidence: inspect callees and hot stacks first.
 - For legacy reports without top-level `finding.proofLevel`, fall back to `evidence.extra.proofLevel`.
 - If `categoryTotalPct` is much larger than `calleeTotalPct`, prefer a structural fix for the family of calls over replacing one call site.
 
@@ -78,7 +80,7 @@ Strongest actionable lead:
 
 ## Source Positions
 
-Every CPU frame may carry an optional `source` object resolved from a source map: `hotspots[].source`, `summary.topUserHotspot.source`, `hotStacks[].frames[].source`, `hotStackClusters[].anchor.source`, and `findings[].evidence.source`.
+Every CPU frame may carry an optional `source` object resolved from a source map: `hotspots[].source`, `summary.topCpuCulprit.source`, `summary.topRequestEntry.source`, `summary.topUserHotspot.source`, `hotStacks[].frames[].source`, `hotStackClusters[].anchor.source`, and `findings[].evidence.source`.
 
 - When `source` is present, cite `source.file:source.line` (the original TypeScript / bundled source) — do not cite `file:line` (the compiled `dist/` output).
 - When `source` is absent, fall back to `file:line` (no map was found for that frame — common for `node:` builtins or stripped bundles).
@@ -90,7 +92,7 @@ Every CPU frame may carry an optional `source` object resolved from a source map
 
 1. Read agent frontmatter.
 2. Summarize actionable findings from `## Findings` table, `## Finding N` blocks, and `Findings.decision` column.
-3. Use `## Kind Review` for top user-relevant hotspots, even when no detector fired.
+3. Use `## Kind Review` for top user-relevant hotspots, even when no detector fired. Prefer `top_cpu_culprit` for "which line burns CPU?" and `top_request_entry` / `top_user_hotspot` for the caller or request context.
 4. Use `## Files To Read First` as a table, not a plain list: `read-first` rows are the source-reading queue, `inspect-lead` rows need confirmation, and `supporting-context` rows explain the sampled stack. Generated output fallbacks (`dist/`, `build/`, `.next/`, etc.) are `inspect-lead` rows until resolved back to editable source.
 5. If frontmatter has `rerun_required: true`, explain the caveat or `decision = rerun` finding and request a better capture before patching.
 6. Summarize GC only when pauses or ratios are materially high and supported by the agent report or a targeted JSON lookup.

@@ -31,6 +31,37 @@ const hash = await pool.run({ pw, salt });
 
 ---
 
+## Plain user-code CPU hotspots
+
+`cpu-hotspot:*` means Lanterna did not match a known API anti-pattern. When `evidence.extra.mode === "self"`, the reported user function itself is burning CPU. When `mode === "inclusive-entry"`, the reported function is the caller/context for downstream CPU and its callees need inspection first.
+
+**Common causes:**
+- nested loops over request-size data;
+- repeated sorting, filtering, regex, or scoring per request;
+- recomputing stable values instead of caching;
+- parsing or transforming large payloads in one synchronous block;
+- doing CPU-bound work that belongs in a worker pool.
+
+**Fix pattern:**
+```js
+// BAD — recomputes for every request
+function score(items, query) {
+  return items
+    .map((item) => expensiveScore(item, query))
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 20);
+}
+
+// GOOD — reduce input, cache stable pieces, or offload the expensive part
+const normalized = new Map();
+function normalizedItem(item) {
+  if (!normalized.has(item.id)) normalized.set(item.id, precompute(item));
+  return normalized.get(item.id);
+}
+```
+
+---
+
 ## Garbage collection pressure
 
 Too many short-lived allocations trigger frequent minor GCs (scavenge). Too many surviving objects → major GC (mark-compact) pauses.

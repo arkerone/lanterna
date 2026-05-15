@@ -118,12 +118,45 @@ function growingSeries(slopeBytesPerMs: number, externalMB = 1, count = 25): Mem
   return out;
 }
 
+function rssOnlyGrowthSeries(slopeBytesPerMs: number, count = 25): MemoryUsageSample[] {
+  const out: MemoryUsageSample[] = [];
+  for (let i = 0; i < count; i++) {
+    const atMs = i * 200;
+    out.push({
+      atMs,
+      rss: 100 * MB + atMs * slopeBytesPerMs,
+      heapTotal: 128 * MB,
+      heapUsed: 48 * MB,
+      external: 1 * MB,
+      arrayBuffers: 0.5 * MB,
+    });
+  }
+  return out;
+}
+
+function externalGrowthSeries(slopeBytesPerMs: number, count = 25): MemoryUsageSample[] {
+  const out: MemoryUsageSample[] = [];
+  for (let i = 0; i < count; i++) {
+    const atMs = i * 200;
+    const external = 1 * MB + atMs * slopeBytesPerMs;
+    out.push({
+      atMs,
+      rss: 100 * MB + atMs * slopeBytesPerMs,
+      heapTotal: 64 * MB,
+      heapUsed: 48 * MB,
+      external,
+      arrayBuffers: external / 2,
+    });
+  }
+  return out;
+}
+
 describe('memory-growth detector', () => {
   it('fires `warning` for ~1 MB/s RSS growth and `critical` for ~5 MB/s', () => {
     const bundle = makeBundle({
       samplingProfile: singleAllocatorProfile('alloc', 'file:///app/src/a.js', 1, 1024),
       // ~6 MB/s RSS growth, comfortably above the critical threshold (5 MB/s).
-      memoryUsageSamples: growingSeries(6 * 1024),
+      memoryUsageSamples: externalGrowthSeries(6 * 1024),
     });
 
     const pipeline = createAnalysisPipeline({
@@ -141,7 +174,7 @@ describe('memory-growth detector', () => {
   it('recommends Lanterna heap snapshot analysis before external heap tooling', () => {
     const bundle = makeBundle({
       samplingProfile: singleAllocatorProfile('alloc', 'file:///app/src/a.js', 1, 1024),
-      memoryUsageSamples: growingSeries(6 * 1024),
+      memoryUsageSamples: externalGrowthSeries(6 * 1024),
     });
     const pipeline = createAnalysisPipeline({
       kinds: [createMemoryProfileKind()],
@@ -166,6 +199,20 @@ describe('memory-growth detector', () => {
     });
     const result = pipeline.run(bundle, { command: ['node', 'app.js'], mode: 'spawn' });
     expect(result.findings).toEqual([]);
+  });
+
+  it('does not report RSS-only growth when heap and external memory stay flat', () => {
+    const bundle = makeBundle({
+      samplingProfile: singleAllocatorProfile('churn', 'file:///app/src/churn.js', 1, 1024),
+      memoryUsageSamples: rssOnlyGrowthSeries(12 * 1024),
+    });
+    const pipeline = createAnalysisPipeline({
+      kinds: [createMemoryProfileKind()],
+      findingAnalyzers: [createFindingAnalyzerFromKindScopedDetector(memoryGrowthDetector)],
+    });
+    const result = pipeline.run(bundle, { command: ['node', 'app.js'], mode: 'spawn' });
+
+    expect(result.findings.some((finding) => finding.id === 'memory-growth:rss')).toBe(false);
   });
 });
 
@@ -551,6 +598,56 @@ describe('alloc-in-hot-path detector', () => {
       findingAnalyzers: [createFindingAnalyzerFromKindScopedDetector(allocInHotPathDetector)],
     });
     const result = pipeline.run(bundle, { command: ['node', 'app.js'], mode: 'spawn' });
+    expect(result.findings).toEqual([]);
+  });
+
+  it('ignores Node internal frames even when CPU and allocation keys match', () => {
+    const cpuProfile: RawCpuProfile = {
+      nodes: [
+        {
+          id: 1,
+          callFrame: {
+            functionName: '(root)',
+            scriptId: '0',
+            url: '',
+            lineNumber: -1,
+            columnNumber: -1,
+          },
+          hitCount: 0,
+          children: [2],
+        },
+        {
+          id: 2,
+          callFrame: {
+            functionName: 'processChunkSync',
+            scriptId: '0',
+            url: 'node:zlib',
+            lineNumber: 0,
+            columnNumber: 0,
+          },
+          hitCount: 100,
+          children: [],
+        },
+      ],
+      startTime: 1000000,
+      endTime: 2000000,
+      samples: Array(100).fill(2),
+      timeDeltas: [],
+    };
+    const bundle = makeBundle({
+      samplingProfile: singleAllocatorProfile('processChunkSync', 'node:zlib', 0, 9000),
+      memoryUsageSamples: growingSeries(0),
+      cpuProfile,
+    });
+    const pipeline = createAnalysisPipeline({
+      kinds: [
+        createCpuProfileKind({ readStderrSoFar: () => '', sampleIntervalMicros: 1000 }),
+        createMemoryProfileKind(),
+      ],
+      findingAnalyzers: [createFindingAnalyzerFromKindScopedDetector(allocInHotPathDetector)],
+    });
+    const result = pipeline.run(bundle, { command: ['node', 'app.js'], mode: 'spawn' });
+
     expect(result.findings).toEqual([]);
   });
 });

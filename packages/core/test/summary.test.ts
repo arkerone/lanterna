@@ -3,6 +3,7 @@ import type { EnrichedTree, NodeEnriched } from '../src/analysis/model/hotspots.
 import {
   buildCpuSummary,
   deriveDominantBlockingKind,
+  deriveTopCpuCulprit,
   deriveTopUserHotspot,
 } from '../src/analysis/model/summary.js';
 import type {
@@ -373,5 +374,49 @@ describe('deriveTopUserHotspot', () => {
       line: 7,
       column: 1,
     });
+  });
+});
+
+describe('deriveTopCpuCulprit', () => {
+  it('returns the self-heavy user frame', () => {
+    const wrapper = makeHotspot({
+      category: 'user',
+      function: 'processBatch',
+      file: 'src/batch.ts',
+      line: 7,
+      selfPct: 0.04,
+      totalPct: 99,
+    });
+    const compute = makeHotspot({
+      category: 'user',
+      function: 'scoreRecommendations',
+      file: 'src/search.ts',
+      line: 13,
+      selfPct: 70,
+      totalPct: 75,
+    });
+
+    expect(deriveTopCpuCulprit([wrapper, compute])?.function).toBe('scoreRecommendations');
+  });
+
+  it('does not report an inclusive-only wrapper as the CPU culprit', () => {
+    const wrapper = makeHotspot({
+      category: 'user',
+      function: 'processBatch',
+      file: 'src/batch.ts',
+      line: 7,
+      selfPct: 0.04,
+      totalPct: 99,
+    });
+    const caller = makeHotspot({
+      category: 'user',
+      function: 'hashPassword',
+      file: 'src/auth.ts',
+      line: 3,
+      selfPct: 0.01,
+      totalPct: 98,
+    });
+
+    expect(deriveTopCpuCulprit([wrapper, caller])).toBeUndefined();
   });
 });

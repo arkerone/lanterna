@@ -1,3 +1,5 @@
+import { existsSync, readFileSync } from 'node:fs';
+import { isAbsolute, join } from 'node:path';
 import type {
   AlternativeHotspotEvidence,
   AttributionEvidence,
@@ -281,4 +283,25 @@ export function buildAttributedFinding<
     suggestion,
     references,
   };
+}
+
+export function readFrameSourceText(
+  frame: { file?: string; source?: { file: string } } | undefined,
+  cwd: string,
+): string | undefined {
+  if (!frame) return undefined;
+  const candidates = [frame.source?.file, frame.file].filter((file): file is string =>
+    Boolean(file),
+  );
+  for (const candidate of candidates) {
+    if (candidate.startsWith('node:') || candidate.startsWith('native ')) continue;
+    const path = isAbsolute(candidate) ? candidate : join(cwd, candidate);
+    if (!existsSync(path)) continue;
+    try {
+      return readFileSync(path, 'utf8');
+    } catch {
+      // Source inspection is best-effort; detectors can still use sample evidence.
+    }
+  }
+  return undefined;
 }

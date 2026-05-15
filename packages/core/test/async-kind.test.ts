@@ -254,7 +254,7 @@ describe('async kind round-trip', () => {
     expect(chain?.executionFrame?.function).toBe('executeWork');
     expect(chain?.userCaller).toMatchObject({
       function: 'executeWork',
-      file: 'file:///app/src/worker.js',
+      file: '/app/src/worker.js',
       line: 32,
       profilePct: 100,
       supportPct: 100,
@@ -346,12 +346,12 @@ describe('async kind round-trip', () => {
       cpuAttributionCoveragePct: section?.cpuAttribution.attributedCpuPct,
     });
     expect(section?.hotFiles[0]).toMatchObject({
-      file: 'file:///app/src/users.js',
+      file: '/app/src/users.js',
       operationCount: 2,
       totalDurationMs: 180,
       primaryFrame: {
         function: 'loadUser',
-        file: 'file:///app/src/users.js',
+        file: '/app/src/users.js',
         line: 12,
       },
       kindBreakdown: { promise: 2 },
@@ -359,7 +359,7 @@ describe('async kind round-trip', () => {
     });
     expect(section?.summary.topAsyncHotFile).toEqual({
       function: 'loadUser',
-      file: 'file:///app/src/users.js',
+      file: '/app/src/users.js',
       line: 12,
       score: section?.hotFiles[0]?.score,
       confidence: section?.hotFiles[0]?.confidence,
@@ -404,6 +404,25 @@ describe('async kind round-trip', () => {
     );
   });
 
+  it('does not recommend process-start capture for spawn captures with partial stacks', () => {
+    const records = [
+      record(1, 0, 100, 0),
+      withFrame(record(2, 0, 50, 5), {
+        function: 'partlySampled',
+        file: 'file:///app/src/partial.js',
+        line: 2,
+      }),
+    ];
+    const pipeline = createAnalysisPipeline({ kinds: [createAsyncProfileKind()] });
+    const result = pipeline.run(makeBundle(records), {
+      command: ['node', 'app.js'],
+      mode: 'spawn',
+    });
+
+    expect(result.profiles.async?.quality.recommendations.join('\n')).not.toMatch(/process start/);
+    expect(result.profiles.async?.quality.recommendations.join('\n')).toMatch(/async stack depth/);
+  });
+
   it('adds root, deepest, and dominant file frames to async chains', () => {
     const root = withFrame(record(1, 0, 10, 0), {
       function: 'routeHandler',
@@ -428,7 +447,7 @@ describe('async kind round-trip', () => {
 
     expect(chain?.rootFrame?.function).toBe('routeHandler');
     expect(chain?.deepestFrame?.function).toBe('repoCall');
-    expect(chain?.dominantFile).toBe('file:///app/src/service.js');
+    expect(chain?.dominantFile).toBe('/app/src/service.js');
   });
 
   it('passes asyncStackDepth through to the async hook installer', () => {

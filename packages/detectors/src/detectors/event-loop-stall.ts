@@ -1,7 +1,9 @@
 import type {
+  AlternativeHotspotEvidence,
   BuiltinFinding,
   EventLoopStallEvidenceExtra,
   Finding,
+  Hotspot,
   KindScopedDetector,
 } from '@lanterna-profiler/core';
 import { defineBuiltinFinding } from '@lanterna-profiler/core';
@@ -30,9 +32,13 @@ export const eventLoopStallDetector: KindScopedDetector<'cpu'> = {
       eventLoop.confidence === 'high' &&
       topCandidate !== undefined &&
       topCandidate.overlapPct >= thresholds.strongCorrelationOverlapPct;
+    const fallbackHotspots = fallbackUserHotspots(report.hotspots);
+    const fallbackCandidate = strongCorrelation ? undefined : fallbackHotspots[0];
+    const anchor = strongCorrelation ? topCandidate : fallbackCandidate;
+    const proofLevel = strongCorrelation ? 'aggregate-correlation' : 'hotspot-fallback';
     const severity: Finding['severity'] = maxLagMs > thresholds.critical ? 'critical' : 'warning';
     const evidenceExtra: EventLoopStallEvidenceExtra = {
-      proofLevel: 'aggregate-correlation',
+      proofLevel,
       p99LagMs,
       maxLagMs,
       sampleCount: eventLoop.sampleCount,
@@ -41,6 +47,7 @@ export const eventLoopStallDetector: KindScopedDetector<'cpu'> = {
       histogram: eventLoop.histogram,
       stallIntervals: eventLoop.stallIntervals,
       candidateHotspots: eventLoop.correlatedHotspots ?? [],
+      fallbackHotspots: fallbackHotspots.length > 0 ? fallbackHotspots : undefined,
       correlationCoverage: eventLoop.correlationCoverage,
     };
 
@@ -51,14 +58,14 @@ export const eventLoopStallDetector: KindScopedDetector<'cpu'> = {
         severity,
         category: 'event-loop-stall',
         title: `Event loop stalled (max ${maxLagMs.toFixed(0)}ms)`,
-        confidence: strongCorrelation ? 'high' : 'medium',
-        proofLevel: 'correlated-window',
+        confidence: strongCorrelation ? 'high' : fallbackCandidate ? 'medium' : 'medium',
+        proofLevel: strongCorrelation ? 'correlated-window' : 'heuristic',
         evidence: {
-          file: strongCorrelation ? topCandidate.file : '(process)',
-          line: strongCorrelation ? topCandidate.line : 0,
-          function: strongCorrelation ? topCandidate.function : '(aggregate)',
-          selfPct: strongCorrelation ? topCandidate.samplePct : 0,
-          ...(strongCorrelation && topCandidate.source ? { source: topCandidate.source } : {}),
+          file: anchor?.file ?? '(process)',
+          line: anchor?.line ?? 0,
+          function: anchor?.function ?? '(aggregate)',
+          selfPct: strongCorrelation ? topCandidate.samplePct : (fallbackCandidate?.selfPct ?? 0),
+          ...(anchor?.source ? { source: anchor.source } : {}),
           extra: evidenceExtra,
         },
         measurements: {
@@ -72,7 +79,9 @@ export const eventLoopStallDetector: KindScopedDetector<'cpu'> = {
         },
         why: strongCorrelation
           ? `The event loop spent up to ${maxLagMs.toFixed(0)}ms (p99 ${p99LagMs.toFixed(0)}ms) without being able to pick up tasks. During those measured stall windows, \`${topCandidate.function}\` accounted for ${topCandidate.overlapPct.toFixed(1)}% of the user-code CPU samples.`
-          : `The event loop spent up to ${maxLagMs.toFixed(0)}ms (p99 ${p99LagMs.toFixed(0)}ms) without being able to pick up tasks. The report includes ranked correlated hotspots, but no single user frame dominated the measured stall windows strongly enough to blame it on its own.`,
+          : fallbackCandidate
+            ? `The event loop spent up to ${maxLagMs.toFixed(0)}ms (p99 ${p99LagMs.toFixed(0)}ms) without being able to pick up tasks. No measured stall window had enough attribution to blame a single frame, but \`${fallbackCandidate.function}\` is the hottest user-code CPU frame in the same capture (${fallbackCandidate.selfPct.toFixed(1)}% self, ${fallbackCandidate.totalPct.toFixed(1)}% total).`
+            : `The event loop spent up to ${maxLagMs.toFixed(0)}ms (p99 ${p99LagMs.toFixed(0)}ms) without being able to pick up tasks. The report includes ranked correlated hotspots, but no single user frame dominated the measured stall windows strongly enough to blame it on its own.`,
         suggestion: `Identify the hottest user-code function in this report and move its work off the main thread. Use \`worker_threads\` or \`piscina\` for CPU-bound work; chunk long loops with \`setImmediate\` or a queue; prefer streaming JSON for large payloads.`,
         references: [
           'https://nodejs.org/en/docs/guides/dont-block-the-event-loop',
@@ -82,3 +91,24 @@ export const eventLoopStallDetector: KindScopedDetector<'cpu'> = {
     ];
   },
 };
+
+function fallbackUserHotspots(hotspots: readonly Hotspot[]): AlternativeHotspotEvidence[] {
+  return hotspots
+    .filter((hotspot) => hotspot.category === 'user')
+    .filter((hotspot) => hotspot.selfPct >= 10 || hotspot.totalPct >= 25)
+    .sort((left, right) => {
+      const selfDelta = right.selfPct - left.selfPct;
+      if (selfDelta !== 0) return selfDelta;
+      return right.totalPct - left.totalPct;
+    })
+    .slice(0, 3)
+    .map((hotspot) => ({
+      id: hotspot.id,
+      function: hotspot.function,
+      file: hotspot.source?.file ?? hotspot.file,
+      line: hotspot.source?.line ?? hotspot.line,
+      selfPct: hotspot.selfPct,
+      totalPct: hotspot.totalPct,
+      ...(hotspot.source ? { source: hotspot.source } : {}),
+    }));
+}

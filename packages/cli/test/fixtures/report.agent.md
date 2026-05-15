@@ -7,6 +7,7 @@ cwd: /repo
 kinds: [cpu, memory, async]
 lanterna_version: "1.5.1"
 cpu_quality: high
+memory_quality: high
 memory_signal: present
 async_quality: high
 integrity: ok
@@ -50,6 +51,7 @@ degrading_caveats: []
 
 ## Kind Review — memory
 
+- quality: high
 - memory_usage: 10 samples every 250ms
 - top_allocator: Buffer.alloc at node:buffer:10 — user_caller loadCache at src/cache.ts:18 (high, heap-sample-path, support 88.0%)
 

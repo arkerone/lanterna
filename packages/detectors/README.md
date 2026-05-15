@@ -2,7 +2,7 @@
 
 Default detector pack for [Lanterna](https://github.com/arkerone/lanterna) — agent-first Node.js CPU, memory & experimental async profiler.
 
-This package contains the built-in CPU, memory, and async detectors, thresholds, attribution helpers, and kind factories that pre-wire those detectors. Capture orchestration and the `KindScopedDetector` seam itself live in [`@lanterna-profiler/core`](https://www.npmjs.com/package/@lanterna-profiler/core).
+This package contains the built-in CPU, memory, and async detectors, thresholds, attribution helpers, and kind factories that pre-wire those detectors. The CPU pack includes both pattern-specific rules (`sync-crypto`, `blocking-io`, `json-on-hot-path`, dependency hotspots, require-on-hot-path) and the generic `cpu-hotspot:*` fallback for plain user-code CPU that needs a concrete file/line or caller lead. Capture orchestration and `KindScopedDetector` itself live in [`@lanterna-profiler/core`](https://www.npmjs.com/package/@lanterna-profiler/core).
 
 ## Install
 

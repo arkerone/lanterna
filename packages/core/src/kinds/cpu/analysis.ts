@@ -18,6 +18,7 @@ import { buildCpuProfileQuality } from '../../analysis/model/profile-quality.js'
 import {
   buildCpuSummary,
   deriveDominantBlockingKind,
+  deriveTopCpuCulprit,
   deriveTopUserHotspot,
 } from '../../analysis/model/summary.js';
 import type { CaptureBundle } from '../../capture/core/types.js';
@@ -135,6 +136,11 @@ export const cpuFinalize: KindFinalizeHook<CpuKindData> = ({ snapshot }) => {
     cpu.hotspots,
     cpu.eventLoop.correlatedHotspots ?? [],
     snapshot.findings,
+  );
+  cpu.summary.topRequestEntry = cpu.summary.topUserHotspot;
+  cpu.summary.topCpuCulprit = deriveTopCpuCulprit(
+    cpu.hotspots,
+    cpu.eventLoop.correlatedHotspots ?? [],
   );
 };
 

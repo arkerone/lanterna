@@ -69,6 +69,7 @@ export function createMemoryProfileKind(
       samplingIntervalBytes: data.samplingIntervalBytes,
       memoryUsageIntervalMs,
       memoryUsageSampleCount: data.memoryUsage.samples.length,
+      heapSamplingAvailable: data.heapSamplingAvailable ?? true,
       heapSnapshotAnalysisEnabled: heapSnapshotAnalysis.enabled,
       ...(data.heapSnapshotAnalysis
         ? { heapSnapshotAnalysisAvailable: data.heapSnapshotAnalysis.available }
@@ -77,6 +78,7 @@ export function createMemoryProfileKind(
     contributeIntegrity: (data) => ({
       memoryUsageAvailable: data.memoryUsage.available,
       memoryUsageSampleCount: data.memoryUsage.samples.length,
+      heapSamplingAvailable: data.heapSamplingAvailable ?? true,
       ...(data.heapSnapshotAnalysis
         ? { heapSnapshotAnalysisAvailable: data.heapSnapshotAnalysis.available }
         : {}),
