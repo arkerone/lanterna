@@ -49,6 +49,8 @@ export const metaSchema = z.object({
     sourceMaps: z
       .object({
         enabled: z.boolean(),
+        applicable: z.boolean().optional(),
+        status: z.enum(['not-applicable', 'ok', 'partial', 'failed']).optional(),
         framesResolved: z.number().int().nonnegative(),
         framesUnresolved: z.number().int().nonnegative(),
         coverage: z.number(),

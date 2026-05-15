@@ -74,6 +74,8 @@ Instrumentation mode (`safe` / `full` / `off`), `maxRecords` cap, stack depth, m
 ```ts
 interface SourceMapsIntegrity {
   enabled: boolean;
+  applicable?: boolean;
+  status?: "not-applicable" | "ok" | "partial" | "failed";
   framesResolved: number;
   framesUnresolved: number;
   coverage: number;
@@ -82,7 +84,7 @@ interface SourceMapsIntegrity {
 }
 ```
 
-`coverage` is `framesResolved / (framesResolved + framesUnresolved)`. `failures` is capped and omits expected noise such as builtin URLs or files with no `sourceMappingURL`.
+`coverage` is `framesResolved / (framesResolved + framesUnresolved)` for frames whose generated script had a loaded or expected map. Plain JS without `sourceMappingURL` is `applicable: false`, `status: "not-applicable"`, and reports `coverage: 1` so it does not force a rerun. `failures` is capped and omits expected noise such as builtin URLs or files with no `sourceMappingURL`.
 
 ## Source locations
 
@@ -101,7 +103,7 @@ When present, prefer `source.file:source.line` for human diagnosis and patching,
 
 `source?: SourceLocation` can appear on CPU hotspots, hot-stack frames and anchors, memory allocators and memory summaries, async frame-bearing entries, deopts, and `findings[].evidence`.
 
-`userCaller?: UserCallerAttribution` can appear when the visible cost is outside user code but Lanterna can identify the nearest user frame that led there. It contains `function`, `file`, `line`, optional `column`/`source`, `profilePct`, `supportPct`, `confidence` (`low`/`medium`/`high`), and `basis` (`cpu-sample-path`, `heap-sample-path`, `async-stack`, or `async-cpu-window`). Treat it as an inspection lead; low-confidence attribution should not be read as the line to patch.
+`userCaller?: UserCallerAttribution` can appear when the visible cost is outside user code but Lanterna can identify the nearest user frame that led there. It contains `function`, `file`, `line`, optional `column`/`source`/`stackDistance`, `profilePct`, `supportPct`, `confidence` (`low`/`medium`/`high`), and `basis` (`cpu-sample-path`, `heap-sample-path`, `async-stack`, or `async-cpu-window`). `stackDistance: 1` means the closest user frame to the external callee. Attributed findings may also expose `evidence.extra.candidateCallers[]`, ordered by proximity first and support second. Treat low-confidence attribution as an inspection lead, not automatically as the line to patch.
 
 ## `profiles.cpu`
 

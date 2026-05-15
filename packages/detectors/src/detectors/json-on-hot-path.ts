@@ -51,11 +51,11 @@ function buildFinding(
   report: { eventLoop: EventLoopReport },
   context: CpuHotspotContext,
 ): BuiltinFinding<'json-on-hot-path'> {
-  const { attribution, caller } = resolveAttribution(hotspot, context);
+  const { attribution, caller, candidateCallers } = resolveAttribution(hotspot, context);
   const evidenceExtra: JsonHotPathEvidenceExtra = {
     callee: hotspot.function,
     calleeTotalPct: hotspot.totalPct,
-    ...buildAttributionEvidence(attribution, caller),
+    ...buildAttributionEvidence(attribution, caller, candidateCallers),
     eventLoopCorrelation: findStallCorrelation(caller, report),
     categoryTotalPct: categoryTotalPct > 0 ? categoryTotalPct : undefined,
   };

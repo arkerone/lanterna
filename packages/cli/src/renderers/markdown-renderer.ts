@@ -34,8 +34,11 @@ export class MarkdownReportRenderer implements ReportRenderer {
     lines.push(`| Command | \`${escapeBackticks(formatCommand(report.meta?.command))}\` |`);
     const sourceMaps = report.meta?.captureIntegrity?.sourceMaps;
     if (sourceMaps?.enabled) {
+      const status = sourceMaps.status ? `, status ${sourceMaps.status}` : '';
+      const applicable =
+        sourceMaps.applicable !== undefined ? `, applicable ${sourceMaps.applicable}` : '';
       lines.push(
-        `| Source maps | ${formatRatio(sourceMaps.coverage)} coverage (${sourceMaps.mapsLoaded} maps loaded) |`,
+        `| Source maps | ${formatRatio(sourceMaps.coverage)} coverage (${sourceMaps.mapsLoaded} maps loaded${status}${applicable}) |`,
       );
     }
     lines.push('');
@@ -183,6 +186,13 @@ export class MarkdownReportRenderer implements ReportRenderer {
       );
       const userCaller = userCallerFromEvidenceExtra(f.evidence.extra);
       if (userCaller) lines.push(`- User caller: ${formatUserCaller(userCaller)}`);
+      const candidateCallers = candidateCallersFromEvidenceExtra(f.evidence.extra);
+      if (candidateCallers.length > 0) {
+        lines.push('- Candidate callers:');
+        for (const caller of candidateCallers) {
+          lines.push(`  - ${formatUserCaller(caller)}`);
+        }
+      }
       lines.push(`- Suggestion: ${f.suggestion}`);
       if (f.evidence.extra !== undefined) {
         const extra = renderValue(f.evidence.extra);
@@ -207,4 +217,10 @@ function escapeBackticks(value: string): string {
 function userCallerFromEvidenceExtra(extra: unknown): UserCallerAttribution | undefined {
   if (!extra || typeof extra !== 'object') return undefined;
   return (extra as { userCaller?: UserCallerAttribution }).userCaller;
+}
+
+function candidateCallersFromEvidenceExtra(extra: unknown): UserCallerAttribution[] {
+  if (!extra || typeof extra !== 'object') return [];
+  const value = (extra as { candidateCallers?: unknown }).candidateCallers;
+  return Array.isArray(value) ? (value as UserCallerAttribution[]) : [];
 }

@@ -252,4 +252,338 @@ describe('buildHotspotAnalysis', () => {
     expect(userHotspot?.category).toBe('user');
     expect(userHotspot?.userCaller).toBeUndefined();
   });
+
+  it('keeps the top user caller candidates when builtin attribution is split', () => {
+    const profile: RawCpuProfile = {
+      startTime: 0,
+      endTime: 100_000,
+      nodes: [
+        {
+          id: 1,
+          callFrame: {
+            functionName: '(root)',
+            scriptId: '0',
+            url: '',
+            lineNumber: 0,
+            columnNumber: 0,
+          },
+          children: [2, 4],
+        },
+        {
+          id: 2,
+          callFrame: {
+            functionName: 'processBatch',
+            scriptId: '1',
+            url: `file://${CWD}/src/batch.js`,
+            lineNumber: 10,
+            columnNumber: 0,
+          },
+          children: [3],
+        },
+        {
+          id: 3,
+          callFrame: {
+            functionName: 'pbkdf2Sync',
+            scriptId: '2',
+            url: 'node:crypto',
+            lineNumber: 100,
+            columnNumber: 0,
+          },
+          hitCount: 60,
+        },
+        {
+          id: 4,
+          callFrame: {
+            functionName: 'hashPassword',
+            scriptId: '1',
+            url: `file://${CWD}/src/auth.js`,
+            lineNumber: 20,
+            columnNumber: 0,
+          },
+          children: [5],
+        },
+        {
+          id: 5,
+          callFrame: {
+            functionName: 'pbkdf2Sync',
+            scriptId: '2',
+            url: 'node:crypto',
+            lineNumber: 100,
+            columnNumber: 0,
+          },
+          hitCount: 40,
+        },
+      ],
+      samples: Array(60).fill(3).concat(Array(40).fill(5)),
+      timeDeltas: [],
+    };
+
+    const tree = enrichCpuTree(profile, CWD, 1000);
+    const analysis = buildHotspotAnalysis(profile, tree);
+    const cryptoHotspot = analysis.publicHotspots.find(
+      (hotspot) => hotspot.function === 'pbkdf2Sync',
+    );
+    expect(cryptoHotspot?.userCaller).toMatchObject({
+      function: 'processBatch',
+      supportPct: 60,
+      confidence: 'medium',
+    });
+
+    const candidates = analysis.candidateCallersById.get(cryptoHotspot?.id ?? '');
+    expect(candidates?.map((candidate) => candidate.function)).toEqual([
+      'processBatch',
+      'hashPassword',
+    ]);
+    expect(candidates?.map((candidate) => candidate.supportPct)).toEqual([60, 40]);
+  });
+
+  it('keeps nested user ancestors as attribution candidates', () => {
+    const profile: RawCpuProfile = {
+      startTime: 0,
+      endTime: 100_000,
+      nodes: [
+        {
+          id: 1,
+          callFrame: {
+            functionName: '(root)',
+            scriptId: '0',
+            url: '',
+            lineNumber: 0,
+            columnNumber: 0,
+          },
+          children: [2],
+        },
+        {
+          id: 2,
+          callFrame: {
+            functionName: '(anonymous)',
+            scriptId: '1',
+            url: `file://${CWD}/src/app.js`,
+            lineNumber: 0,
+            columnNumber: 0,
+          },
+          children: [3],
+        },
+        {
+          id: 3,
+          callFrame: {
+            functionName: 'processBatch',
+            scriptId: '1',
+            url: `file://${CWD}/src/batch.js`,
+            lineNumber: 10,
+            columnNumber: 0,
+          },
+          children: [4],
+        },
+        {
+          id: 4,
+          callFrame: {
+            functionName: 'hashPassword',
+            scriptId: '1',
+            url: `file://${CWD}/src/auth.js`,
+            lineNumber: 20,
+            columnNumber: 0,
+          },
+          children: [5],
+        },
+        {
+          id: 5,
+          callFrame: {
+            functionName: 'pbkdf2Sync',
+            scriptId: '2',
+            url: 'node:crypto',
+            lineNumber: 100,
+            columnNumber: 0,
+          },
+          hitCount: 100,
+        },
+      ],
+      samples: Array(100).fill(5),
+      timeDeltas: [],
+    };
+
+    const tree = enrichCpuTree(profile, CWD, 1000);
+    const analysis = buildHotspotAnalysis(profile, tree);
+    const cryptoHotspot = analysis.publicHotspots.find(
+      (hotspot) => hotspot.function === 'pbkdf2Sync',
+    );
+
+    expect(cryptoHotspot?.userCaller?.function).toBe('hashPassword');
+    expect(
+      analysis.candidateCallersById
+        .get(cryptoHotspot?.id ?? '')
+        ?.map((candidate) => candidate.function),
+    ).toEqual(['hashPassword', 'processBatch']);
+    expect(
+      analysis.candidateCallersById
+        .get(cryptoHotspot?.id ?? '')
+        ?.map((candidate) => candidate.stackDistance),
+    ).toEqual([1, 2]);
+  });
+
+  it('orders candidates by stack proximity before common parent support', () => {
+    const profile: RawCpuProfile = {
+      startTime: 0,
+      endTime: 100_000,
+      nodes: [
+        {
+          id: 1,
+          callFrame: {
+            functionName: '(root)',
+            scriptId: '0',
+            url: '',
+            lineNumber: 0,
+            columnNumber: 0,
+          },
+          children: [2],
+        },
+        {
+          id: 2,
+          callFrame: {
+            functionName: 'routeHandler',
+            scriptId: '1',
+            url: `file://${CWD}/src/route.js`,
+            lineNumber: 5,
+            columnNumber: 0,
+          },
+          children: [3, 5],
+        },
+        {
+          id: 3,
+          callFrame: {
+            functionName: 'hashPassword',
+            scriptId: '1',
+            url: `file://${CWD}/src/auth.js`,
+            lineNumber: 20,
+            columnNumber: 0,
+          },
+          children: [4],
+        },
+        {
+          id: 4,
+          callFrame: {
+            functionName: 'pbkdf2Sync',
+            scriptId: '2',
+            url: 'node:crypto',
+            lineNumber: 100,
+            columnNumber: 0,
+          },
+          hitCount: 60,
+        },
+        {
+          id: 5,
+          callFrame: {
+            functionName: 'verifyPassword',
+            scriptId: '1',
+            url: `file://${CWD}/src/auth.js`,
+            lineNumber: 40,
+            columnNumber: 0,
+          },
+          children: [6],
+        },
+        {
+          id: 6,
+          callFrame: {
+            functionName: 'pbkdf2Sync',
+            scriptId: '2',
+            url: 'node:crypto',
+            lineNumber: 100,
+            columnNumber: 0,
+          },
+          hitCount: 40,
+        },
+      ],
+      samples: Array(60).fill(4).concat(Array(40).fill(6)),
+      timeDeltas: [],
+    };
+
+    const tree = enrichCpuTree(profile, CWD, 1000);
+    const analysis = buildHotspotAnalysis(profile, tree);
+    const cryptoHotspot = analysis.publicHotspots.find(
+      (hotspot) => hotspot.function === 'pbkdf2Sync',
+    );
+
+    const candidates = analysis.candidateCallersById.get(cryptoHotspot?.id ?? '');
+    expect(cryptoHotspot?.userCaller).toMatchObject({
+      function: 'hashPassword',
+      supportPct: 60,
+      confidence: 'medium',
+      stackDistance: 1,
+    });
+    expect(candidates?.map((candidate) => candidate.function)).toEqual([
+      'hashPassword',
+      'verifyPassword',
+      'routeHandler',
+    ]);
+    expect(candidates?.map((candidate) => candidate.supportPct)).toEqual([60, 40, 100]);
+    expect(candidates?.map((candidate) => candidate.stackDistance)).toEqual([1, 1, 2]);
+  });
+
+  it('keeps all user caller candidates in proximity order', () => {
+    const profile: RawCpuProfile = {
+      startTime: 0,
+      endTime: 100_000,
+      nodes: [
+        {
+          id: 1,
+          callFrame: {
+            functionName: '(root)',
+            scriptId: '0',
+            url: '',
+            lineNumber: 0,
+            columnNumber: 0,
+          },
+          children: [2],
+        },
+        ...[
+          'routeHandler',
+          'controller',
+          'validateRequest',
+          'processBatch',
+          'hashGroup',
+          'hashPassword',
+        ].map((functionName, index) => ({
+          id: index + 2,
+          callFrame: {
+            functionName,
+            scriptId: '1',
+            url: `file://${CWD}/src/app.js`,
+            lineNumber: 10 + index,
+            columnNumber: 0,
+          },
+          children: [index + 3],
+        })),
+        {
+          id: 8,
+          callFrame: {
+            functionName: 'pbkdf2Sync',
+            scriptId: '2',
+            url: 'node:crypto',
+            lineNumber: 100,
+            columnNumber: 0,
+          },
+          hitCount: 100,
+        },
+      ],
+      samples: Array(100).fill(8),
+      timeDeltas: [],
+    };
+
+    const tree = enrichCpuTree(profile, CWD, 1000);
+    const analysis = buildHotspotAnalysis(profile, tree);
+    const cryptoHotspot = analysis.publicHotspots.find(
+      (hotspot) => hotspot.function === 'pbkdf2Sync',
+    );
+
+    const candidates = analysis.candidateCallersById.get(cryptoHotspot?.id ?? '');
+    expect(candidates?.map((candidate) => candidate.function)).toEqual([
+      'hashPassword',
+      'hashGroup',
+      'processBatch',
+      'validateRequest',
+      'controller',
+      'routeHandler',
+    ]);
+    expect(candidates?.map((candidate) => candidate.stackDistance)).toEqual([1, 2, 3, 4, 5, 6]);
+  });
 });

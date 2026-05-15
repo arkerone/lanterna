@@ -3,6 +3,7 @@ import {
   alternativeHotspotEvidenceSchema,
   attributionEvidenceSchema,
   correlatedHotspotSchema,
+  correlationCoverageSchema,
   eventLoopHistogramSchema,
   findingConfidenceSchema,
   findingReportProofLevelSchema,
@@ -55,11 +56,13 @@ export const eventLoopStallExtraSchema = z.object({
   proofLevel: z.literal('aggregate-correlation'),
   p99LagMs: z.number(),
   maxLagMs: z.number(),
+  sampleCount: z.number().int().nonnegative(),
   measurementBasis: measurementBasisSchema,
   confidence: measurementConfidenceSchema,
   histogram: eventLoopHistogramSchema.optional(),
   stallIntervals: z.array(stallIntervalSchema),
   candidateHotspots: z.array(correlatedHotspotSchema),
+  correlationCoverage: correlationCoverageSchema.optional(),
 });
 
 export const jsonHotPathExtraSchema = attributionEvidenceSchema.extend({

@@ -119,7 +119,7 @@ Targeted lookup order after the agent report:
 
 ## Source Positions
 
-`hotAllocators[]`, `summary.topAllocator`, and memory findings (`evidence`) may carry a resolved `source` object. Always prefer `source.file:source.line` over `file:line` when present — `file:line` points at the compiled JS, `source.*` at the original TypeScript or bundled source. Fall back to `file:line` when `source` is absent. Use `source.name` if `function` is `(anonymous)`. Treat virtual paths (`webpack://`, `vite:/`) as bundler labels, not editable files, unless they resolve on disk. Quality gate: `meta.captureIntegrity.sourceMaps.coverage`.
+`hotAllocators[]`, `summary.topAllocator`, and memory findings (`evidence`) may carry a resolved `source` object. Always prefer `source.file:source.line` over `file:line` when present — `file:line` points at the compiled JS, `source.*` at the original TypeScript or bundled source. Fall back to `file:line` when `source` is absent. Use `source.name` if `function` is `(anonymous)`. Treat virtual paths (`webpack://`, `vite:/`) as bundler labels, not editable files, unless they resolve on disk. Quality gate: `meta.captureIntegrity.sourceMaps`; when `applicable !== false` and `coverage` is low, treat mapped positions as hints. `applicable: false` means plain JS without source maps, not degraded mapping.
 
 ## Memory findings
 

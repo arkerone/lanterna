@@ -189,7 +189,7 @@ import {
 - `resolveAttribution(hotspot, ctx)` — walks callers to find the user-code frame responsible for invoking a builtin or dependency hotspot.
 - `buildAttributionEvidence(...)` — assembles the `evidence` object with caller file/line plus `extra`.
 - `buildAttributedFinding(...)` — one-shot helper that returns a fully-shaped `Finding`.
-- `CpuHotspotContext` — the attribution view (`fullHotspots`, `hotspotById`, `userCallerById`) reachable from a kind-scoped detector via `kinds.cpu.view.hotspotAnalysis`.
+- `CpuHotspotContext` — the attribution view (`fullHotspots`, `hotspotById`, `userCallerById`, `candidateCallersById`) reachable from a kind-scoped detector via `kinds.cpu.view.hotspotAnalysis`.
 
 ## Thresholds
 

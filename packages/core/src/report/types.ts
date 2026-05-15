@@ -52,14 +52,14 @@ export interface SourceLocation {
 
 export interface SourceMapsIntegrity {
   enabled: boolean;
+  applicable?: boolean;
+  status?: 'not-applicable' | 'ok' | 'partial' | 'failed';
   framesResolved: number;
   framesUnresolved: number;
   /**
-   * `framesResolved / (framesResolved + framesUnresolved)`, or 0 when no
-   * mappable frames were observed. Only frames whose URL is a `file://` URL
-   * or an absolute path contribute to the denominator — `node:` builtins and
-   * other inherently unmappable frames are excluded so the metric reflects
-   * source-map quality on user/library code, not the V8 frame mix.
+   * `framesResolved / (framesResolved + framesUnresolved)`, or 1 when source
+   * maps are not applicable to the observed JS. Only frames whose generated
+   * URL had a loaded or expected source map contribute to the denominator.
    */
   coverage: number;
   mapsLoaded: number;
@@ -258,6 +258,8 @@ export interface UserCallerAttribution {
   line: number;
   column?: number;
   source?: SourceLocation;
+  /** 1 means the closest user frame to the external callee; larger values are outer callers. */
+  stackDistance?: number;
   /** Percent of the whole profile attributed to this user caller. */
   profilePct: number;
   /** Percent of the external frame's cost explained by this caller. */
@@ -286,6 +288,7 @@ export interface AttributionEvidence {
   attributionBasis: 'sample-path' | 'builtin-only';
   attributionConfidence: 'low' | 'medium' | 'high';
   userCaller?: UserCallerAttribution;
+  candidateCallers?: UserCallerAttribution[];
 }
 
 export interface BlockingIoEvidenceExtra extends AttributionEvidence {
@@ -328,11 +331,13 @@ export interface EventLoopStallEvidenceExtra {
   proofLevel: 'aggregate-correlation';
   p99LagMs: number;
   maxLagMs: number;
+  sampleCount: number;
   measurementBasis: MeasurementBasis;
   confidence: MeasurementConfidence;
   histogram?: EventLoopReport['histogram'];
   stallIntervals: EventLoopReport['stallIntervals'];
   candidateHotspots: CorrelatedHotspot[];
+  correlationCoverage?: CorrelationCoverage;
 }
 
 export interface JsonHotPathEvidenceExtra extends AttributionEvidence {

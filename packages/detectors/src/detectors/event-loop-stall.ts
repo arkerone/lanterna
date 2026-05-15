@@ -35,11 +35,13 @@ export const eventLoopStallDetector: KindScopedDetector<'cpu'> = {
       proofLevel: 'aggregate-correlation',
       p99LagMs,
       maxLagMs,
+      sampleCount: eventLoop.sampleCount,
       measurementBasis: eventLoop.measurementBasis,
       confidence: eventLoop.confidence,
       histogram: eventLoop.histogram,
       stallIntervals: eventLoop.stallIntervals,
       candidateHotspots: eventLoop.correlatedHotspots ?? [],
+      correlationCoverage: eventLoop.correlationCoverage,
     };
 
     return [

@@ -87,7 +87,7 @@ Prefer findings that the `Findings.decision` column marks actionable, with high 
 
 ## Source Positions
 
-Await sites, resource origins, and async findings may carry a resolved `source` object. Prefer `source.file:source.line` over the raw `file:line` — raw coordinates point at compiled JS, `source.*` at the original TypeScript or bundled source. Fall back when `source` is missing. Use `source.name` for anonymous frames. Treat virtual paths (`webpack://`, `vite:/`) as bundler labels, not editable files, unless they resolve on disk. Quality gate: `meta.captureIntegrity.sourceMaps.coverage`.
+Await sites, resource origins, and async findings may carry a resolved `source` object. Prefer `source.file:source.line` over the raw `file:line` — raw coordinates point at compiled JS, `source.*` at the original TypeScript or bundled source. Fall back when `source` is missing. Use `source.name` for anonymous frames. Treat virtual paths (`webpack://`, `vite:/`) as bundler labels, not editable files, unless they resolve on disk. Quality gate: `meta.captureIntegrity.sourceMaps`; when `applicable !== false` and `coverage` is low, treat mapped positions as hints. `applicable: false` means plain JS without source maps, not degraded mapping.
 
 For analysis, use the rendered agent location first. Consult raw async frames only as a targeted JSON lookup when `Kind Review` does not render the specific frame or `userCaller` you need.
 

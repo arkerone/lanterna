@@ -40,9 +40,11 @@ export interface HotspotAnalysis {
   fullHotspots: Hotspot[];
   hotspotById: Map<string, Hotspot>;
   userCallerById: Map<string, UserCallerAttribution>;
+  candidateCallersById: Map<string, UserCallerAttribution[]>;
 }
 
 const ATTRIBUTION_HIGH_CONFIDENCE_SUPPORT_PCT = 80;
+const ATTRIBUTION_MEDIUM_CONFIDENCE_SUPPORT_PCT = 25;
 
 interface HotspotAggregate {
   id: string;
@@ -61,6 +63,8 @@ interface HotspotAggregate {
   calleeSamples: Map<string, number>;
   pathSamples: number;
   userAncestorSamples: Map<string, number>;
+  candidateUserAncestorSamples: Map<string, number>;
+  candidateUserAncestorDistance: Map<string, number>;
   sourceNodeIds: Set<number>;
   source?: SourceLocation;
 }
@@ -169,6 +173,8 @@ export function buildHotspotAnalysis(
         calleeSamples: new Map(),
         pathSamples: 0,
         userAncestorSamples: new Map(),
+        candidateUserAncestorSamples: new Map(),
+        candidateUserAncestorDistance: new Map(),
         sourceNodeIds: new Set(),
       };
       if (node.package) aggregate.package = node.package;
@@ -226,19 +232,34 @@ export function buildHotspotAnalysis(
         aggregate.totalMs += sampleDurationMs;
       }
 
-      let nearestUserAncestorKey: string | undefined;
+      const userAncestorKeys: string[] = [];
       for (const aggregateKey of [...aggregatePath].reverse()) {
         const aggregate = hotspotAggregatesByKey.get(aggregateKey);
         if (!aggregate) continue;
         if (aggregate.category === 'user') {
-          nearestUserAncestorKey = aggregateKey;
+          userAncestorKeys.push(aggregateKey);
           continue;
         }
+        if (userAncestorKeys.length === 0) continue;
+        const nearestUserAncestorKey = userAncestorKeys[userAncestorKeys.length - 1];
         if (!nearestUserAncestorKey) continue;
         aggregate.userAncestorSamples.set(
           nearestUserAncestorKey,
           (aggregate.userAncestorSamples.get(nearestUserAncestorKey) ?? 0) + 1,
         );
+        for (let ancestorIndex = 0; ancestorIndex < userAncestorKeys.length; ancestorIndex += 1) {
+          const userAncestorKey = userAncestorKeys[ancestorIndex];
+          if (!userAncestorKey) continue;
+          const stackDistance = userAncestorKeys.length - ancestorIndex;
+          aggregate.candidateUserAncestorSamples.set(
+            userAncestorKey,
+            (aggregate.candidateUserAncestorSamples.get(userAncestorKey) ?? 0) + 1,
+          );
+          const previousDistance = aggregate.candidateUserAncestorDistance.get(userAncestorKey);
+          if (previousDistance === undefined || stackDistance < previousDistance) {
+            aggregate.candidateUserAncestorDistance.set(userAncestorKey, stackDistance);
+          }
+        }
       }
     }
   }
@@ -265,6 +286,7 @@ export function buildHotspotAnalysis(
   const fullHotspots: Hotspot[] = [];
   const hotspotById = new Map<string, Hotspot>();
   const userCallerById = new Map<string, UserCallerAttribution>();
+  const candidateCallersById = new Map<string, UserCallerAttribution[]>();
   const keepNoise = shouldKeepNoiseFrames();
   for (const aggregate of hotspotAggregatesByKey.values()) {
     if (aggregate.selfSamples === 0 && aggregate.totalSamples === 0) continue;
@@ -290,26 +312,15 @@ export function buildHotspotAnalysis(
     fullHotspots.push(hotspot);
     hotspotById.set(hotspot.id, hotspot);
 
-    const totalPathSamples = Math.max(1, aggregate.pathSamples || aggregate.totalSamples);
-    const topUserAttributionEntry = Array.from(aggregate.userAncestorSamples.entries()).sort(
-      (left, right) => right[1] - left[1],
-    )[0];
-    if (!topUserAttributionEntry) continue;
-    const [userAggregateKey, attributedSampleCount] = topUserAttributionEntry;
-    const userHotspotAggregate = hotspotAggregatesByKey.get(userAggregateKey);
-    if (!userHotspotAggregate) continue;
-    const supportPct = (attributedSampleCount / totalPathSamples) * 100;
-    const userCaller: UserCallerAttribution = {
-      function: userHotspotAggregate.function,
-      file: userHotspotAggregate.file,
-      line: userHotspotAggregate.line,
-      column: userHotspotAggregate.column,
-      profilePct: (attributedSampleCount / totalSamples) * 100,
-      supportPct,
-      confidence: supportPct >= ATTRIBUTION_HIGH_CONFIDENCE_SUPPORT_PCT ? 'high' : 'low',
-      basis: 'cpu-sample-path',
-    };
-    if (userHotspotAggregate.source) userCaller.source = userHotspotAggregate.source;
+    const candidateCallers = buildUserCallerCandidates(
+      aggregate,
+      hotspotAggregatesByKey,
+      totalSamples,
+    );
+    if (candidateCallers.length === 0) continue;
+    candidateCallersById.set(hotspot.id, candidateCallers);
+    const userCaller = candidateCallers[0];
+    if (!userCaller) continue;
     userCallerById.set(hotspot.id, userCaller);
     if (hotspot.category !== 'user') {
       hotspot.userCaller = userCaller;
@@ -325,7 +336,60 @@ export function buildHotspotAnalysis(
     fullHotspots,
     hotspotById,
     userCallerById,
+    candidateCallersById,
   };
+}
+
+function buildUserCallerCandidates(
+  aggregate: HotspotAggregate,
+  hotspotAggregatesByKey: Map<string, HotspotAggregate>,
+  totalSamples: number,
+): UserCallerAttribution[] {
+  const totalPathSamples = Math.max(1, aggregate.pathSamples || aggregate.totalSamples);
+  const candidates = Array.from(aggregate.candidateUserAncestorSamples.entries())
+    .sort((left, right) => {
+      const distanceDelta =
+        (aggregate.candidateUserAncestorDistance.get(left[0]) ?? Number.MAX_SAFE_INTEGER) -
+        (aggregate.candidateUserAncestorDistance.get(right[0]) ?? Number.MAX_SAFE_INTEGER);
+      if (distanceDelta !== 0) return distanceDelta;
+      const countDelta = right[1] - left[1];
+      if (countDelta !== 0) return countDelta;
+      return (
+        (aggregate.userAncestorSamples.get(right[0]) ?? 0) -
+        (aggregate.userAncestorSamples.get(left[0]) ?? 0)
+      );
+    })
+    .flatMap(([userAggregateKey, attributedSampleCount]) => {
+      const userHotspotAggregate = hotspotAggregatesByKey.get(userAggregateKey);
+      if (!userHotspotAggregate) return [];
+      const supportPct = (attributedSampleCount / totalPathSamples) * 100;
+      const userCaller: UserCallerAttribution = {
+        function: userHotspotAggregate.function,
+        file: userHotspotAggregate.file,
+        line: userHotspotAggregate.line,
+        column: userHotspotAggregate.column,
+        stackDistance: aggregate.candidateUserAncestorDistance.get(userAggregateKey),
+        profilePct: (attributedSampleCount / totalSamples) * 100,
+        supportPct,
+        confidence: attributionConfidenceForSupport(supportPct),
+        basis: 'cpu-sample-path',
+      };
+      if (userHotspotAggregate.source) userCaller.source = userHotspotAggregate.source;
+      return [userCaller];
+    });
+  return candidates.some((candidate) => !isAnonymousUserCaller(candidate))
+    ? candidates.filter((candidate) => !isAnonymousUserCaller(candidate))
+    : candidates;
+}
+
+function attributionConfidenceForSupport(supportPct: number): 'low' | 'medium' | 'high' {
+  if (supportPct >= ATTRIBUTION_HIGH_CONFIDENCE_SUPPORT_PCT) return 'high';
+  if (supportPct >= ATTRIBUTION_MEDIUM_CONFIDENCE_SUPPORT_PCT) return 'medium';
+  return 'low';
+}
+
+function isAnonymousUserCaller(candidate: UserCallerAttribution): boolean {
+  return candidate.function === '(anonymous)' || candidate.function.trim() === '';
 }
 
 function buildSampleDurationsMs(profile: RawCpuProfile, fallbackMs: number): number[] {

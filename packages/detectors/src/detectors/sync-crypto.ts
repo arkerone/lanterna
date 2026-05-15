@@ -15,10 +15,10 @@ const SYNC_CRYPTO_REMEDIATION: ReadonlyMap<string, FindingRemediation> = new Map
     {
       kind: 'async-variant',
       replace: 'pbkdf2Sync',
-      with: 'promisify(pbkdf2)',
+      with: 'pbkdf2',
       module: 'node:crypto',
       notes:
-        'PBKDF2 is CPU-bound — at high load also consider offloading to a worker pool (piscina).',
+        'crypto.pbkdf2 is callback-based async; use util.promisify(pbkdf2) if the caller wants a Promise. PBKDF2 is CPU-bound — at high load also consider offloading to a worker pool (piscina).',
     },
   ],
   [
@@ -26,10 +26,10 @@ const SYNC_CRYPTO_REMEDIATION: ReadonlyMap<string, FindingRemediation> = new Map
     {
       kind: 'async-variant',
       replace: 'scryptSync',
-      with: 'promisify(scrypt)',
+      with: 'scrypt',
       module: 'node:crypto',
       notes:
-        'scrypt is CPU-bound — at high load also consider offloading to a worker pool (piscina).',
+        'crypto.scrypt is callback-based async; use util.promisify(scrypt) if the caller wants a Promise. scrypt is CPU-bound — at high load also consider offloading to a worker pool (piscina).',
     },
   ],
   [
@@ -103,12 +103,12 @@ function buildFinding(
   report: { eventLoop: EventLoopReport },
   context: CpuHotspotContext,
 ): BuiltinFinding<'sync-crypto'> {
-  const { attribution, caller } = resolveAttribution(hotspot, context);
+  const { attribution, caller, candidateCallers } = resolveAttribution(hotspot, context);
   const evidenceExtra: SyncCryptoEvidenceExtra = {
     callee: hotspot.function,
     calleeTotalPct: hotspot.totalPct,
-    ...buildAttributionEvidence(attribution, caller),
-    eventLoopCorrelation: findStallCorrelation(caller, report),
+    ...buildAttributionEvidence(attribution, caller, candidateCallers),
+    eventLoopCorrelation: findStallCorrelation(attribution, report),
     categoryTotalPct: categoryTotalPct > 0 ? categoryTotalPct : undefined,
   };
   const thresholds = DETECTOR_THRESHOLDS.syncCrypto;

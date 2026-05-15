@@ -25,12 +25,13 @@ import { isNoiseCategory } from '@lanterna-profiler/core';
  */
 export type CpuHotspotContext = Pick<
   CpuAnalysisView['hotspotAnalysis'],
-  'fullHotspots' | 'hotspotById' | 'userCallerById'
+  'fullHotspots' | 'hotspotById' | 'userCallerById' | 'candidateCallersById'
 >;
 
 export interface ResolvedAttribution {
   attribution: UserCallerAttribution | undefined;
   caller: UserCallerAttribution | undefined;
+  candidateCallers: UserCallerAttribution[];
 }
 
 export const BUILTIN_RUNTIME_CATEGORIES = ['node:builtin', 'native'] as const;
@@ -81,8 +82,9 @@ export function resolveAttribution(
   context: CpuHotspotContext,
 ): ResolvedAttribution {
   const attribution = context.userCallerById.get(hotspot.id);
+  const candidateCallers = context.candidateCallersById?.get(hotspot.id) ?? [];
   const caller = attribution?.confidence === 'high' ? attribution : undefined;
-  return { attribution, caller };
+  return { attribution, caller, candidateCallers };
 }
 
 export function findStallCorrelation(
@@ -103,12 +105,16 @@ export function findStallCorrelation(
 export function buildAttributionEvidence(
   attribution: UserCallerAttribution | undefined,
   caller: UserCallerAttribution | undefined,
+  candidateCallers: readonly UserCallerAttribution[] = attribution ? [attribution] : [],
 ): AttributionEvidence {
+  const candidates =
+    candidateCallers.length > 0 ? [...candidateCallers] : attribution ? [attribution] : undefined;
   return {
     proofLevel: caller ? 'attributed-caller' : 'direct-builtin',
-    attributionBasis: caller ? 'sample-path' : 'builtin-only',
-    attributionConfidence: caller?.confidence ?? 'low',
+    attributionBasis: attribution ? 'sample-path' : 'builtin-only',
+    attributionConfidence: attribution?.confidence ?? 'low',
     userCaller: attribution,
+    candidateCallers: candidates,
   };
 }
 

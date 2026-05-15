@@ -101,23 +101,61 @@ describe('createSourceMapResolver', () => {
     expect(loc?.file).toBe('/somewhere/else/src/foo.ts');
   });
 
-  it('returns undefined when the URL has no map and increments unresolved counter', () => {
-    const { jsUrl } = writeFixture();
+  it('does not count plain JS without sourceMappingURL against coverage', () => {
+    const plainJs = join(dir, 'plain.js');
+    writeFileSync(plainJs, 'console.log(1);\n');
     const resolver = createSourceMapResolver({ cwd: dir });
-    resolver.prepare([jsUrl]);
-    const loc = resolver.resolve('file:///nope.js', 1, 1);
+    const plainUrl = pathToFileURL(plainJs).href;
+    resolver.prepare([plainUrl]);
+
+    const loc = resolver.resolve(plainUrl, 1, 1);
+
     expect(loc).toBeUndefined();
-    expect(resolver.integrity().framesUnresolved).toBe(1);
+    expect(resolver.integrity()).toMatchObject({
+      applicable: false,
+      status: 'not-applicable',
+      framesResolved: 0,
+      framesUnresolved: 0,
+      coverage: 1,
+      mapsLoaded: 0,
+      failures: [],
+    });
+  });
+
+  it('counts missing referenced source maps as failed coverage', () => {
+    const missingMapJs = join(dir, 'missing-map.js');
+    writeFileSync(missingMapJs, 'console.log(1);\n//# sourceMappingURL=missing-map.js.map\n');
+    const resolver = createSourceMapResolver({ cwd: dir });
+    const missingMapUrl = pathToFileURL(missingMapJs).href;
+    resolver.prepare([missingMapUrl]);
+
+    const loc = resolver.resolve(missingMapUrl, 1, 1);
+
+    expect(loc).toBeUndefined();
+    expect(resolver.integrity()).toMatchObject({
+      applicable: true,
+      status: 'failed',
+      framesResolved: 0,
+      framesUnresolved: 1,
+      coverage: 0,
+      mapsLoaded: 0,
+    });
+    expect(resolver.integrity().failures[0]?.reason).toContain('map-read-failed');
   });
 
   it('reports coverage from resolved/unresolved counters', () => {
     const { jsUrl } = writeFixture();
+    const missingMapJs = join(dir, 'missing-map.js');
+    writeFileSync(missingMapJs, 'console.log(1);\n//# sourceMappingURL=missing-map.js.map\n');
+    const missingMapUrl = pathToFileURL(missingMapJs).href;
     const resolver = createSourceMapResolver({ cwd: dir });
-    resolver.prepare([jsUrl]);
+    resolver.prepare([jsUrl, missingMapUrl]);
     resolver.resolve(jsUrl, 1, 1); // resolved
     resolver.resolve(jsUrl, 1, 1); // resolved
-    resolver.resolve('file:///nope.js', 1, 1); // unresolved
+    resolver.resolve(missingMapUrl, 1, 1); // unresolved
     const integrity = resolver.integrity();
+    expect(integrity.applicable).toBe(true);
+    expect(integrity.status).toBe('partial');
     expect(integrity.framesResolved).toBe(2);
     expect(integrity.framesUnresolved).toBe(1);
     expect(integrity.coverage).toBeCloseTo(2 / 3, 5);

@@ -208,6 +208,7 @@ describe('lanternaReportSchema', () => {
                   function: 'handleRequest',
                   file: 'src/app.js',
                   line: 22,
+                  stackDistance: 1,
                   profilePct: 40,
                   supportPct: 100,
                   confidence: 'high',
@@ -263,7 +264,29 @@ describe('lanternaReportSchema', () => {
                 callee: 'readFileSync',
                 proofLevel: 'direct-builtin',
                 attributionBasis: 'builtin-only',
-                attributionConfidence: 'low',
+                attributionConfidence: 'medium',
+                candidateCallers: [
+                  {
+                    function: 'readConfig',
+                    file: '/app/handler.ts',
+                    line: 42,
+                    stackDistance: 1,
+                    profilePct: 4.8,
+                    supportPct: 60,
+                    confidence: 'medium',
+                    basis: 'cpu-sample-path',
+                  },
+                  {
+                    function: 'loadTenant',
+                    file: '/app/tenant.ts',
+                    line: 17,
+                    stackDistance: 1,
+                    profilePct: 3.2,
+                    supportPct: 40,
+                    confidence: 'medium',
+                    basis: 'cpu-sample-path',
+                  },
+                ],
               },
             },
             confidence: 'high',
@@ -279,6 +302,31 @@ describe('lanternaReportSchema', () => {
       if (!result.success) return;
       expect(result.data.findings[0]?.confidence).toBe('high');
       expect(result.data.findings[0]?.proofLevel).toBe('direct-sample');
+    });
+
+    it('accepts source-map applicability status metadata', () => {
+      const report = makeReport({
+        meta: {
+          ...makeReport().meta,
+          captureIntegrity: {
+            ...makeReport().meta.captureIntegrity,
+            sourceMaps: {
+              enabled: true,
+              applicable: false,
+              status: 'not-applicable',
+              framesResolved: 0,
+              framesUnresolved: 0,
+              coverage: 1,
+              mapsLoaded: 0,
+              failures: [],
+            },
+          },
+        },
+      });
+
+      const result = lanternaReportSchema.safeParse(report);
+
+      expect(result.success).toBe(true);
     });
 
     it('rejects a cpu profile without quality metadata', () => {
