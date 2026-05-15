@@ -56,7 +56,9 @@ export function formatFrameLocation(frame: {
 }
 
 export function formatUserCaller(caller: UserCallerAttribution): string {
-  return `${caller.function} (${formatFrameLocation(caller)}) [${caller.confidence}, support ${formatPct(caller.supportPct)}]`;
+  const stackDistance =
+    caller.stackDistance !== undefined ? `, distance ${caller.stackDistance}` : '';
+  return `${caller.function} (${formatFrameLocation(caller)}) [${caller.confidence}, support ${formatPct(caller.supportPct)}${stackDistance}]`;
 }
 
 export function formatEventLoop(

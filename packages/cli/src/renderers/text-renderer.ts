@@ -32,8 +32,11 @@ export class TextReportRenderer implements ReportRenderer {
     lines.push(`Command: ${formatCommand(report.meta?.command)}`);
     const sourceMaps = report.meta?.captureIntegrity?.sourceMaps;
     if (sourceMaps?.enabled) {
+      const status = sourceMaps.status ? `, status ${sourceMaps.status}` : '';
+      const applicable =
+        sourceMaps.applicable !== undefined ? `, applicable ${sourceMaps.applicable}` : '';
       lines.push(
-        `Source maps: ${formatRatio(sourceMaps.coverage)} coverage (${sourceMaps.mapsLoaded} maps loaded)`,
+        `Source maps: ${formatRatio(sourceMaps.coverage)} coverage (${sourceMaps.mapsLoaded} maps loaded${status}${applicable})`,
       );
     }
     lines.push('');
@@ -194,6 +197,13 @@ export class TextReportRenderer implements ReportRenderer {
       if (userCaller) {
         lines.push(`${indent}  User caller: ${formatUserCaller(userCaller)}`);
       }
+      const candidateCallers = candidateCallersFromEvidenceExtra(f.evidence.extra);
+      if (candidateCallers.length > 0) {
+        lines.push(`${indent}  Candidate callers:`);
+        for (const caller of candidateCallers) {
+          lines.push(`${indent}    - ${formatUserCaller(caller)}`);
+        }
+      }
       if (f.evidence.extra !== undefined) {
         const extra = renderValue(f.evidence.extra);
         if (extra.length > 0) {
@@ -208,4 +218,10 @@ export class TextReportRenderer implements ReportRenderer {
 function userCallerFromEvidenceExtra(extra: unknown): UserCallerAttribution | undefined {
   if (!extra || typeof extra !== 'object') return undefined;
   return (extra as { userCaller?: UserCallerAttribution }).userCaller;
+}
+
+function candidateCallersFromEvidenceExtra(extra: unknown): UserCallerAttribution[] {
+  if (!extra || typeof extra !== 'object') return [];
+  const value = (extra as { candidateCallers?: unknown }).candidateCallers;
+  return Array.isArray(value) ? (value as UserCallerAttribution[]) : [];
 }

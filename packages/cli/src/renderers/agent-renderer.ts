@@ -96,6 +96,12 @@ function appendFrontmatter(lines: string[], report: LanternaReport): void {
   lines.push(`rerun_required: ${yamlScalar(hasInsufficientSignal(report))}`);
   if (sourceMaps?.enabled) {
     lines.push(`sourcemap_coverage: ${formatRatio01(sourceMaps.coverage)}`);
+    if (sourceMaps.status !== undefined) {
+      lines.push(`sourcemap_status: ${yamlScalar(sourceMaps.status)}`);
+    }
+    if (sourceMaps.applicable !== undefined) {
+      lines.push(`sourcemap_applicable: ${yamlScalar(sourceMaps.applicable)}`);
+    }
     lines.push(`sourcemap_maps_loaded: ${yamlScalar(sourceMaps.mapsLoaded)}`);
   } else {
     lines.push('sourcemap_coverage: null');
@@ -171,6 +177,10 @@ function appendFindingDetail(lines: string[], finding: Finding, position: number
   lines.push(`- location: ${preferredLocationWithFallback(finding)}`);
   const userCaller = userCallerFromEvidenceExtra(finding.evidence.extra);
   if (userCaller) lines.push(`- user_caller: ${formatUserCallerCompact(userCaller)}`);
+  const candidateCallers = candidateCallersFromEvidenceExtra(finding.evidence.extra);
+  if (candidateCallers.length > 0) {
+    lines.push(`- candidate_callers: ${candidateCallers.map(formatUserCallerCompact).join('; ')}`);
+  }
   lines.push(`- observed: ${formatMeasurements(finding.measurements?.observed)}`);
   lines.push(`- thresholds: ${formatMeasurements(finding.measurements?.thresholds)}`);
   lines.push(`- impact: ${formatImpact(finding)}`);
@@ -463,7 +473,7 @@ function degradingSignalCaveats(report: LanternaReport): string[] {
   if ((asyncProfile?.quality?.recordsDropped ?? 0) > 0) {
     caveats.push(`${asyncProfile?.quality?.recordsDropped ?? 0} async records dropped`);
   }
-  if (sourceMaps?.enabled && sourceMaps.coverage < 0.7) {
+  if (sourceMaps?.enabled && (sourceMaps.applicable ?? true) && sourceMaps.coverage < 0.7) {
     caveats.push('source-map coverage below 70%');
   }
   if (integrity?.eventLoopTimed === false) caveats.push('event-loop timing unavailable');
@@ -507,6 +517,12 @@ function userCallerFromEvidenceExtra(extra: unknown): UserCallerAttribution | un
   return (extra as { userCaller?: UserCallerAttribution }).userCaller;
 }
 
+function candidateCallersFromEvidenceExtra(extra: unknown): UserCallerAttribution[] {
+  if (!extra || typeof extra !== 'object') return [];
+  const value = (extra as { candidateCallers?: unknown }).candidateCallers;
+  return Array.isArray(value) ? (value as UserCallerAttribution[]) : [];
+}
+
 // ---------------------------------------------------------------------------
 // Location, files, frames helpers.
 // ---------------------------------------------------------------------------
@@ -545,7 +561,9 @@ function userCallerSuffix(caller: UserCallerAttribution | undefined): string {
 }
 
 function formatUserCallerCompact(caller: UserCallerAttribution): string {
-  return `${caller.function ?? '—'} at ${frameLocation(caller)} (${caller.confidence}, ${caller.basis}, support ${formatPct(caller.supportPct)})`;
+  const stackDistance =
+    caller.stackDistance !== undefined ? `, distance ${caller.stackDistance}` : '';
+  return `${caller.function ?? '—'} at ${frameLocation(caller)} (${caller.confidence}, ${caller.basis}, support ${formatPct(caller.supportPct)}${stackDistance})`;
 }
 
 function collectReadTargets(report: LanternaReport): ReadTarget[] {
@@ -577,19 +595,39 @@ function collectFindingReadTargets(targets: ReadTarget[], findings: Finding[]): 
     }
     const userCaller = userCallerFromEvidenceExtra(finding.evidence.extra);
     const userCallerTarget = readTargetFrame(userCaller);
-    if (!userCallerTarget) return;
-    targets.push({
-      ...userCallerTarget,
-      reason: reasonForExternalUserCaller(finding.evidence),
-      source: 'finding',
-      signal,
-      decision:
-        findingDecision === 'actionable' && userCaller?.confidence === 'high'
-          ? 'read-first'
-          : 'inspect-lead',
-      rank:
-        findingDecision === 'actionable' && userCaller?.confidence === 'high' ? index : 100 + index,
-    });
+    if (userCallerTarget) {
+      targets.push({
+        ...userCallerTarget,
+        reason: reasonForExternalUserCaller(finding.evidence),
+        source: 'finding',
+        signal,
+        decision:
+          findingDecision === 'actionable' && userCaller?.confidence === 'high'
+            ? 'read-first'
+            : 'inspect-lead',
+        rank:
+          findingDecision === 'actionable' && userCaller?.confidence === 'high'
+            ? index
+            : 100 + index,
+      });
+    }
+    candidateCallersFromEvidenceExtra(finding.evidence.extra)
+      .filter((caller) => caller !== userCaller)
+      .forEach((caller, candidateIndex) => {
+        const target = readTargetFrame(caller);
+        if (!target) return;
+        targets.push({
+          ...target,
+          reason: reasonForExternalUserCaller(finding.evidence),
+          source: 'finding',
+          signal,
+          decision:
+            caller.stackDistance === 1 && caller.confidence === 'high'
+              ? 'inspect-lead'
+              : 'supporting-context',
+          rank: 150 + index * 10 + candidateIndex,
+        });
+      });
   });
 }
 

@@ -322,6 +322,7 @@ describe('renderReport', () => {
                 function: 'handleRequest',
                 file: '/repo/src/app.js',
                 line: 22,
+                stackDistance: 1,
                 profilePct: 37.5,
                 supportPct: 92,
                 confidence: 'high',
@@ -414,11 +415,34 @@ describe('renderReport', () => {
                 function: 'handleRequest',
                 file: '/repo/src/app.js',
                 line: 22,
+                stackDistance: 1,
                 profilePct: 37.5,
                 supportPct: 45,
                 confidence: 'low',
                 basis: 'cpu-sample-path',
               },
+              candidateCallers: [
+                {
+                  function: 'handleRequest',
+                  file: '/repo/src/app.js',
+                  line: 22,
+                  stackDistance: 1,
+                  profilePct: 37.5,
+                  supportPct: 45,
+                  confidence: 'low',
+                  basis: 'cpu-sample-path',
+                },
+                {
+                  function: 'route',
+                  file: '/repo/src/routes.js',
+                  line: 10,
+                  stackDistance: 2,
+                  profilePct: 37.5,
+                  supportPct: 45,
+                  confidence: 'low',
+                  basis: 'cpu-sample-path',
+                },
+              ],
             },
           },
           why: 'Dependency work dominates.',
@@ -430,14 +454,30 @@ describe('renderReport', () => {
 
     const text = renderReport(report, { format: 'text' });
     const markdown = renderReport(report, { format: 'markdown' });
+    const agent = renderReport(report, { format: 'agent' });
 
     expect(text).toContain(
-      'User caller: handleRequest (/repo/src/app.js:22) [high, support 92.0%]',
+      'User caller: handleRequest (/repo/src/app.js:22) [high, support 92.0%, distance 1]',
     );
     expect(text).toContain('User caller: loadCache (/repo/src/cache.js:6) [high, support 100.0%]');
-    expect(text).toContain('User caller: handleRequest (/repo/src/app.js:22) [low, support 45.0%]');
+    expect(text).toContain(
+      'User caller: handleRequest (/repo/src/app.js:22) [low, support 45.0%, distance 1]',
+    );
+    expect(text).toContain('Candidate callers:');
+    expect(text).toContain('route (/repo/src/routes.js:10) [low, support 45.0%, distance 2]');
     expect(markdown).toContain('User caller');
-    expect(markdown).toContain('handleRequest (/repo/src/app.js:22) [high, support 92.0%]');
+    expect(markdown).toContain(
+      'handleRequest (/repo/src/app.js:22) [high, support 92.0%, distance 1]',
+    );
+    expect(markdown).toContain('- Candidate callers:');
+    expect(markdown).toContain('route (/repo/src/routes.js:10) [low, support 45.0%, distance 2]');
+    expect(agent).toContain('- candidate_callers:');
+    expect(agent).toContain(
+      'handleRequest at /repo/src/app.js:22 (low, cpu-sample-path, support 45.0%, distance 1)',
+    );
+    expect(agent).toContain(
+      'route at /repo/src/routes.js:10 (low, cpu-sample-path, support 45.0%, distance 2)',
+    );
   });
 
   it('renders deterministic agent markdown for source-backed action queues', () => {
@@ -452,6 +492,8 @@ describe('renderReport', () => {
             heartbeatDropped: 2,
             sourceMaps: {
               enabled: true,
+              applicable: true,
+              status: 'ok',
               framesResolved: 9,
               framesUnresolved: 1,
               coverage: 0.9,
@@ -571,6 +613,8 @@ describe('renderReport', () => {
     expect(output).toContain('integrity: degraded');
     expect(output).toContain('rerun_required: true');
     expect(output).toContain('sourcemap_coverage: 0.9');
+    expect(output).toContain('sourcemap_status: ok');
+    expect(output).toContain('sourcemap_applicable: true');
     expect(output).toContain('"control channel unavailable"');
     expect(output).toContain('## Findings');
     expect(output).toMatch(
@@ -636,6 +680,48 @@ describe('renderReport', () => {
     expect(output).not.toContain('The capture signal is sufficient');
     expect(output).not.toContain('## Kind Review — memory');
     expect(output).not.toContain('## Kind Review — async');
+  });
+
+  it('does not require rerun for non-applicable source maps', () => {
+    const output = renderReport(
+      {
+        meta: {
+          ...baseMeta,
+          captureIntegrity: {
+            ...baseMeta.captureIntegrity,
+            sourceMaps: {
+              enabled: true,
+              applicable: false,
+              status: 'not-applicable',
+              framesResolved: 0,
+              framesUnresolved: 0,
+              coverage: 1,
+              mapsLoaded: 0,
+              failures: [],
+            },
+          },
+        },
+        profiles: {
+          cpu: {
+            quality: {
+              confidence: 'high',
+              sampleCount: 250,
+              durationMs: 5000,
+              idleRatio: 0.2,
+              samplesTimed: true,
+              durationBasis: 'timeDeltas',
+              reasons: [],
+              recommendations: [],
+            },
+          },
+        },
+        findings: [],
+      },
+      { format: 'agent' },
+    );
+
+    expect(output).toContain('rerun_required: false');
+    expect(output).not.toContain('source-map coverage below 70%');
   });
 
   it('renders kind review summaries and uses aggregate files when findings are absent', () => {
