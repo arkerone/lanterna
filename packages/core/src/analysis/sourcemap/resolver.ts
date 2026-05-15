@@ -29,6 +29,7 @@ interface ResolverState {
   enabled: boolean;
   cwd: string;
   prepared: Set<string>;
+  applicableUrls: Set<string>;
   maps: Map<string, TraceMap>;
   failures: Array<{ url: string; reason: string }>;
   framesResolved: number;
@@ -45,6 +46,7 @@ export function createSourceMapResolver(opts: CreateSourceMapResolverOptions): S
     enabled: opts.enabled ?? true,
     cwd: opts.cwd,
     prepared: new Set(),
+    applicableUrls: new Set(),
     maps: new Map(),
     failures: [],
     framesResolved: 0,
@@ -63,6 +65,7 @@ export function createSourceMapResolver(opts: CreateSourceMapResolverOptions): S
         state.prepared.add(url);
         const result = discoverSourceMap(url);
         if (result.map) {
+          state.applicableUrls.add(url);
           try {
             const traceMap = new TraceMap(
               result.map.raw as ConstructorParameters<typeof TraceMap>[0],
@@ -80,6 +83,7 @@ export function createSourceMapResolver(opts: CreateSourceMapResolverOptions): S
           // keep the failures array signal-only.
           const reason = result.failure.reason;
           if (reason !== 'not-file-url' && reason !== 'no-mapping-url') {
+            state.applicableUrls.add(url);
             recordFailure(state, url, reason, result.failure.detail);
           }
         }
@@ -90,11 +94,10 @@ export function createSourceMapResolver(opts: CreateSourceMapResolverOptions): S
       if (!state.enabled) return undefined;
       const traceMap = state.maps.get(url);
       if (!traceMap) {
-        // Only count frames that could plausibly carry a source map. Builtins
-        // (`node:internal/...`), empty urls, and other non-filesystem schemes
-        // would always be "unresolved" and would tank the coverage metric
-        // without telling the reader anything actionable.
-        if (isMappableUrl(url)) state.framesUnresolved += 1;
+        // Only count frames whose generated script had a loaded or expected
+        // source map. Plain JS files without sourceMappingURL are source-map
+        // not-applicable, not degraded coverage.
+        if (state.applicableUrls.has(url)) state.framesUnresolved += 1;
         return undefined;
       }
       // trace-mapping uses 1-based lines and 0-based columns; Lanterna stores
@@ -122,11 +125,20 @@ export function createSourceMapResolver(opts: CreateSourceMapResolverOptions): S
 
     integrity() {
       const total = state.framesResolved + state.framesUnresolved;
+      const applicable = state.applicableUrls.size > 0;
+      const coverage = applicable ? (total > 0 ? state.framesResolved / total : 1) : 1;
       return {
         enabled: state.enabled,
+        applicable,
+        status: sourceMapStatus(
+          applicable,
+          coverage,
+          state.framesUnresolved,
+          state.failures.length,
+        ),
         framesResolved: state.framesResolved,
         framesUnresolved: state.framesUnresolved,
-        coverage: total > 0 ? state.framesResolved / total : 0,
+        coverage,
         mapsLoaded: state.maps.size,
         failures: state.failures.slice(),
       };
@@ -178,13 +190,6 @@ function formatSourcePath(rawSource: string, traceMap: TraceMap, cwd: string): s
   return toPosix(rawSource);
 }
 
-function isMappableUrl(url: string): boolean {
-  if (!url) return false;
-  if (url.startsWith('file://')) return true;
-  if (isAbsolute(url)) return true;
-  return false;
-}
-
 function isVirtualSourcePath(source: string): boolean {
   return source.includes('://') || /^[a-z][a-z\d+.-]*:\//i.test(source);
 }
@@ -206,6 +211,19 @@ function toPosix(value: string): string {
 function errorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
   return String(error);
+}
+
+function sourceMapStatus(
+  applicable: boolean,
+  coverage: number,
+  framesUnresolved: number,
+  failureCount: number,
+): SourceMapsIntegrity['status'] {
+  if (!applicable) return 'not-applicable';
+  if (coverage >= 1 && failureCount === 0) return 'ok';
+  if (coverage > 0 && (framesUnresolved > 0 || failureCount > 0)) return 'partial';
+  if (failureCount > 0 || framesUnresolved > 0) return 'failed';
+  return 'ok';
 }
 
 /** Resolver that does nothing — useful when source-map support is disabled. */
