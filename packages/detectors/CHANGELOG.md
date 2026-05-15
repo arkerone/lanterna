@@ -1,5 +1,20 @@
 # @lanterna-profiler/detectors
 
+## 2.2.0
+
+### Minor Changes
+
+- c68e1de: Harden profiling reports and detector attribution.
+
+  - Add richer CPU, memory, and async report signals for agent-oriented review.
+  - Add generic CPU hotspot detection and improve source-aware attribution for built-in detectors.
+  - Improve agent/text/markdown report output with user stacks, read-first targets, and clearer quality caveats.
+
+### Patch Changes
+
+- Updated dependencies [c68e1de]
+  - @lanterna-profiler/core@2.2.0
+
 ## 2.1.1
 
 ### Patch Changes
