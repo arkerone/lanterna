@@ -157,6 +157,13 @@ function buildMemoryQuality(
   if (data.heapSamplingAvailable === false) {
     reasons.push('V8 heap sampling profile was unavailable');
     recommendations.add('Rerun the capture while the target process remains reachable over CDP.');
+  } else if (totalSampledBytes === 0) {
+    reasons.push(
+      'V8 heap sampling profile contains 0 bytes — the probe ran but observed no heap allocations during the capture window',
+    );
+    recommendations.add(
+      'Increase --duration, generate representative load (use --workload), or check that the target actually allocates on the V8 heap (Buffer.alloc and other external allocations are not visible to the heap sampler).',
+    );
   }
 
   for (const warning of data.warnings ?? []) {
