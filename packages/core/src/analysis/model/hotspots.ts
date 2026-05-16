@@ -303,8 +303,18 @@ export function buildHotspotAnalysis(
       selfPct: (aggregate.selfSamples / totalSamples) * 100,
       totalMs: aggregate.totalMs,
       totalPct: (aggregate.totalSamples / totalSamples) * 100,
-      callers: topRefs(aggregate.callerSamples, hotspotAggregatesByKey, totalSamples, 3),
-      callees: topRefs(aggregate.calleeSamples, hotspotAggregatesByKey, totalSamples, 3),
+      callers: topHotspotRefsBySamplePct(
+        aggregate.callerSamples,
+        hotspotAggregatesByKey,
+        totalSamples,
+        3,
+      ),
+      callees: topHotspotRefsBySamplePct(
+        aggregate.calleeSamples,
+        hotspotAggregatesByKey,
+        totalSamples,
+        3,
+      ),
       optimizationState: aggregate.optimizationState,
     };
     if (aggregate.package) hotspot.package = aggregate.package;
@@ -312,7 +322,7 @@ export function buildHotspotAnalysis(
     fullHotspots.push(hotspot);
     hotspotById.set(hotspot.id, hotspot);
 
-    const candidateCallers = buildUserCallerCandidates(
+    const candidateCallers = buildUserCallerAttributions(
       aggregate,
       hotspotAggregatesByKey,
       totalSamples,
@@ -340,13 +350,13 @@ export function buildHotspotAnalysis(
   };
 }
 
-function buildUserCallerCandidates(
+function buildUserCallerAttributions(
   aggregate: HotspotAggregate,
   hotspotAggregatesByKey: Map<string, HotspotAggregate>,
   totalSamples: number,
 ): UserCallerAttribution[] {
   const totalPathSamples = Math.max(1, aggregate.pathSamples || aggregate.totalSamples);
-  const candidates = Array.from(aggregate.candidateUserAncestorSamples.entries())
+  const rankedUserCallerAttributions = Array.from(aggregate.candidateUserAncestorSamples.entries())
     .sort((left, right) => {
       const distanceDelta =
         (aggregate.candidateUserAncestorDistance.get(left[0]) ?? Number.MAX_SAFE_INTEGER) -
@@ -377,19 +387,14 @@ function buildUserCallerCandidates(
       if (userHotspotAggregate.source) userCaller.source = userHotspotAggregate.source;
       return [userCaller];
     });
-  return candidates.some((candidate) => !isAnonymousUserCaller(candidate))
-    ? candidates.filter((candidate) => !isAnonymousUserCaller(candidate))
-    : candidates;
+  // Keep the full user caller chain, including anonymous user wrappers.
+  return rankedUserCallerAttributions;
 }
 
 function attributionConfidenceForSupport(supportPct: number): 'low' | 'medium' | 'high' {
   if (supportPct >= ATTRIBUTION_HIGH_CONFIDENCE_SUPPORT_PCT) return 'high';
   if (supportPct >= ATTRIBUTION_MEDIUM_CONFIDENCE_SUPPORT_PCT) return 'medium';
   return 'low';
-}
-
-function isAnonymousUserCaller(candidate: UserCallerAttribution): boolean {
-  return candidate.function === '(anonymous)' || candidate.function.trim() === '';
 }
 
 function buildSampleDurationsMs(profile: RawCpuProfile, fallbackMs: number): number[] {
@@ -402,7 +407,7 @@ function buildSampleDurationsMs(profile: RawCpuProfile, fallbackMs: number): num
   return deltas.map((deltaUs) => deltaUs / 1000);
 }
 
-function topRefs(
+function topHotspotRefsBySamplePct(
   samplesByAggregateKey: Map<string, number>,
   hotspotAggregatesByKey: Map<string, { id: string }>,
   totalSamples: number,

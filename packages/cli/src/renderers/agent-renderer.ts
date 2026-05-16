@@ -26,6 +26,7 @@ type ReadTargetReason =
   | 'user-caller'
   | 'dependency-hotspot-caller'
   | 'runtime-hotspot-caller'
+  | 'correlated-allocator'
   | 'cpu-user-stack'
   | 'top-cpu-culprit'
   | 'top-cpu-hotspot'
@@ -37,6 +38,7 @@ type ReadTargetReason =
   | 'top-async-hot-file-caller'
   | 'long-async-operation'
   | 'long-async-operation-caller'
+  | 'async-entry-frame'
   | 'async-hot-file'
   | 'async-hot-file-caller'
   | 'async-cpu-attribution-root'
@@ -192,6 +194,16 @@ function appendFindingDetail(
   if (candidateCallers.length > 0) {
     lines.push(`- candidate_callers: ${candidateCallers.map(formatUserCallerCompact).join('; ')}`);
   }
+  const correlatedAllocator = correlatedAllocatorFromEvidenceExtra(finding.evidence.extra);
+  if (correlatedAllocator) {
+    lines.push(
+      `- correlated_allocator: ${frameLabel(correlatedAllocator)} at ${frameLocation(correlatedAllocator)}${basisSuffix(correlatedAllocator.basis)}${userCallerSuffix(correlatedAllocator.userCaller)}`,
+    );
+  }
+  const entryFrame = entryFrameFromEvidenceExtra(finding.evidence.extra);
+  if (entryFrame) {
+    lines.push(`- entry_frame: ${frameLabel(entryFrame)} at ${frameLocation(entryFrame)}`);
+  }
   const userStack = cpuUserStackForFinding(finding, report);
   if (userStack) lines.push(`- user_stack: ${userStack}`);
   lines.push(`- observed: ${formatMeasurements(finding.measurements?.observed)}`);
@@ -271,29 +283,34 @@ function appendCpuKindReview(lines: string[], report: LanternaReport): void {
     appendIndentedTable(
       lines,
       ['#', 'function', 'location', 'self%', 'total%', 'user_caller'],
-      hotspots.map((h, i) => [
-        String(i + 1),
-        h.function ?? '—',
-        frameLocation(h),
-        formatPct(h.selfPct),
-        formatPct(h.totalPct),
-        userCallerCell(h.userCaller),
+      hotspots.map((hotspot, hotspotIndex) => [
+        String(hotspotIndex + 1),
+        hotspot.function ?? '—',
+        frameLocation(hotspot),
+        formatPct(hotspot.selfPct),
+        formatPct(hotspot.totalPct),
+        userCallerCell(hotspot.userCaller),
       ]),
     );
   }
   const stacks = (cpu.hotStacks ?? []).slice(0, 3);
-  const stackRows = stacks.flatMap((stack, i) => {
-    const frame =
-      stack.frames.find((f) => Boolean(f.source) && isRenderableReviewFrame(f)) ??
+  const hotStackRows = stacks.flatMap((stack, stackIndex) => {
+    const stackAnchorFrame =
+      stack.frames.find((frame) => Boolean(frame.source) && isRenderableReviewFrame(frame)) ??
       stack.frames.find(isRenderableReviewFrame);
-    if (!frame) return [];
+    if (!stackAnchorFrame) return [];
     return [
-      [String(i + 1), frame.function ?? '—', frameLocation(frame), formatPct(stack.weightPct)],
+      [
+        String(stackIndex + 1),
+        stackAnchorFrame.function ?? '—',
+        frameLocation(stackAnchorFrame),
+        formatPct(stack.weightPct),
+      ],
     ];
   });
-  if (stackRows.length > 0) {
+  if (hotStackRows.length > 0) {
     lines.push('- hot_stacks:');
-    appendIndentedTable(lines, ['#', 'anchor', 'location', 'weight%'], stackRows);
+    appendIndentedTable(lines, ['#', 'anchor', 'location', 'weight%'], hotStackRows);
   }
   const clusters = (cpu.hotStackClusters ?? [])
     .filter((cluster) => isRenderableReviewFrame(cluster.anchor))
@@ -303,8 +320,8 @@ function appendCpuKindReview(lines: string[], report: LanternaReport): void {
     appendIndentedTable(
       lines,
       ['#', 'anchor', 'location', 'weight%'],
-      clusters.map((cluster, i) => [
-        String(i + 1),
+      clusters.map((cluster, clusterIndex) => [
+        String(clusterIndex + 1),
         cluster.anchor.function ?? '—',
         frameLocation(cluster.anchor),
         formatPct(cluster.weightPct),
@@ -339,13 +356,13 @@ function appendMemoryKindReview(lines: string[], report: LanternaReport): void {
     appendIndentedTable(
       lines,
       ['#', 'function', 'location', 'self%', 'total%', 'user_caller'],
-      allocators.map((a, i) => [
-        String(i + 1),
-        a.function ?? '—',
-        frameLocation(a),
-        formatPct(a.selfPct),
-        formatPct(a.totalPct),
-        userCallerCell(a.userCaller),
+      allocators.map((allocator, allocatorIndex) => [
+        String(allocatorIndex + 1),
+        allocator.function ?? '—',
+        frameLocation(allocator),
+        formatPct(allocator.selfPct),
+        formatPct(allocator.totalPct),
+        userCallerCell(allocator.userCaller),
       ]),
     );
   }
@@ -376,17 +393,22 @@ function appendAsyncKindReview(lines: string[], report: LanternaReport): void {
       `- top_async_hot_file: ${frameLabel(asyncProfile.summary.topAsyncHotFile)} at ${frameLocation(asyncProfile.summary.topAsyncHotFile)}${userCallerSuffix(asyncProfile.summary.topAsyncHotFile.userCaller)}`,
     );
   }
-  const operationRows = (asyncProfile.topOperations ?? []).flatMap((op, i) => {
-    const frame = preferredAsyncOperationFrame(op);
-    if (!isRenderableReviewFrame(frame) && !isRenderableReviewFrame(op.userCaller)) return [];
+  const operationRows = (asyncProfile.topOperations ?? []).flatMap((operation, operationIndex) => {
+    const operationFrame = preferredAsyncOperationFrame(operation);
+    if (
+      !isRenderableReviewFrame(operationFrame) &&
+      !isRenderableReviewFrame(operation.userCaller)
+    ) {
+      return [];
+    }
     return [
       [
-        String(i + 1),
-        op.kind,
-        String(op.asyncId),
-        isRenderableReviewFrame(frame) ? frameLocation(frame) : '—',
-        formatScalarOrDash(op.durationMs),
-        userCallerCell(op.userCaller),
+        String(operationIndex + 1),
+        operation.kind,
+        String(operation.asyncId),
+        isRenderableReviewFrame(operationFrame) ? frameLocation(operationFrame) : '—',
+        formatScalarOrDash(operation.durationMs),
+        userCallerCell(operation.userCaller),
       ],
     ];
   });
@@ -546,8 +568,8 @@ function decisionForFinding(finding: Finding): 'actionable' | 'hypothesis' | 're
 function proofLevelFromExtra(finding: Finding): string {
   const extra = finding.evidence.extra;
   if (extra && typeof extra === 'object' && !Array.isArray(extra) && 'proofLevel' in extra) {
-    const value = Reflect.get(extra, 'proofLevel');
-    if (typeof value === 'string') return value;
+    const proofLevel = Reflect.get(extra, 'proofLevel');
+    if (typeof proofLevel === 'string') return proofLevel;
   }
   return 'unknown';
 }
@@ -559,8 +581,36 @@ function userCallerFromEvidenceExtra(extra: unknown): UserCallerAttribution | un
 
 function candidateCallersFromEvidenceExtra(extra: unknown): UserCallerAttribution[] {
   if (!extra || typeof extra !== 'object') return [];
-  const value = (extra as { candidateCallers?: unknown }).candidateCallers;
-  return Array.isArray(value) ? (value as UserCallerAttribution[]) : [];
+  const candidateCallers = (extra as { candidateCallers?: unknown }).candidateCallers;
+  return Array.isArray(candidateCallers) ? (candidateCallers as UserCallerAttribution[]) : [];
+}
+
+function correlatedAllocatorFromEvidenceExtra(
+  extra: unknown,
+): (Frame & { basis?: string; userCaller?: UserCallerAttribution; totalPct?: number }) | undefined {
+  if (!extra || typeof extra !== 'object') return undefined;
+  const correlatedAllocator = Reflect.get(extra, 'correlatedAllocator');
+  if (
+    !correlatedAllocator ||
+    typeof correlatedAllocator !== 'object' ||
+    Array.isArray(correlatedAllocator)
+  ) {
+    return undefined;
+  }
+  const frame = correlatedAllocator as Partial<
+    Frame & { basis?: string; userCaller?: UserCallerAttribution; totalPct?: number }
+  >;
+  if (typeof frame.file !== 'string' || typeof frame.line !== 'number') return undefined;
+  return frame as Frame & { basis?: string; userCaller?: UserCallerAttribution; totalPct?: number };
+}
+
+function entryFrameFromEvidenceExtra(extra: unknown): Frame | undefined {
+  if (!extra || typeof extra !== 'object') return undefined;
+  const entryFrame = Reflect.get(extra, 'entryFrame');
+  if (!entryFrame || typeof entryFrame !== 'object' || Array.isArray(entryFrame)) return undefined;
+  const frame = entryFrame as Partial<Frame>;
+  if (typeof frame.file !== 'string' || typeof frame.line !== 'number') return undefined;
+  return frame as Frame;
 }
 
 function cpuUserStackForFinding(finding: Finding, report: LanternaReport): string | undefined {
@@ -579,7 +629,7 @@ function matchedCpuUserStackForFinding(
 ): { userFrames: CpuStackFrame[]; leaf?: CpuStackFrame; weightPct: number } | undefined {
   if (finding.profileKind !== 'cpu') return undefined;
   const hotStacks = report.profiles?.cpu?.hotStacks ?? [];
-  const matches = hotStacks
+  const scoredStacks = hotStacks
     .map((stack) => ({
       stack,
       score: scoreCpuStackForFinding(stack.frames, finding),
@@ -588,17 +638,22 @@ function matchedCpuUserStackForFinding(
     .sort(
       (left, right) => right.score - left.score || right.stack.weightPct - left.stack.weightPct,
     );
-  const best = matches[0];
-  if (!best) return undefined;
-  const stack = trimCpuUserStackForFinding(best.stack.frames, finding);
-  if (stack.userFrames.length === 0) return undefined;
-  return { ...stack, weightPct: best.stack.weightPct };
+  const bestStackMatch = scoredStacks[0];
+  if (!bestStackMatch) return undefined;
+  const trimmedStack = trimCpuUserStackForFinding(bestStackMatch.stack.frames, finding);
+  if (trimmedStack.userFrames.length === 0) return undefined;
+  return { ...trimmedStack, weightPct: bestStackMatch.stack.weightPct };
 }
 
 function scoreCpuStackForFinding(frames: readonly CpuStackFrame[], finding: Finding): number {
   let score = frames.some((frame) => frameMatchesTarget(frame, finding.evidence)) ? 100 : 0;
-  const callee = calleeNameFromExtra(finding.evidence.extra);
-  if (callee && frames.some((frame) => frameMatchesFunction(frame, callee))) score += 50;
+  const expectedCalleeName = calleeNameFromExtra(finding.evidence.extra);
+  if (
+    expectedCalleeName &&
+    frames.some((frame) => frameMatchesFunction(frame, expectedCalleeName))
+  ) {
+    score += 50;
+  }
   for (const caller of candidateCallersFromEvidenceExtra(finding.evidence.extra)) {
     if (frames.some((frame) => frameMatchesTarget(frame, caller))) {
       score += caller.stackDistance === 1 ? 12 : 8;
@@ -638,8 +693,8 @@ function formatCpuStackFrames(frames: readonly CpuStackFrame[]): string {
 
 function calleeNameFromExtra(extra: unknown): string | undefined {
   if (!extra || typeof extra !== 'object') return undefined;
-  const value = Reflect.get(extra, 'callee');
-  return typeof value === 'string' && value.length > 0 ? value : undefined;
+  const calleeName = Reflect.get(extra, 'callee');
+  return typeof calleeName === 'string' && calleeName.length > 0 ? calleeName : undefined;
 }
 
 function frameMatchesTarget(
@@ -686,12 +741,6 @@ function isUserStackFrame(frame: CpuStackFrame): boolean {
   return frame.category === 'user';
 }
 
-function isAnonymousUserStackFrame(frame: CpuStackFrame): boolean {
-  return (
-    isUserStackFrame(frame) && (frame.function === '(anonymous)' || frame.function?.trim() === '')
-  );
-}
-
 // ---------------------------------------------------------------------------
 // Location, files, frames helpers.
 // ---------------------------------------------------------------------------
@@ -734,6 +783,10 @@ function userCallerSuffix(caller: UserCallerAttribution | undefined): string {
   return ` — user_caller ${formatUserCallerCompact(caller)}`;
 }
 
+function basisSuffix(basis: string | undefined): string {
+  return basis ? ` (${basis})` : '';
+}
+
 function formatUserCallerCompact(caller: UserCallerAttribution): string {
   const stackDistance =
     caller.stackDistance !== undefined ? `, distance ${caller.stackDistance}` : '';
@@ -745,7 +798,11 @@ function collectReadTargets(report: LanternaReport): ReadTarget[] {
   collectFindingReadTargets(targets, report);
   collectAggregateReadTargets(targets, report);
   return dedupeReadTargets(targets)
-    .sort((a, b) => a.rank - b.rank || a.location.localeCompare(b.location))
+    .sort(
+      (leftTarget, rightTarget) =>
+        leftTarget.rank - rightTarget.rank ||
+        leftTarget.location.localeCompare(rightTarget.location),
+    )
     .slice(0, 10);
 }
 
@@ -766,6 +823,7 @@ function collectFindingReadTargets(targets: ReadTarget[], report: LanternaReport
         decision: findingIsActionable ? 'read-first' : 'inspect-lead',
         rank: findingIsActionable ? index : 100 + index,
       });
+      collectExtraFindingReadTargets(targets, finding, index, signal);
       collectCpuUserStackReadTargets(targets, finding, report, index);
       return;
     }
@@ -804,7 +862,34 @@ function collectFindingReadTargets(targets: ReadTarget[], report: LanternaReport
           rank: 150 + index * 10 + candidateIndex,
         });
       });
+    collectExtraFindingReadTargets(targets, finding, index, signal);
     collectCpuUserStackReadTargets(targets, finding, report, index);
+  });
+}
+
+function collectExtraFindingReadTargets(
+  targets: ReadTarget[],
+  finding: Finding,
+  findingIndex: number,
+  signal: string,
+): void {
+  const correlatedAllocator = correlatedAllocatorFromEvidenceExtra(finding.evidence.extra);
+  const allocatorTarget = correlatedAllocator?.userCaller ?? correlatedAllocator;
+  pushReadTarget(targets, allocatorTarget, {
+    reason: 'correlated-allocator',
+    source: 'finding',
+    signal,
+    decision:
+      correlatedAllocator?.userCaller?.confidence === 'high' ? 'read-first' : 'inspect-lead',
+    rank: 60 + findingIndex * 20,
+  });
+
+  pushReadTarget(targets, entryFrameFromEvidenceExtra(finding.evidence.extra), {
+    reason: 'async-entry-frame',
+    source: 'finding',
+    signal,
+    decision: 'inspect-lead',
+    rank: 65 + findingIndex * 20,
   });
 }
 
@@ -816,9 +901,7 @@ function collectCpuUserStackReadTargets(
 ): void {
   const stack = matchedCpuUserStackForFinding(finding, report);
   if (!stack) return;
-  const hasNamedUserFrame = stack.userFrames.some((frame) => !isAnonymousUserStackFrame(frame));
   stack.userFrames.forEach((frame, frameIndex) => {
-    if (hasNamedUserFrame && isAnonymousUserStackFrame(frame)) return;
     const target = readTargetFrame(frame);
     if (!target) return;
     targets.push({
@@ -859,10 +942,10 @@ function collectAggregateReadTargets(targets: ReadTarget[], report: LanternaRepo
         rank: 200,
       });
       for (const hotspot of cpu.hotspots ?? []) {
-        const userCaller = readTargetFrame(hotspot.userCaller);
-        if (userCaller && isExternalOrRuntimeFrame(hotspot)) {
+        const userCallerTarget = readTargetFrame(hotspot.userCaller);
+        if (userCallerTarget && isExternalOrRuntimeFrame(hotspot)) {
           targets.push({
-            ...userCaller,
+            ...userCallerTarget,
             reason: reasonForExternalUserCaller(hotspot),
             source: 'cpu',
             signal: signalFromPctFrame(hotspot),
@@ -913,26 +996,26 @@ function collectAggregateReadTargets(targets: ReadTarget[], report: LanternaRepo
 
 function collectAllocatorReadTarget(
   targets: ReadTarget[],
-  frame: (Frame & { userCaller?: UserCallerAttribution; selfPct?: number }) | undefined,
+  allocatorFrame: (Frame & { userCaller?: UserCallerAttribution; selfPct?: number }) | undefined,
   rank: number,
 ): void {
-  if (!frame) return;
-  const userCaller = readTargetFrame(frame.userCaller);
-  if (userCaller && isExternalOrRuntimeFrame(frame)) {
+  if (!allocatorFrame) return;
+  const userCallerTarget = readTargetFrame(allocatorFrame.userCaller);
+  if (userCallerTarget && isExternalOrRuntimeFrame(allocatorFrame)) {
     targets.push({
-      ...userCaller,
+      ...userCallerTarget,
       reason: 'memory-allocator',
       source: 'memory',
-      signal: signalFromPctFrame(frame),
-      decision: frame.userCaller?.confidence === 'high' ? 'read-first' : 'inspect-lead',
+      signal: signalFromPctFrame(allocatorFrame),
+      decision: allocatorFrame.userCaller?.confidence === 'high' ? 'read-first' : 'inspect-lead',
       rank,
     });
     return;
   }
-  pushReadTarget(targets, frame, {
+  pushReadTarget(targets, allocatorFrame, {
     reason: 'memory-allocator',
     source: 'memory',
-    signal: signalFromPctFrame(frame),
+    signal: signalFromPctFrame(allocatorFrame),
     decision: 'inspect-lead',
     rank,
   });
@@ -1061,10 +1144,10 @@ function dedupeReadTargets(targets: ReadTarget[]): ReadTarget[] {
   return [...byLocation.values()];
 }
 
-function compareReadTargetPriority(a: ReadTarget, b: ReadTarget): number {
-  const decisionDelta = decisionRank(a.decision) - decisionRank(b.decision);
+function compareReadTargetPriority(left: ReadTarget, right: ReadTarget): number {
+  const decisionDelta = decisionRank(left.decision) - decisionRank(right.decision);
   if (decisionDelta !== 0) return decisionDelta;
-  return a.rank - b.rank;
+  return left.rank - right.rank;
 }
 
 function decisionRank(decision: ReadTargetDecision): number {
@@ -1090,6 +1173,8 @@ function formatReadTargetReason(reason: ReadTargetReason): string {
       return 'user caller for dependency hotspot';
     case 'runtime-hotspot-caller':
       return 'user caller for runtime hotspot';
+    case 'correlated-allocator':
+      return 'correlated allocator';
     case 'cpu-user-stack':
       return 'CPU user stack';
     case 'top-cpu-culprit':
@@ -1112,6 +1197,8 @@ function formatReadTargetReason(reason: ReadTargetReason): string {
       return 'long async operation';
     case 'long-async-operation-caller':
       return 'long async operation caller';
+    case 'async-entry-frame':
+      return 'async entry frame';
     case 'async-hot-file':
       return 'async hot file';
     case 'async-hot-file-caller':
@@ -1200,30 +1287,32 @@ function signalFromAsyncHotFile(hotFile: {
   return '—';
 }
 
-function preferredAsyncOperationFrame(op: AsyncTopOperation): AsyncStackFrameReport | undefined {
+function preferredAsyncOperationFrame(
+  operation: AsyncTopOperation,
+): AsyncStackFrameReport | undefined {
   return (
-    op.primaryFrame ??
-    op.awaitFrame ??
-    op.executionFrame ??
-    op.cdpAsyncContextFrame ??
-    op.initFrame ??
-    op.creationFrame ??
-    op.promiseRegistrationFrame ??
-    op.promiseHandlerFrame
+    operation.primaryFrame ??
+    operation.awaitFrame ??
+    operation.executionFrame ??
+    operation.cdpAsyncContextFrame ??
+    operation.initFrame ??
+    operation.creationFrame ??
+    operation.promiseRegistrationFrame ??
+    operation.promiseHandlerFrame
   );
 }
 
-function asyncOperationFrames(op: AsyncTopOperation): AsyncStackFrameReport[] {
+function asyncOperationFrames(operation: AsyncTopOperation): AsyncStackFrameReport[] {
   return [
-    op.initFrame,
-    op.primaryFrame,
-    op.awaitFrame,
-    op.executionFrame,
-    op.cdpAsyncContextFrame,
-    op.creationFrame,
-    op.promiseRegistrationFrame,
-    op.promiseHandlerFrame,
-    ...op.initStack,
+    operation.initFrame,
+    operation.primaryFrame,
+    operation.awaitFrame,
+    operation.executionFrame,
+    operation.cdpAsyncContextFrame,
+    operation.creationFrame,
+    operation.promiseRegistrationFrame,
+    operation.promiseHandlerFrame,
+    ...operation.initStack,
   ].filter((frame): frame is AsyncStackFrameReport => Boolean(frame));
 }
 
@@ -1240,15 +1329,17 @@ function formatImpact(finding: Finding): string {
 function formatMeasurements(values: Record<string, number> | undefined): string {
   if (!values || Object.keys(values).length === 0) return 'none';
   return Object.entries(values)
-    .map(([key, value]) => `${key}=${formatRawNumber(value)}`)
+    .map(([metricName, metricValue]) => `${metricName}=${formatRawNumber(metricValue)}`)
     .join(' ');
 }
 
 function formatRemediation(remediation: Finding['remediation']): string {
   if (!remediation) return 'none';
   const entries = Object.entries(remediation)
-    .filter(([, value]) => value !== undefined)
-    .map(([key, value]) => (key === 'kind' ? `kind=${String(value)}` : `${key}=${String(value)}`));
+    .filter(([, remediationValue]) => remediationValue !== undefined)
+    .map(([key, remediationValue]) =>
+      key === 'kind' ? `kind=${String(remediationValue)}` : `${key}=${String(remediationValue)}`,
+    );
   return entries.join(' ');
 }
 
@@ -1381,16 +1472,18 @@ function yamlString(value: string): string {
 
 function yamlInlineList(values: readonly string[]): string {
   if (values.length === 0) return '[]';
-  return `[${values.map((v) => yamlString(v)).join(', ')}]`;
+  return `[${values.map((entry) => yamlString(entry)).join(', ')}]`;
 }
 
 function appendTable(lines: string[], headers: string[], rows: string[][]): void {
   const escaped = rows.map((row) => row.map(escapeCell));
-  const widths = headers.map((h, i) =>
-    Math.max(h.length, ...escaped.map((row) => (row[i] ?? '').length)),
+  const widths = headers.map((header, columnIndex) =>
+    Math.max(header.length, ...escaped.map((row) => (row[columnIndex] ?? '').length)),
   );
-  const widthAt = (i: number): number => widths[i] ?? 0;
-  lines.push(`| ${headers.map((h, i) => pad(h, widthAt(i))).join(' | ')} |`);
+  const widthAt = (columnIndex: number): number => widths[columnIndex] ?? 0;
+  lines.push(
+    `| ${headers.map((header, columnIndex) => pad(header, widthAt(columnIndex))).join(' | ')} |`,
+  );
   lines.push(`| ${widths.map((w) => '-'.repeat(Math.max(3, w))).join(' | ')} |`);
   for (const row of escaped) {
     lines.push(`| ${row.map((cell, i) => pad(cell ?? '', widthAt(i))).join(' | ')} |`);

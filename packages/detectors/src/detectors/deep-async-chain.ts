@@ -1,6 +1,11 @@
 import type { BaseFinding, Finding, KindScopedDetector } from '@lanterna-profiler/core';
 import { DETECTOR_THRESHOLDS } from '../config.js';
-import { anchorForFile, asyncConfidence, asyncEvidenceExtra } from './async-evidence.js';
+import {
+  anchorForFile,
+  asyncConfidence,
+  asyncEvidenceExtra,
+  resolveAsyncUserCaller,
+} from './async-evidence.js';
 
 /**
  * Fires when an async trigger chain reaches deep into the tree. Deep chains
@@ -27,6 +32,10 @@ export const deepAsyncChainDetector: KindScopedDetector<'async'> = {
       const rootFrame = chain.rootFrame;
       const anchor = anchorForFile(report, chain.dominantFile ?? rootFrame?.file);
       const frame = anchor.frame ?? rootFrame;
+      const userCaller = resolveAsyncUserCaller(undefined, frame, {
+        confidence: 'high',
+        basis: 'async-stack',
+      });
       findings.push({
         id: `deep-async-chain:${chain.rootAsyncId}`,
         profileKind: 'async',
@@ -53,6 +62,7 @@ export const deepAsyncChainDetector: KindScopedDetector<'async'> = {
             totalOperations: chain.totalOperations,
             totalDurationMs: chain.totalDurationMs,
             deepestPath: chain.deepestPath,
+            ...(userCaller ? { userCaller } : {}),
             ...asyncEvidenceExtra(report, anchor),
           },
         },

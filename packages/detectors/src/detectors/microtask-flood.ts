@@ -1,6 +1,11 @@
 import type { BaseFinding, Finding, KindScopedDetector } from '@lanterna-profiler/core';
 import { DETECTOR_THRESHOLDS } from '../config.js';
-import { anchorForFrame, asyncConfidence, asyncEvidenceExtra } from './async-evidence.js';
+import {
+  anchorForFrame,
+  asyncConfidence,
+  asyncEvidenceExtra,
+  resolveAsyncUserCaller,
+} from './async-evidence.js';
 
 /**
  * Fires when the inflight async resource count stays high for the duration
@@ -25,6 +30,10 @@ export const microtaskFloodDetector: KindScopedDetector<'async'> = {
       concurrency.maxInflight >= thresholds.criticalMaxInflight ? 'critical' : 'warning';
     const anchor = anchorForFrame(report, undefined);
     const frame = anchor.frame;
+    const userCaller = resolveAsyncUserCaller(anchor.hotFile, frame, {
+      confidence: anchor.hotFile?.confidence ?? 'medium',
+      basis: 'async-stack',
+    });
 
     return [
       {
@@ -47,6 +56,7 @@ export const microtaskFloodDetector: KindScopedDetector<'async'> = {
             meanActive: concurrency.meanActive,
             maxActive: concurrency.maxActive,
             samples: report.concurrencyTimeline.length,
+            ...(userCaller ? { userCaller } : {}),
             ...asyncEvidenceExtra(report, anchor),
           },
         },

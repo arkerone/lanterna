@@ -58,8 +58,11 @@ export function deriveTopUserHotspot(
   correlatedHotspots: readonly CorrelatedHotspot[] = [],
   findings: LanternaReport['findings'] = [],
 ): SummaryUserHotspot | undefined {
-  const candidateHotspots = dedupeHotspots([...hotspots, ...candidateCallerHotspots(findings)]);
-  const candidates = candidateHotspots
+  const candidateHotspots = dedupeHotspots([
+    ...hotspots,
+    ...hotspotsFromCandidateCallers(findings),
+  ]);
+  const eligibleUserHotspots = candidateHotspots
     .filter(
       (hotspot) =>
         hotspot.category === 'user' &&
@@ -71,19 +74,19 @@ export function deriveTopUserHotspot(
       correlated: findCorrelatedHotspot(hotspot, correlatedHotspots),
       explained: isExplainedBySpecificFinding(hotspot, findings),
     }));
-  const unexplainedCandidates = candidates.filter((candidate) => !candidate.explained);
-  const explanationPool = unexplainedCandidates.length > 0 ? unexplainedCandidates : candidates;
-  const namedPool = explanationPool.some((candidate) => !isAnonymousWrapper(candidate.hotspot))
-    ? explanationPool.filter((candidate) => !isAnonymousWrapper(candidate.hotspot))
-    : explanationPool;
-  const matches = namedPool.sort((left, right) => compareTopHotspotCandidates(left, right));
-  const topCandidate = matches[0];
-  const top = topCandidate?.hotspot;
-  if (!top) return undefined;
+  const unexplainedUserHotspots = eligibleUserHotspots.filter((candidate) => !candidate.explained);
+  const userHotspotsToRank =
+    unexplainedUserHotspots.length > 0 ? unexplainedUserHotspots : eligibleUserHotspots;
+  const rankedUserHotspots = [...userHotspotsToRank].sort((left, right) =>
+    compareTopHotspotCandidates(left, right),
+  );
+  const primaryCandidate = rankedUserHotspots[0];
+  const primaryHotspot = primaryCandidate?.hotspot;
+  if (!primaryHotspot) return undefined;
 
-  const correlated = topCandidate.correlated;
-  const alternatives = matches.slice(1, 3).map(({ hotspot }) => {
-    const alt: SummaryUserHotspot['alternativeHotspots'] extends (infer T)[] | undefined
+  const primaryCorrelation = primaryCandidate.correlated;
+  const alternativeHotspots = rankedUserHotspots.slice(1, 3).map(({ hotspot }) => {
+    const alternative: SummaryUserHotspot['alternativeHotspots'] extends (infer T)[] | undefined
       ? T
       : never = {
       id: hotspot.id,
@@ -93,22 +96,22 @@ export function deriveTopUserHotspot(
       selfPct: hotspot.selfPct,
       totalPct: hotspot.totalPct,
     };
-    if (hotspot.source) alt.source = hotspot.source;
-    return alt;
+    if (hotspot.source) alternative.source = hotspot.source;
+    return alternative;
   });
 
   const summary: SummaryUserHotspot = {
-    function: top.function,
-    file: top.file,
-    line: top.line,
-    selfPct: top.selfPct,
-    totalPct: top.totalPct,
-    eventLoopCorrelation: correlated
-      ? { overlapPct: correlated.overlapPct, samplePct: correlated.samplePct }
+    function: primaryHotspot.function,
+    file: primaryHotspot.file,
+    line: primaryHotspot.line,
+    selfPct: primaryHotspot.selfPct,
+    totalPct: primaryHotspot.totalPct,
+    eventLoopCorrelation: primaryCorrelation
+      ? { overlapPct: primaryCorrelation.overlapPct, samplePct: primaryCorrelation.samplePct }
       : undefined,
-    alternativeHotspots: alternatives.length > 0 ? alternatives : undefined,
+    alternativeHotspots: alternativeHotspots.length > 0 ? alternativeHotspots : undefined,
   };
-  if (top.source) summary.source = top.source;
+  if (primaryHotspot.source) summary.source = primaryHotspot.source;
   return summary;
 }
 
@@ -116,7 +119,7 @@ export function deriveTopCpuCulprit(
   hotspots: readonly Hotspot[],
   correlatedHotspots: readonly CorrelatedHotspot[] = [],
 ): SummaryUserHotspot | undefined {
-  const candidates = hotspots
+  const eligibleCpuCulprits = hotspots
     .filter(
       (hotspot) => hotspot.category === 'user' && hotspot.selfPct >= TOP_USER_HOTSPOT_MIN_SELF_PCT,
     )
@@ -124,18 +127,15 @@ export function deriveTopCpuCulprit(
       hotspot,
       correlated: findCorrelatedHotspot(hotspot, correlatedHotspots),
     }));
-  const namedPool = candidates.some((candidate) => !isAnonymousWrapper(candidate.hotspot))
-    ? candidates.filter((candidate) => !isAnonymousWrapper(candidate.hotspot))
-    : candidates;
-  const matches = namedPool.sort(compareCpuCulpritCandidates);
-  const topCandidate = matches[0];
-  const top = topCandidate?.hotspot;
-  if (!top) return undefined;
+  const rankedCpuCulprits = [...eligibleCpuCulprits].sort(compareCpuCulpritCandidates);
+  const primaryCandidate = rankedCpuCulprits[0];
+  const primaryHotspot = primaryCandidate?.hotspot;
+  if (!primaryHotspot) return undefined;
 
   return toSummaryUserHotspot(
-    top,
-    topCandidate.correlated,
-    matches.slice(1, 3).map(({ hotspot }) => hotspot),
+    primaryHotspot,
+    primaryCandidate.correlated,
+    rankedCpuCulprits.slice(1, 3).map(({ hotspot }) => hotspot),
   );
 }
 
@@ -185,19 +185,19 @@ function toSummaryUserHotspot(
   correlated: CorrelatedHotspot | undefined,
   alternativeHotspots: readonly Hotspot[],
 ): SummaryUserHotspot {
-  const alternatives = alternativeHotspots.map((alternative) => {
-    const alt: SummaryUserHotspot['alternativeHotspots'] extends (infer T)[] | undefined
+  const alternatives = alternativeHotspots.map((alternativeHotspot) => {
+    const alternative: SummaryUserHotspot['alternativeHotspots'] extends (infer T)[] | undefined
       ? T
       : never = {
-      id: alternative.id,
-      function: alternative.function,
-      file: alternative.file,
-      line: alternative.line,
-      selfPct: alternative.selfPct,
-      totalPct: alternative.totalPct,
+      id: alternativeHotspot.id,
+      function: alternativeHotspot.function,
+      file: alternativeHotspot.file,
+      line: alternativeHotspot.line,
+      selfPct: alternativeHotspot.selfPct,
+      totalPct: alternativeHotspot.totalPct,
     };
-    if (alternative.source) alt.source = alternative.source;
-    return alt;
+    if (alternativeHotspot.source) alternative.source = alternativeHotspot.source;
+    return alternative;
   });
   const summary: SummaryUserHotspot = {
     function: hotspot.function,
@@ -214,20 +214,16 @@ function toSummaryUserHotspot(
   return summary;
 }
 
-function isAnonymousWrapper(hotspot: Hotspot): boolean {
-  return hotspot.function === '(anonymous)' || hotspot.function.trim() === '';
-}
-
 function dedupeHotspots(hotspots: Hotspot[]): Hotspot[] {
-  const byId = new Map<string, Hotspot>();
+  const hotspotById = new Map<string, Hotspot>();
   for (const hotspot of hotspots) {
-    if (!byId.has(hotspot.id)) byId.set(hotspot.id, hotspot);
+    if (!hotspotById.has(hotspot.id)) hotspotById.set(hotspot.id, hotspot);
   }
-  return Array.from(byId.values());
+  return Array.from(hotspotById.values());
 }
 
-function candidateCallerHotspots(findings: LanternaReport['findings']): Hotspot[] {
-  const byId = new Map<string, Hotspot>();
+function hotspotsFromCandidateCallers(findings: LanternaReport['findings']): Hotspot[] {
+  const hotspotById = new Map<string, Hotspot>();
   for (const finding of findings) {
     if (!SPECIFIC_FINDING_CATEGORIES.has(finding.category)) continue;
     const extra = finding.evidence.extra as { candidateCallers?: unknown } | undefined;
@@ -235,8 +231,8 @@ function candidateCallerHotspots(findings: LanternaReport['findings']): Hotspot[
     for (const candidate of extra.candidateCallers) {
       if (!isUserCallerCandidate(candidate)) continue;
       const id = `${candidate.file}:${candidate.line}:${candidate.function}`;
-      if (byId.has(id)) continue;
-      byId.set(id, {
+      if (hotspotById.has(id)) continue;
+      hotspotById.set(id, {
         id,
         function: candidate.function,
         file: candidate.file,
@@ -254,7 +250,7 @@ function candidateCallerHotspots(findings: LanternaReport['findings']): Hotspot[
       });
     }
   }
-  return Array.from(byId.values());
+  return Array.from(hotspotById.values());
 }
 
 function isUserCallerCandidate(candidate: unknown): candidate is {
@@ -267,17 +263,17 @@ function isUserCallerCandidate(candidate: unknown): candidate is {
   source?: SummaryUserHotspot['source'];
 } {
   if (!candidate || typeof candidate !== 'object') return false;
-  const value = candidate as {
+  const candidateValue = candidate as {
     function?: unknown;
     file?: unknown;
     line?: unknown;
     profilePct?: unknown;
   };
   return (
-    typeof value.function === 'string' &&
-    typeof value.file === 'string' &&
-    typeof value.line === 'number' &&
-    typeof value.profilePct === 'number'
+    typeof candidateValue.function === 'string' &&
+    typeof candidateValue.file === 'string' &&
+    typeof candidateValue.line === 'number' &&
+    typeof candidateValue.profilePct === 'number'
   );
 }
 
@@ -295,27 +291,27 @@ function isExplainedBySpecificFinding(
 ): boolean {
   return findings.some((finding) => {
     if (!SPECIFIC_FINDING_CATEGORIES.has(finding.category)) return false;
-    if (matchesHotspot(finding.evidence, hotspot)) return true;
+    if (matchesHotspotFrame(finding.evidence, hotspot)) return true;
     const extra = finding.evidence.extra as
       | { userCaller?: unknown; candidateCallers?: unknown }
       | undefined;
     const userCaller = extra?.userCaller;
     const candidateCallers = extra?.candidateCallers;
-    if (matchesHotspot(userCaller, hotspot)) return true;
+    if (matchesHotspotFrame(userCaller, hotspot)) return true;
     if (Array.isArray(candidateCallers)) {
-      return candidateCallers.some((candidate) => matchesHotspot(candidate, hotspot));
+      return candidateCallers.some((candidate) => matchesHotspotFrame(candidate, hotspot));
     }
     return false;
   });
 }
 
-function matchesHotspot(candidate: unknown, hotspot: Hotspot): boolean {
-  if (!candidate || typeof candidate !== 'object') return false;
-  const value = candidate as { file?: unknown; line?: unknown; function?: unknown };
+function matchesHotspotFrame(frame: unknown, hotspot: Hotspot): boolean {
+  if (!frame || typeof frame !== 'object') return false;
+  const frameValue = frame as { file?: unknown; line?: unknown; function?: unknown };
   return (
-    value.file === hotspot.file &&
-    value.line === hotspot.line &&
-    value.function === hotspot.function
+    frameValue.file === hotspot.file &&
+    frameValue.line === hotspot.line &&
+    frameValue.function === hotspot.function
   );
 }
 

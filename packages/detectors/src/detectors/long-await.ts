@@ -5,7 +5,12 @@ import type {
   KindScopedDetector,
 } from '@lanterna-profiler/core';
 import { DETECTOR_THRESHOLDS } from '../config.js';
-import { anchorForFrame, asyncConfidence, asyncEvidenceExtra } from './async-evidence.js';
+import {
+  anchorForFrame,
+  asyncConfidence,
+  asyncEvidenceExtra,
+  resolveAsyncUserCaller,
+} from './async-evidence.js';
 
 /**
  * Surfaces the longest-running async operations. Each finding is anchored on
@@ -18,23 +23,27 @@ export const longAwaitDetector: KindScopedDetector<'async'> = {
   detect({ async }): Finding[] {
     const thresholds = DETECTOR_THRESHOLDS.longAwait;
     const report = async.report;
+    const captureDurationMs = async.view.bundle.durationMs;
     if (!report.summary.available) return [];
     if (report.summary.totalOperations < thresholds.minOperations) return [];
 
     const dropped = report.summary.recordsDropped > 0;
     const findings: Finding[] = [];
-    for (const op of report.topOperations) {
+    for (const op of rankLongAwaitOperations(report.topOperations)) {
       if (findings.length >= thresholds.maxFindings) break;
+      if (isBackgroundWindowOperation(op, captureDurationMs)) continue;
+      if (isShadowedByResumedOperation(op, report.topOperations)) continue;
       if (op.durationMs < thresholds.minDurationMs) break; // sorted desc
       const severity: BaseFinding['severity'] =
         op.durationMs >= thresholds.criticalDurationMs ? 'critical' : 'warning';
       const category = op.kind === 'promise' ? 'long-promise-await' : 'long-io-await';
-      const anchorFrame =
-        op.kind === 'promise'
-          ? (op.awaitFrame ?? op.promiseHandlerFrame ?? op.initFrame)
-          : (op.creationFrame ?? op.initFrame);
+      const anchorFrame = preferredLongAwaitFrame(op);
       const anchor = anchorForFrame(report, anchorFrame);
       const frame = anchor.frame;
+      const userCaller = resolveAsyncUserCaller(undefined, frame, {
+        confidence: op.overallConfidence ?? 'high',
+        basis: 'async-stack',
+      });
       const baseConfidence: BaseFinding['confidence'] = op.orphan ? 'medium' : 'high';
       const confidence: BaseFinding['confidence'] = dropped
         ? 'low'
@@ -79,6 +88,7 @@ export const longAwaitDetector: KindScopedDetector<'async'> = {
             cdpAsyncContextConfidence: op.cdpAsyncContextConfidence ?? null,
             cpuAttributedSamples: op.cpuAttributedSamples ?? null,
             cpuAmbiguousSamples: op.cpuAmbiguousSamples ?? null,
+            ...(userCaller ? { userCaller } : {}),
             ...asyncEvidenceExtra(report, anchor),
           },
         },
@@ -104,6 +114,58 @@ export const longAwaitDetector: KindScopedDetector<'async'> = {
     return findings;
   },
 };
+
+function isBackgroundWindowOperation(op: AsyncTopOperation, captureDurationMs: number): boolean {
+  return op.runMs === 0 && op.durationMs > captureDurationMs * 0.9;
+}
+
+function rankLongAwaitOperations(operations: readonly AsyncTopOperation[]): AsyncTopOperation[] {
+  return [...operations].sort((a, b) => {
+    const durationDelta = b.durationMs - a.durationMs;
+    if (Math.abs(durationDelta) <= 50) {
+      const aRan = a.runMs > 0 || a.runCount > 0;
+      const bRan = b.runMs > 0 || b.runCount > 0;
+      if (aRan !== bRan) return aRan ? -1 : 1;
+    }
+    return durationDelta;
+  });
+}
+
+function isShadowedByResumedOperation(
+  op: AsyncTopOperation,
+  operations: readonly AsyncTopOperation[],
+): boolean {
+  if (op.runMs > 0 || op.runCount > 0) return false;
+  const opFrameKeys = new Set(op.initStack.map(asyncFrameKey));
+  if (opFrameKeys.size === 0) return false;
+  return operations.some((other) => {
+    if (other.asyncId === op.asyncId) return false;
+    if (other.runMs <= 0 && other.runCount <= 0) return false;
+    if (Math.abs(other.durationMs - op.durationMs) > 50) return false;
+    return other.initStack.some((frame) => opFrameKeys.has(asyncFrameKey(frame)));
+  });
+}
+
+function asyncFrameKey(frame: NonNullable<AsyncTopOperation['initFrame']>): string {
+  return `${frame.file}:${frame.line}:${frame.function}`;
+}
+
+function preferredLongAwaitFrame(
+  op: AsyncTopOperation,
+): AsyncTopOperation['initFrame'] | undefined {
+  return (
+    firstEditableFrame(op.initStack) ??
+    (op.kind === 'promise'
+      ? (op.awaitFrame ?? op.promiseHandlerFrame ?? op.initFrame)
+      : (op.creationFrame ?? op.initFrame))
+  );
+}
+
+function firstEditableFrame(
+  frames: readonly NonNullable<AsyncTopOperation['initFrame']>[],
+): AsyncTopOperation['initFrame'] | undefined {
+  return frames.find(isUserEditableFrame);
+}
 
 function buildSuggestion(op: AsyncTopOperation, frame: AsyncTopOperation['initFrame']): string {
   const timeoutGuidance =

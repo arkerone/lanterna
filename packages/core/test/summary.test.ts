@@ -361,6 +361,40 @@ describe('deriveTopUserHotspot', () => {
     expect(top?.eventLoopCorrelation).toEqual({ overlapPct: 70, samplePct: 50 });
   });
 
+  it('keeps anonymous user wrappers eligible as top hotspots', () => {
+    const wrapper = makeHotspot({
+      category: 'user',
+      function: '(anonymous)',
+      file: 'src/app.js',
+      line: 1,
+      selfPct: 5,
+      totalPct: 95,
+    });
+    const named = makeHotspot({
+      category: 'user',
+      function: 'processBatch',
+      file: 'src/app.js',
+      line: 12,
+      selfPct: 12,
+      totalPct: 55,
+    });
+
+    expect(deriveTopUserHotspot([wrapper, named])?.function).toBe('(anonymous)');
+  });
+
+  it('falls back to anonymous hotspots when no named hotspot exists', () => {
+    const wrapper = makeHotspot({
+      category: 'user',
+      function: '(anonymous)',
+      file: 'src/app.js',
+      line: 1,
+      selfPct: 12,
+      totalPct: 95,
+    });
+
+    expect(deriveTopUserHotspot([wrapper])?.function).toBe('(anonymous)');
+  });
+
   it('forwards the source location when set on the hotspot', () => {
     const hotspot = makeHotspot({
       category: 'user',
@@ -397,6 +431,40 @@ describe('deriveTopCpuCulprit', () => {
     });
 
     expect(deriveTopCpuCulprit([wrapper, compute])?.function).toBe('scoreRecommendations');
+  });
+
+  it('keeps anonymous user wrappers eligible as CPU culprits', () => {
+    const wrapper = makeHotspot({
+      category: 'user',
+      function: '(anonymous)',
+      file: 'src/app.ts',
+      line: 1,
+      selfPct: 80,
+      totalPct: 95,
+    });
+    const compute = makeHotspot({
+      category: 'user',
+      function: 'scoreRecommendations',
+      file: 'src/search.ts',
+      line: 13,
+      selfPct: 30,
+      totalPct: 40,
+    });
+
+    expect(deriveTopCpuCulprit([wrapper, compute])?.function).toBe('(anonymous)');
+  });
+
+  it('falls back to anonymous CPU culprits when no named culprit exists', () => {
+    const wrapper = makeHotspot({
+      category: 'user',
+      function: '(anonymous)',
+      file: 'src/app.ts',
+      line: 1,
+      selfPct: 80,
+      totalPct: 95,
+    });
+
+    expect(deriveTopCpuCulprit([wrapper])?.function).toBe('(anonymous)');
   });
 
   it('does not report an inclusive-only wrapper as the CPU culprit', () => {

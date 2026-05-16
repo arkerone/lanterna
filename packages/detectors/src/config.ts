@@ -277,9 +277,9 @@ export const DETECTOR_THRESHOLDS: DetectorThresholds = {
   // known anti-patterns; self-heavy user frames are actionable, inclusive-only
   // user frames are emitted as lower-confidence caller/context leads.
   cpuHotspot: { minSelfPct: 10, minTotalPct: 25, criticalPct: 40, maxFindings: 3 },
-  // 5 deopts for the same function is meaningful (V8 stops optimising
-  // after a few tries); 20+ is pathological.
-  deoptLoop: { minCount: 5, criticalCount: 20 },
+  // V8 v22+ often abandons optimisation after 2-3 deopts; 3 deopts is the
+  // canonical signal, and 10+ indicates persistent instability.
+  deoptLoop: { minCount: 3, criticalCount: 10 },
   excessiveGc: {
     // 10% of on-CPU in GC is the soft trigger; 25% is critical.
     ratioTrigger: 0.1,

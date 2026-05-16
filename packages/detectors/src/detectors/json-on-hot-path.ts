@@ -14,8 +14,11 @@ import {
   buildAttributionEvidence,
   type CpuHotspotContext,
   findStallCorrelation,
+  pickPrimaryCallerBySource,
   readFrameSourceText,
   resolveAttribution,
+  selfHotspotUserCaller,
+  sourceCallPatternForApi,
 } from './shared.js';
 
 export const jsonOnHotPathDetector: KindScopedDetector<'cpu'> = {
@@ -41,7 +44,14 @@ export const jsonOnHotPathDetector: KindScopedDetector<'cpu'> = {
       if (!patternMatch) continue;
       if (hotspot.category !== 'node:builtin' && hotspot.category !== 'native') continue;
       if (hotspot.totalPct < thresholds.minTotalPct && !familyExceeded) continue;
-      const finding = buildFinding(hotspot, patternMatch.api, categoryTotalPct, report, context);
+      const finding = buildFinding(
+        hotspot,
+        patternMatch.api,
+        categoryTotalPct,
+        report,
+        context,
+        cwd,
+      );
       if (seen.has(finding.id)) continue;
       seen.add(finding.id);
       findings.push(finding);
@@ -52,7 +62,7 @@ export const jsonOnHotPathDetector: KindScopedDetector<'cpu'> = {
       if (!hasDominantSelfCost(hotspot, thresholds.minTotalPct)) continue;
       const api = inlinedJsonApi(readFrameSourceText(hotspot, cwd), hotspot.line);
       if (!api) continue;
-      const finding = buildFinding(hotspot, api, categoryTotalPct, report, context);
+      const finding = buildFinding(hotspot, api, categoryTotalPct, report, context, cwd);
       if (seen.has(finding.id)) continue;
       seen.add(finding.id);
       findings.push(finding);
@@ -95,13 +105,25 @@ function buildFinding(
   categoryTotalPct: number,
   report: { eventLoop: EventLoopReport },
   context: CpuHotspotContext,
+  cwd: string,
 ): BuiltinFinding<'json-on-hot-path'> {
   const { attribution, caller, candidateCallers } = resolveAttribution(hotspot, context);
+  const sourceCaller = pickPrimaryCallerBySource(
+    candidateCallers,
+    cwd,
+    sourceCallPatternForApi(api),
+  );
+  const evidenceAttribution =
+    sourceCaller ??
+    attribution ??
+    (hotspot.category === 'user' ? selfHotspotUserCaller(hotspot) : undefined);
+  const highConfidenceCaller =
+    evidenceAttribution?.confidence === 'high' ? evidenceAttribution : undefined;
   const evidenceExtra: JsonHotPathEvidenceExtra = {
     callee: hotspot.category === 'user' ? api : hotspot.function,
     calleeTotalPct: hotspot.totalPct,
-    ...buildAttributionEvidence(attribution, caller, candidateCallers),
-    eventLoopCorrelation: findStallCorrelation(caller, report),
+    ...buildAttributionEvidence(evidenceAttribution, highConfidenceCaller, candidateCallers),
+    eventLoopCorrelation: findStallCorrelation(sourceCaller ?? caller ?? attribution, report),
     categoryTotalPct: categoryTotalPct > 0 ? categoryTotalPct : undefined,
   };
   const thresholds = DETECTOR_THRESHOLDS.jsonHotPath;
@@ -112,7 +134,8 @@ function buildFinding(
       severity: hotspot.totalPct >= thresholds.criticalPct ? 'critical' : 'warning',
       title: `${api} on hot path`,
       hotspot,
-      caller,
+      caller:
+        sourceCaller ?? caller ?? (hotspot.category === 'user' ? evidenceAttribution : undefined),
       selfPct: hotspot.totalPct,
       extra: evidenceExtra,
       measurements: {

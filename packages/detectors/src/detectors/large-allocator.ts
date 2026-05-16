@@ -1,4 +1,10 @@
-import type { BaseFinding, Finding, KindScopedDetector } from '@lanterna-profiler/core';
+import type {
+  BaseFinding,
+  Finding,
+  KindScopedDetector,
+  MemoryHotAllocator,
+  UserCallerAttribution,
+} from '@lanterna-profiler/core';
 import { DETECTOR_THRESHOLDS } from '../config.js';
 
 /**
@@ -28,7 +34,7 @@ export const largeAllocatorDetector: KindScopedDetector<'memory'> = {
   },
 };
 
-function isActionableAllocator(allocator: import('@lanterna-profiler/core').MemoryHotAllocator) {
+function isActionableAllocator(allocator: MemoryHotAllocator) {
   if (allocator.category !== 'user' && allocator.category !== 'node_modules') return false;
   if (allocator.file.startsWith('node:')) return false;
   if (/^(?:native |extensions::|evalmachine\.|node:internal\/)/.test(allocator.file)) return false;
@@ -38,25 +44,24 @@ function isActionableAllocator(allocator: import('@lanterna-profiler/core').Memo
   return true;
 }
 
-function allocationSubtreeKey(
-  allocator: import('@lanterna-profiler/core').MemoryHotAllocator,
-): string {
+function allocationSubtreeKey(allocator: MemoryHotAllocator): string {
   return `${Math.round(allocator.totalBytes / 1024)}:${Math.round(allocator.totalPct * 10)}`;
 }
 
-function isInclusiveWrapper(allocator: import('@lanterna-profiler/core').MemoryHotAllocator) {
+function isInclusiveWrapper(allocator: MemoryHotAllocator) {
   if (allocator.totalBytes <= 0) return false;
   return allocator.selfBytes / allocator.totalBytes < 0.05;
 }
 
 function buildFinding(
-  allocator: import('@lanterna-profiler/core').MemoryHotAllocator,
+  allocator: MemoryHotAllocator,
   score: number,
 ): BaseFinding<string, Record<string, unknown>> {
   const thresholds = DETECTOR_THRESHOLDS.largeAllocator;
   const severity: BaseFinding['severity'] =
     score >= thresholds.criticalTotalPct ? 'critical' : 'warning';
   const totalMB = allocator.totalBytes / (1024 * 1024);
+  const userCaller = allocatorUserCaller(allocator);
   return {
     id: `large-allocator:${allocator.id}`,
     profileKind: 'memory',
@@ -79,6 +84,7 @@ function buildFinding(
         selfPct: allocator.selfPct,
         totalPct: allocator.totalPct,
         totalMB,
+        ...(userCaller ? { userCaller } : {}),
       },
     },
     measurements: {
@@ -101,6 +107,23 @@ function buildFinding(
       'https://nodejs.org/en/learn/diagnostics/memory/using-gc-traces',
       'https://v8.dev/blog/memory',
     ],
+  };
+}
+
+function allocatorUserCaller(allocator: MemoryHotAllocator): UserCallerAttribution | undefined {
+  if (allocator.userCaller) return allocator.userCaller;
+  if (allocator.category !== 'user') return undefined;
+  return {
+    function: allocator.function,
+    file: allocator.file,
+    line: allocator.line,
+    column: allocator.column,
+    ...(allocator.source ? { source: allocator.source } : {}),
+    stackDistance: 0,
+    profilePct: allocator.totalPct,
+    supportPct: 100,
+    confidence: 'high',
+    basis: 'heap-sample-path',
   };
 }
 

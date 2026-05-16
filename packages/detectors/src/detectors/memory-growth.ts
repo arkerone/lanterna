@@ -2,9 +2,12 @@ import type {
   BaseFinding,
   Finding,
   KindScopedDetector,
+  MemoryHotAllocator,
   MemorySeriesStats,
+  MemorySummary,
 } from '@lanterna-profiler/core';
 import { DETECTOR_THRESHOLDS } from '../config.js';
+import { correlatedAllocatorFromMemory } from './memory-evidence.js';
 
 const BYTES_PER_MB = 1024 * 1024;
 
@@ -29,12 +32,26 @@ export const memoryGrowthDetector: KindScopedDetector<'memory'> = {
 
     if (rss) {
       const finding = hasRssRetentionCorroboration(memory.view.series)
-        ? buildGrowthFinding('rss', rss, durationMs, sampleCount)
+        ? buildGrowthFinding(
+            'rss',
+            rss,
+            durationMs,
+            sampleCount,
+            memory.report.summary,
+            memory.report.hotAllocators,
+          )
         : null;
       if (finding) findings.push(finding);
     }
     if (heapUsed) {
-      const finding = buildGrowthFinding('heapUsed', heapUsed, durationMs, sampleCount);
+      const finding = buildGrowthFinding(
+        'heapUsed',
+        heapUsed,
+        durationMs,
+        sampleCount,
+        memory.report.summary,
+        memory.report.hotAllocators,
+      );
       if (finding) findings.push(finding);
     }
     return findings;
@@ -60,6 +77,8 @@ function buildGrowthFinding(
   stats: MemorySeriesStats,
   durationMs: number,
   sampleCount: number,
+  summary: MemorySummary,
+  hotAllocators: readonly MemoryHotAllocator[],
 ): BaseFinding<string, Record<string, unknown>> | null {
   const slopeMBPerSec = toMBPerSec(stats);
   const thresholds = DETECTOR_THRESHOLDS.memoryGrowth;
@@ -72,6 +91,7 @@ function buildGrowthFinding(
     metric === 'rss' && slopeMBPerSec >= critical ? 'critical' : 'warning';
   const deltaMB = (stats.endBytes - stats.startBytes) / BYTES_PER_MB;
   const label = metric === 'rss' ? 'Resident set size' : 'V8 heap (heapUsed)';
+  const allocator = correlatedAllocatorFromMemory(summary, hotAllocators);
 
   return {
     id: `memory-growth:${metric}`,
@@ -95,6 +115,7 @@ function buildGrowthFinding(
         deltaMB,
         sampleCount,
         durationMs,
+        ...(allocator ? { correlatedAllocator: allocator } : {}),
       },
     },
     measurements: {

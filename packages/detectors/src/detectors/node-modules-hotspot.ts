@@ -13,7 +13,9 @@ import {
   buildAttributionEvidence,
   type CpuHotspotContext,
   findStallCorrelation,
+  pickPrimaryCallerBySource,
   resolveAttribution,
+  sourcePatternForTerms,
   toAlternativeHotspotEvidence,
 } from './shared.js';
 
@@ -40,7 +42,9 @@ export const nodeModulesHotspotDetector: KindScopedDetector<'cpu'> = {
       });
     const hotspot = matches[0];
     if (!hotspot) return [];
-    return [buildFinding(hotspot, matches.slice(1, 3), report, context)];
+    return [
+      buildFinding(hotspot, matches.slice(1, 3), report, context, cpu.view.bundle.target.cwd),
+    ];
   },
 };
 
@@ -49,16 +53,25 @@ function buildFinding(
   alternatives: Hotspot[],
   report: { eventLoop: EventLoopReport },
   context: CpuHotspotContext,
+  cwd: string,
 ): BuiltinFinding<'node-modules-hotspot'> {
   const { attribution, caller, candidateCallers } = resolveAttribution(hotspot, context);
+  const sourceCaller = pickPrimaryCallerBySource(
+    candidateCallers,
+    cwd,
+    sourcePatternForTerms([hotspot.package ?? '', hotspot.function]),
+  );
+  const evidenceAttribution = sourceCaller ?? attribution;
+  const highConfidenceCaller =
+    evidenceAttribution?.confidence === 'high' ? evidenceAttribution : undefined;
   const evidenceExtra: NodeModulesHotspotEvidenceExtra = {
     package: hotspot.package,
     callee: hotspot.function,
     calleeFile: hotspot.file,
     calleeLine: hotspot.line,
     calleeTotalPct: hotspot.totalPct,
-    ...buildAttributionEvidence(attribution, caller, candidateCallers),
-    eventLoopCorrelation: findStallCorrelation(caller, report),
+    ...buildAttributionEvidence(evidenceAttribution, highConfidenceCaller, candidateCallers),
+    eventLoopCorrelation: findStallCorrelation(sourceCaller ?? caller ?? attribution, report),
     alternativeHotspots: alternatives.map(toAlternativeHotspotEvidence),
   };
   const thresholds = DETECTOR_THRESHOLDS.nodeModulesHotspot;
@@ -69,7 +82,7 @@ function buildFinding(
       severity: hotspot.totalPct >= thresholds.criticalTotalPct ? 'critical' : 'warning',
       title: `Dependency hotspot on hot path (${hotspot.package ?? hotspot.function})`,
       hotspot,
-      caller,
+      caller: sourceCaller ?? caller,
       selfPct: hotspot.totalPct,
       extra: evidenceExtra,
       measurements: {

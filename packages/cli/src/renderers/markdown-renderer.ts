@@ -150,9 +150,9 @@ export class MarkdownReportRenderer implements ReportRenderer {
     }
     lines.push('| Async ID | Kind | Duration | Run | User caller |');
     lines.push('| ---: | --- | ---: | ---: | --- |');
-    for (const op of operations.slice(0, 5)) {
+    for (const operation of operations.slice(0, 5)) {
       lines.push(
-        `| ${op.asyncId} | ${op.kind} | ${formatMs(op.durationMs)} | ${formatMs(op.runMs)} | ${op.userCaller ? escapePipe(formatUserCaller(op.userCaller)) : ''} |`,
+        `| ${operation.asyncId} | ${operation.kind} | ${formatMs(operation.durationMs)} | ${formatMs(operation.runMs)} | ${operation.userCaller ? escapePipe(formatUserCaller(operation.userCaller)) : ''} |`,
       );
     }
   }
@@ -164,9 +164,9 @@ export class MarkdownReportRenderer implements ReportRenderer {
     }
     lines.push('| File | CPU | Ops | User caller |');
     lines.push('| --- | ---: | ---: | --- |');
-    for (const file of hotFiles.slice(0, 5)) {
+    for (const hotFile of hotFiles.slice(0, 5)) {
       lines.push(
-        `| \`${escapeBackticks(file.file)}\` | ${formatPct(file.cpuPct)} | ${file.operationCount} | ${file.userCaller ? escapePipe(formatUserCaller(file.userCaller)) : ''} |`,
+        `| \`${escapeBackticks(hotFile.file)}\` | ${formatPct(hotFile.cpuPct)} | ${hotFile.operationCount} | ${hotFile.userCaller ? escapePipe(formatUserCaller(hotFile.userCaller)) : ''} |`,
       );
     }
   }
@@ -190,26 +190,26 @@ export class MarkdownReportRenderer implements ReportRenderer {
       lines.push('No findings.');
       return;
     }
-    for (const f of findings) {
-      lines.push(`### ${f.title}`);
+    for (const finding of findings) {
+      lines.push(`### ${finding.title}`);
       lines.push('');
-      lines.push(`- Severity: ${f.severity}`);
-      lines.push(`- Kind: ${f.profileKind}`);
+      lines.push(`- Severity: ${finding.severity}`);
+      lines.push(`- Kind: ${finding.profileKind}`);
       lines.push(
-        `- Evidence: \`${escapeBackticks(f.evidence.function)}\` at \`${escapeBackticks(formatFrameLocation(f.evidence))}\``,
+        `- Evidence: \`${escapeBackticks(finding.evidence.function)}\` at \`${escapeBackticks(formatFrameLocation(finding.evidence))}\``,
       );
-      const userCaller = userCallerFromEvidenceExtra(f.evidence.extra);
+      const userCaller = userCallerFromEvidenceExtra(finding.evidence.extra);
       if (userCaller) lines.push(`- User caller: ${formatUserCaller(userCaller)}`);
-      const candidateCallers = candidateCallersFromEvidenceExtra(f.evidence.extra);
+      const candidateCallers = candidateCallersFromEvidenceExtra(finding.evidence.extra);
       if (candidateCallers.length > 0) {
         lines.push('- Candidate callers:');
         for (const caller of candidateCallers) {
           lines.push(`  - ${formatUserCaller(caller)}`);
         }
       }
-      lines.push(`- Suggestion: ${f.suggestion}`);
-      if (f.evidence.extra !== undefined) {
-        const extra = renderValue(f.evidence.extra);
+      lines.push(`- Suggestion: ${finding.suggestion}`);
+      if (finding.evidence.extra !== undefined) {
+        const extra = renderValue(finding.evidence.extra);
         if (extra.length > 0) {
           lines.push('- Details:');
           for (const line of extra) lines.push(`  ${line}`);
@@ -247,6 +247,6 @@ function userCallerFromEvidenceExtra(extra: unknown): UserCallerAttribution | un
 
 function candidateCallersFromEvidenceExtra(extra: unknown): UserCallerAttribution[] {
   if (!extra || typeof extra !== 'object') return [];
-  const value = (extra as { candidateCallers?: unknown }).candidateCallers;
-  return Array.isArray(value) ? (value as UserCallerAttribution[]) : [];
+  const candidateCallers = (extra as { candidateCallers?: unknown }).candidateCallers;
+  return Array.isArray(candidateCallers) ? (candidateCallers as UserCallerAttribution[]) : [];
 }

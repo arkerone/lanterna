@@ -101,6 +101,117 @@ function singleAllocatorProfile(
   };
 }
 
+function anonymousTimerAllocatorProfile(): RawSamplingHeapProfile {
+  return {
+    head: {
+      callFrame: { functionName: '(root)', scriptId: '0', url: '', lineNumber: 0, columnNumber: 0 },
+      selfSize: 0,
+      id: 1,
+      children: [
+        {
+          callFrame: {
+            functionName: '(anonymous)',
+            scriptId: '1',
+            url: 'file:///app/src/app.js',
+            lineNumber: 9,
+            columnNumber: 29,
+          },
+          selfSize: 9000,
+          id: 2,
+          children: [
+            {
+              callFrame: {
+                functionName: 'addToCache',
+                scriptId: '1',
+                url: 'file:///app/src/app.js',
+                lineNumber: 2,
+                columnNumber: 19,
+              },
+              selfSize: 100,
+              id: 3,
+              children: [],
+            },
+          ],
+        },
+      ],
+    },
+    samples: [],
+  };
+}
+
+function timerOnlyAllocatorProfile(): RawSamplingHeapProfile {
+  return {
+    head: {
+      callFrame: { functionName: '(root)', scriptId: '0', url: '', lineNumber: 0, columnNumber: 0 },
+      selfSize: 0,
+      id: 1,
+      children: [
+        {
+          callFrame: {
+            functionName: 'listOnTimeout',
+            scriptId: '2',
+            url: 'node:internal/timers',
+            lineNumber: 547,
+            columnNumber: 24,
+          },
+          selfSize: 0,
+          id: 2,
+          children: [
+            {
+              callFrame: {
+                functionName: 'processTimers',
+                scriptId: '2',
+                url: 'node:internal/timers',
+                lineNumber: 527,
+                columnNumber: 24,
+              },
+              selfSize: 1024,
+              id: 3,
+              children: [],
+            },
+          ],
+        },
+      ],
+    },
+    samples: [],
+  };
+}
+
+function bufferAllocatorCpuProfile(): RawCpuProfile {
+  return {
+    nodes: [
+      {
+        id: 1,
+        callFrame: {
+          functionName: '(root)',
+          scriptId: '0',
+          url: '',
+          lineNumber: -1,
+          columnNumber: -1,
+        },
+        hitCount: 0,
+        children: [2],
+      },
+      {
+        id: 2,
+        callFrame: {
+          functionName: 'appendChunk',
+          scriptId: '1',
+          url: 'file:///app/src/buffers.js',
+          lineNumber: 11,
+          columnNumber: 4,
+        },
+        hitCount: 100,
+        children: [],
+      },
+    ],
+    startTime: 1000000,
+    endTime: 2000000,
+    samples: Array(100).fill(2),
+    timeDeltas: Array(100).fill(1000),
+  };
+}
+
 function growingSeries(slopeBytesPerMs: number, externalMB = 1, count = 25): MemoryUsageSample[] {
   const out: MemoryUsageSample[] = [];
   for (let i = 0; i < count; i++) {
@@ -169,6 +280,14 @@ describe('memory-growth detector', () => {
     expect(rssFinding).toBeDefined();
     expect(rssFinding?.severity).toBe('critical');
     expect(rssFinding?.profileKind).toBe('memory');
+    expect(rssFinding?.evidence.extra).toMatchObject({
+      correlatedAllocator: {
+        function: 'alloc',
+        file: 'src/a.js',
+        line: 2,
+        totalPct: 100,
+      },
+    });
   });
 
   it('recommends Lanterna heap snapshot analysis before external heap tooling', () => {
@@ -186,6 +305,27 @@ describe('memory-growth detector', () => {
     expect(rssFinding?.suggestion).toContain('--heap-snapshot-analysis');
     expect(rssFinding?.suggestion).toContain('heapSnapshotAnalysis.retainerPaths');
     expect(rssFinding?.suggestion).not.toContain('Chrome DevTools or `--inspect`');
+  });
+
+  it('keeps an anonymous user allocator wrapper when it is the dominant allocation site', () => {
+    const bundle = makeBundle({
+      samplingProfile: anonymousTimerAllocatorProfile(),
+      memoryUsageSamples: externalGrowthSeries(6 * 1024),
+    });
+    const pipeline = createAnalysisPipeline({
+      kinds: [createMemoryProfileKind()],
+      findingAnalyzers: [createFindingAnalyzerFromKindScopedDetector(memoryGrowthDetector)],
+    });
+    const result = pipeline.run(bundle, { command: ['node', 'app.js'], mode: 'spawn' });
+
+    const rssFinding = result.findings.find((f) => f.id === 'memory-growth:rss');
+    expect(rssFinding?.evidence.extra).toMatchObject({
+      correlatedAllocator: {
+        function: '(anonymous)',
+        file: 'src/app.js',
+        line: 10,
+      },
+    });
   });
 
   it('does not fire when growth is below threshold', () => {
@@ -272,6 +412,15 @@ describe('large-allocator detector', () => {
     expect(finding).toBeDefined();
     expect(finding?.severity).toBe('critical');
     expect(finding?.evidence.function).toBe('big');
+    expect(finding?.evidence.extra).toMatchObject({
+      userCaller: {
+        function: 'big',
+        file: 'src/big.js',
+        line: 8,
+        confidence: 'high',
+        basis: 'heap-sample-path',
+      },
+    });
   });
 
   it('ignores non-actionable native and builtin allocator frames', () => {
@@ -463,6 +612,81 @@ describe('external-buffer-pressure detector', () => {
     const finding = result.findings.find((f) => f.id === 'external-buffer-pressure');
     expect(finding).toBeDefined();
     expect(finding?.severity).toBe('warning');
+    expect(finding?.evidence.extra).toMatchObject({
+      correlatedAllocator: {
+        function: 'alloc',
+        file: 'src/a.js',
+        line: 2,
+        totalPct: 100,
+      },
+    });
+  });
+
+  it('does not expose a node builtin heap allocator as external pressure culprit', () => {
+    const samples: MemoryUsageSample[] = [];
+    for (let i = 0; i < 20; i++) {
+      samples.push({
+        atMs: i * 200,
+        rss: 500 * MB,
+        heapTotal: 50 * MB,
+        heapUsed: 4 * MB,
+        external: 400 * MB,
+        arrayBuffers: 390 * MB,
+      });
+    }
+    const bundle = makeBundle({
+      samplingProfile: timerOnlyAllocatorProfile(),
+      memoryUsageSamples: samples,
+    });
+    const pipeline = createAnalysisPipeline({
+      kinds: [createMemoryProfileKind()],
+      findingAnalyzers: [
+        createFindingAnalyzerFromKindScopedDetector(externalBufferPressureDetector),
+      ],
+    });
+    const result = pipeline.run(bundle, { command: ['node', 'app.js'], mode: 'spawn' });
+
+    const finding = result.findings.find((f) => f.id === 'external-buffer-pressure');
+    expect(finding?.evidence.extra).not.toHaveProperty('correlatedAllocator');
+  });
+
+  it('prefers a CPU user hotspot over heap-sampled timer wrappers for external pressure', () => {
+    const samples: MemoryUsageSample[] = [];
+    for (let i = 0; i < 20; i++) {
+      samples.push({
+        atMs: i * 200,
+        rss: 500 * MB,
+        heapTotal: 50 * MB,
+        heapUsed: 4 * MB,
+        external: 400 * MB,
+        arrayBuffers: 390 * MB,
+      });
+    }
+    const bundle = makeBundle({
+      samplingProfile: timerOnlyAllocatorProfile(),
+      memoryUsageSamples: samples,
+      cpuProfile: bufferAllocatorCpuProfile(),
+    });
+    const pipeline = createAnalysisPipeline({
+      kinds: [
+        createCpuProfileKind({ readStderrSoFar: () => '', sampleIntervalMicros: 1000 }),
+        createMemoryProfileKind(),
+      ],
+      findingAnalyzers: [
+        createFindingAnalyzerFromKindScopedDetector(externalBufferPressureDetector),
+      ],
+    });
+    const result = pipeline.run(bundle, { command: ['node', 'app.js'], mode: 'spawn' });
+
+    const finding = result.findings.find((f) => f.id === 'external-buffer-pressure');
+    expect(finding?.evidence.extra).toMatchObject({
+      correlatedAllocator: {
+        function: 'appendChunk',
+        file: 'src/buffers.js',
+        line: 12,
+        basis: 'cpu-top-user-hotspot',
+      },
+    });
   });
 
   it('does not double-count arrayBuffers because process.memoryUsage external already includes it', () => {
@@ -586,6 +810,90 @@ describe('alloc-in-hot-path detector', () => {
     const finding = result.findings.find((f) => f.id.startsWith('alloc-in-hot-path:'));
     expect(finding).toBeDefined();
     expect(finding?.evidence.function).toBe('serializeBig');
+    expect(finding?.evidence.extra).toMatchObject({
+      userCaller: {
+        function: 'serializeBig',
+        file: 'src/serialize.js',
+        line: 13,
+        confidence: 'high',
+        basis: 'cpu-sample-path',
+      },
+    });
+  });
+
+  it('uses CPU user attribution when heap samples only expose a native allocator', () => {
+    const cpuProfile: RawCpuProfile = {
+      nodes: [
+        {
+          id: 1,
+          callFrame: {
+            functionName: '(root)',
+            scriptId: '0',
+            url: '',
+            lineNumber: -1,
+            columnNumber: -1,
+          },
+          hitCount: 0,
+          children: [2],
+        },
+        {
+          id: 2,
+          callFrame: {
+            functionName: 'transform',
+            scriptId: '1',
+            url: 'file:///app/src/app.js',
+            lineNumber: 10,
+            columnNumber: 18,
+          },
+          hitCount: 120,
+          children: [3],
+        },
+        {
+          id: 3,
+          callFrame: {
+            functionName: 'utf8Write',
+            scriptId: '2',
+            url: 'node:internal/buffer',
+            lineNumber: 1067,
+            columnNumber: 38,
+          },
+          hitCount: 800,
+          children: [],
+        },
+      ],
+      startTime: 1000000,
+      endTime: 2000000,
+      samples: [...Array(80).fill(3), ...Array(20).fill(2)],
+      timeDeltas: Array(100).fill(1000),
+    };
+    const bundle = makeBundle({
+      samplingProfile: singleAllocatorProfile('push', '', -1, 9000),
+      memoryUsageSamples: growingSeries(0),
+      cpuProfile,
+    });
+
+    const pipeline = createAnalysisPipeline({
+      kinds: [
+        createCpuProfileKind({ readStderrSoFar: () => '', sampleIntervalMicros: 1000 }),
+        createMemoryProfileKind(),
+      ],
+      findingAnalyzers: [createFindingAnalyzerFromKindScopedDetector(allocInHotPathDetector)],
+    });
+    const result = pipeline.run(bundle, { command: ['node', 'app.js'], mode: 'spawn' });
+
+    const finding = result.findings.find((f) => f.id.startsWith('alloc-in-hot-path:'));
+    expect(finding).toBeDefined();
+    expect(finding?.evidence.function).toBe('transform');
+    expect(finding?.evidence.extra).toMatchObject({
+      allocTotalPct: 100,
+      userCaller: {
+        function: 'transform',
+        file: 'src/app.js',
+        line: 11,
+        confidence: 'high',
+        basis: 'cpu-sample-path',
+      },
+    });
   });
 
   it('skips silently when only memory kind is present', () => {

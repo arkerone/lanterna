@@ -26,6 +26,7 @@ export function createAsyncProbe(options: AsyncProbeOptions): CaptureProbe<Async
   const unsubscribers: Array<() => void> = [];
   let asyncStackSupport: 'enabled' | 'unsupported' | 'unknown' = 'unknown';
   return {
+    stopTimeoutMs: 15_000,
     async start(ctx: ProbeLifecycleContext) {
       const { cdp } = ctx;
       // Best-effort. Older Node builds may reject either call; the report still

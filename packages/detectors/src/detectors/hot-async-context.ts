@@ -5,7 +5,12 @@ import type {
   KindScopedDetector,
 } from '@lanterna-profiler/core';
 import { DETECTOR_THRESHOLDS } from '../config.js';
-import { anchorForFrame, asyncConfidence, asyncEvidenceExtra } from './async-evidence.js';
+import {
+  anchorForFrame,
+  asyncConfidence,
+  asyncEvidenceExtra,
+  resolveAsyncUserCaller,
+} from './async-evidence.js';
 
 /**
  * Cross-kind detector: maps hot CPU back to the async chain that produced it
@@ -34,6 +39,12 @@ export const hotAsyncContextDetector: KindScopedDetector<'cpu' | 'async'> = {
         entry.cpuPct >= thresholds.criticalCpuPct ? 'critical' : 'warning';
       const anchor = anchorForFrame(async.report, entry.executionFrame ?? entry.rootFrame);
       const frame = anchor.frame;
+      const userCaller = resolveAsyncUserCaller(undefined, entry.rootFrame, {
+        profilePct: entry.cpuPct,
+        supportPct: 100,
+        confidence: 'high',
+        basis: 'async-cpu-window',
+      });
       findings.push({
         id: `hot-async-context:${entry.rootAsyncId}`,
         profileKind: 'async',
@@ -52,12 +63,14 @@ export const hotAsyncContextDetector: KindScopedDetector<'cpu' | 'async'> = {
             rootAsyncId: entry.rootAsyncId,
             rootKind: entry.rootKind,
             rootFrame: entry.rootFrame ?? null,
+            entryFrame: entry.rootFrame ?? null,
             executionFrame: entry.executionFrame ?? null,
             executionConfidence: entry.executionConfidence ?? null,
             cpuPct: entry.cpuPct,
             cpuMs: entry.cpuMs,
             contributingOperations: entry.contributingOperations,
             attributedCpuPct: attribution.attributedCpuPct,
+            ...(userCaller ? { userCaller } : {}),
             ...asyncEvidenceExtra(async.report, anchor),
           },
         },

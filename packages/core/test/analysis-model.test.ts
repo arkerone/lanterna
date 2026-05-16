@@ -337,7 +337,7 @@ describe('buildHotspotAnalysis', () => {
     expect(candidates?.map((candidate) => candidate.supportPct)).toEqual([60, 40]);
   });
 
-  it('keeps nested user ancestors as attribution candidates', () => {
+  it('keeps nested user ancestors, including anonymous user wrappers, as attribution candidates', () => {
     const profile: RawCpuProfile = {
       startTime: 0,
       endTime: 100_000,
@@ -413,12 +413,12 @@ describe('buildHotspotAnalysis', () => {
       analysis.candidateCallersById
         .get(cryptoHotspot?.id ?? '')
         ?.map((candidate) => candidate.function),
-    ).toEqual(['hashPassword', 'processBatch']);
+    ).toEqual(['hashPassword', 'processBatch', '(anonymous)']);
     expect(
       analysis.candidateCallersById
         .get(cryptoHotspot?.id ?? '')
         ?.map((candidate) => candidate.stackDistance),
-    ).toEqual([1, 2]);
+    ).toEqual([1, 2, 3]);
   });
 
   it('orders candidates by stack proximity before common parent support', () => {

@@ -377,7 +377,7 @@ describe('findings – sync-crypto exact source callsite', () => {
       'function processBatch(size) {',
       '  const out = [];',
       '  for (let i = 0; i < size; i++) {',
-      '    out.push(hashPassword(`user-${i}`, `salt-${i}`));',
+      `    out.push(hashPassword(\`user-\${i}\`, \`salt-\${i}\`));`,
       '  }',
       '  return out;',
       '}',
@@ -535,6 +535,130 @@ describe('findings – excessive-gc', () => {
       'excessive-gc finding',
     );
     assert.ok(f.suggestion.length > 10);
+  });
+
+  it('excessive-gc promotes the top correlated hotspot as userCaller evidence', () => {
+    const correlatedReport = createReport(
+      makeRaw(
+        {
+          nodes: [
+            {
+              id: 1,
+              callFrame: {
+                functionName: '(root)',
+                scriptId: '0',
+                url: '',
+                lineNumber: -1,
+                columnNumber: -1,
+              },
+              hitCount: 0,
+              children: [2],
+            },
+            {
+              id: 2,
+              callFrame: {
+                functionName: 'allocatePayload',
+                scriptId: '1',
+                url: `file://${CWD}/src/alloc.js`,
+                lineNumber: 10,
+                columnNumber: 0,
+              },
+              hitCount: 100,
+              children: [],
+            },
+          ],
+          startTime: 1000000,
+          endTime: 1100000,
+          samples: Array(100).fill(2),
+          timeDeltas: Array(100).fill(1000),
+        },
+        {
+          durationMs: 100,
+          gcEvents: [{ atMs: 30, kind: 'markSweep', durationMs: 120 }],
+        },
+      ),
+      { sampleIntervalMicros: 1000, deep: false, command: ['node', 'app.js'] },
+    );
+    const f = findFindingOrFail(
+      correlatedReport,
+      (finding) => finding.id === 'excessive-gc',
+      'excessive-gc finding',
+    );
+    const userCaller = (f.evidence.extra as Record<string, unknown>).userCaller as
+      | Record<string, unknown>
+      | undefined;
+
+    assert.equal(userCaller?.function, f.evidence.function);
+    assert.equal(userCaller?.file, f.evidence.file);
+    assert.equal(userCaller?.basis, 'cpu-sample-path');
+    assert.equal(userCaller?.confidence, 'high');
+  });
+
+  it('falls back to the top user hotspot when GC timing events are absent', () => {
+    const ratioOnlyReport = createReport(
+      makeRaw(
+        {
+          nodes: [
+            {
+              id: 1,
+              callFrame: {
+                functionName: '(root)',
+                scriptId: '0',
+                url: '',
+                lineNumber: -1,
+                columnNumber: -1,
+              },
+              hitCount: 0,
+              children: [2, 3],
+            },
+            {
+              id: 2,
+              callFrame: {
+                functionName: '(garbage collector)',
+                scriptId: '0',
+                url: '',
+                lineNumber: -1,
+                columnNumber: -1,
+              },
+              hitCount: 60,
+              children: [],
+            },
+            {
+              id: 3,
+              callFrame: {
+                functionName: 'allocBurst',
+                scriptId: '1',
+                url: `file://${CWD}/src/app.js`,
+                lineNumber: 2,
+                columnNumber: 0,
+              },
+              hitCount: 40,
+              children: [],
+            },
+          ],
+          startTime: 1000000,
+          endTime: 2000000,
+          samples: [...Array(60).fill(2), ...Array(40).fill(3)],
+          timeDeltas: Array(100).fill(1000),
+        },
+        { durationMs: 1000, gcEvents: [] },
+      ),
+      { sampleIntervalMicros: 1000, deep: false, command: ['node', 'app.js'] },
+    );
+
+    const f = findFindingOrFail(
+      ratioOnlyReport,
+      (finding) => finding.id === 'excessive-gc',
+      'ratio-only excessive-gc finding',
+    );
+    const extra = f.evidence.extra as Record<string, unknown>;
+    const userCaller = extra.userCaller as Record<string, unknown> | undefined;
+    const candidateHotspots = extra.candidateHotspots as Array<Record<string, unknown>>;
+
+    assert.equal(f.evidence.function, 'allocBurst');
+    assert.equal(userCaller?.function, 'allocBurst');
+    assert.equal(userCaller?.basis, 'cpu-sample-path');
+    assert.equal(candidateHotspots[0]?.function, 'allocBurst');
   });
 });
 
@@ -875,6 +999,122 @@ describe('findings – blocking-io false positive suppression', () => {
   });
 });
 
+describe('findings – blocking-io exact source callsite', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'lanterna-blocking-source-'));
+  const sourcePath = join(dir, 'app.mjs');
+  writeFileSync(
+    sourcePath,
+    [
+      "import { readFileSync } from 'node:fs';",
+      '',
+      'function loadConfig() {',
+      "  return readFileSync('./config.json', 'utf8');",
+      '}',
+      '',
+      'function processIteration() {',
+      '  loadConfig();',
+      "  return 'ok';",
+      '}',
+      '',
+      'processIteration();',
+    ].join('\n'),
+  );
+
+  const profile: RawCpuProfile = {
+    nodes: [
+      {
+        id: 1,
+        callFrame: {
+          functionName: '(root)',
+          scriptId: '0',
+          url: '',
+          lineNumber: -1,
+          columnNumber: -1,
+        },
+        hitCount: 0,
+        children: [2],
+      },
+      {
+        id: 2,
+        callFrame: {
+          functionName: 'processIteration',
+          scriptId: '1',
+          url: pathToFileURL(sourcePath).href,
+          lineNumber: 6,
+          columnNumber: 0,
+        },
+        hitCount: 0,
+        children: [3, 4],
+      },
+      {
+        id: 3,
+        callFrame: {
+          functionName: 'readFileSync',
+          scriptId: '0',
+          url: 'node:fs',
+          lineNumber: 0,
+          columnNumber: 0,
+        },
+        hitCount: 60,
+        children: [],
+      },
+      {
+        id: 4,
+        callFrame: {
+          functionName: 'loadConfig',
+          scriptId: '1',
+          url: pathToFileURL(sourcePath).href,
+          lineNumber: 2,
+          columnNumber: 0,
+        },
+        hitCount: 0,
+        children: [5],
+      },
+      {
+        id: 5,
+        callFrame: {
+          functionName: 'readFileSync',
+          scriptId: '0',
+          url: 'node:fs',
+          lineNumber: 0,
+          columnNumber: 0,
+        },
+        hitCount: 40,
+        children: [],
+      },
+    ],
+    startTime: 1000000,
+    endTime: 2000000,
+    samples: Array(60).fill(3).concat(Array(40).fill(5)),
+    timeDeltas: [],
+  };
+
+  const report = createReport(makeRaw(profile, { target: { cwd: dir } }), {
+    sampleIntervalMicros: 1000,
+    deep: false,
+    command: ['node', sourcePath],
+  });
+
+  it('uses the source line that directly calls the blocking API as primary user caller', () => {
+    const finding = findFindingOrFail(
+      report,
+      (f) => f.id === 'blocking-io:fs.readFileSync',
+      'blocking-io finding',
+    );
+    const userCaller = (finding.evidence.extra as Record<string, unknown>).userCaller as Record<
+      string,
+      unknown
+    >;
+
+    assert.equal(finding.evidence.function, 'loadConfig');
+    assert.equal(finding.evidence.line, 4);
+    assert.equal(userCaller.function, 'loadConfig');
+    assert.equal(userCaller.line, 4);
+  });
+
+  rmSync(dir, { recursive: true, force: true });
+});
+
 describe('findings – deopt-loop', () => {
   const report = createReport(
     makeRaw(
@@ -926,11 +1166,11 @@ describe('findings – deopt-loop', () => {
     { sampleIntervalMicros: 1000, deep: true, command: ['node', 'app.js'] },
   );
 
-  it('detects deopt-loop when same function deoptimised ≥ 5 times in deep mode', () => {
+  it('detects deopt-loop when same function deoptimised ≥ 3 times in deep mode', () => {
     findFindingOrFail(report, (f) => f.id.startsWith('deopt-loop:'), 'deopt-loop finding');
   });
 
-  it('deopt-loop finding has warning severity for count 5-20', () => {
+  it('deopt-loop finding has warning severity below the critical threshold', () => {
     const f = findFindingOrFail(
       report,
       (finding) => finding.id.startsWith('deopt-loop:'),
@@ -995,6 +1235,67 @@ describe('findings – deopt-loop', () => {
       'deopt-loop finding',
     );
     assert.equal(f.severity, 'critical');
+  });
+
+  it('detects a 3-count deopt loop and resolves <unknown> through the CPU profile location', () => {
+    const unknownReport = createReport(
+      makeRaw(
+        {
+          nodes: [
+            {
+              id: 1,
+              callFrame: {
+                functionName: '(root)',
+                scriptId: '0',
+                url: '',
+                lineNumber: -1,
+                columnNumber: -1,
+              },
+              hitCount: 0,
+              children: [2],
+            },
+            {
+              id: 2,
+              callFrame: {
+                functionName: 'polymorphic',
+                scriptId: '1',
+                url: `file://${CWD}/src/poly.js`,
+                lineNumber: 12,
+                columnNumber: 0,
+              },
+              hitCount: 100,
+              children: [],
+            },
+          ],
+          startTime: 1000000,
+          endTime: 2000000,
+          samples: Array(100).fill(2),
+          timeDeltas: [],
+        },
+        {
+          deopts: [
+            {
+              function: '<unknown>',
+              file: `${CWD}/src/poly.js`,
+              line: 13,
+              reason: 'wrong map',
+              bailoutType: 'soft',
+              count: 3,
+            },
+          ],
+        },
+      ),
+      { sampleIntervalMicros: 1000, deep: true, command: ['node', 'app.js'] },
+    );
+
+    const finding = findFindingOrFail(
+      unknownReport,
+      (f) => f.id === 'deopt-loop:polymorphic',
+      'resolved <unknown> deopt-loop finding',
+    );
+
+    assert.equal(finding.evidence.function, 'polymorphic');
+    assert.equal((finding.evidence.extra as Record<string, unknown>).count, 3);
   });
 
   it('aggregates deopt traces without file and line by function name', () => {
@@ -1066,6 +1367,86 @@ describe('findings – deopt-loop', () => {
 
     assert.equal((finding.evidence.extra as Record<string, unknown>).count, 6);
     assert.equal(finding.evidence.file, 'src/shapes.js');
+  });
+
+  it('attributes location-less <unknown> deopts to the single hot named deopt function', () => {
+    const raw = makeRaw(
+      {
+        nodes: [
+          {
+            id: 1,
+            callFrame: {
+              functionName: '(root)',
+              scriptId: '0',
+              url: '',
+              lineNumber: -1,
+              columnNumber: -1,
+            },
+            hitCount: 0,
+            children: [2],
+          },
+          {
+            id: 2,
+            callFrame: {
+              functionName: 'polymorphic',
+              scriptId: '1',
+              url: `file://${CWD}/src/poly.js`,
+              lineNumber: 0,
+              columnNumber: 0,
+            },
+            hitCount: 100,
+            children: [],
+          },
+        ],
+        startTime: 1000000,
+        endTime: 2000000,
+        samples: Array(100).fill(2),
+        timeDeltas: [],
+      },
+      {
+        deopts: [
+          {
+            function: 'polymorphic',
+            file: '',
+            line: 0,
+            reason: 'wrong map',
+            bailoutType: 'deopt-eager',
+            count: 1,
+          },
+          {
+            function: 'polymorphic',
+            file: '',
+            line: 0,
+            reason: 'overflow',
+            bailoutType: 'deopt-eager',
+            count: 1,
+          },
+          {
+            function: '<unknown>',
+            file: '',
+            line: 0,
+            reason: 'prepare for on stack replacement (OSR)',
+            bailoutType: 'deopt-eager',
+            count: 1,
+          },
+        ],
+      },
+    );
+    const deoptReport = createReport(raw, {
+      sampleIntervalMicros: 1000,
+      deep: true,
+      command: ['node', 'app.js'],
+    });
+
+    const finding = findFindingOrFail(
+      deoptReport,
+      (f) => f.id === 'deopt-loop:polymorphic',
+      'deopt-loop finding with inferred location-less unknown deopt',
+    );
+
+    assert.equal(finding.evidence.function, 'polymorphic');
+    assert.equal(finding.evidence.file, 'src/poly.js');
+    assert.equal((finding.evidence.extra as Record<string, unknown>).count, 3);
   });
 
   it('does not emit deopt-loop without --deep mode', () => {
@@ -1409,6 +1790,14 @@ describe('findings – json-on-hot-path', () => {
 
       assert.equal(finding.evidence.function, 'serializeResponse');
       assert.equal((finding.evidence.extra as Record<string, unknown>).callee, 'JSON.stringify');
+      const userCaller = (finding.evidence.extra as Record<string, unknown>).userCaller as
+        | Record<string, unknown>
+        | undefined;
+      assert.equal(userCaller?.function, 'serializeResponse');
+      assert.equal(userCaller?.file, 'http.js');
+      assert.equal(userCaller?.line, 2);
+      assert.equal(userCaller?.confidence, 'high');
+      assert.equal(userCaller?.basis, 'cpu-sample-path');
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

@@ -11,6 +11,7 @@ import {
   buildAttributedFinding,
   buildAttributionEvidence,
   type CpuHotspotContext,
+  pickPrimaryCallerBySource,
   resolveAttribution,
 } from './shared.js';
 
@@ -28,7 +29,7 @@ export const requireInHotPathDetector: KindScopedDetector<'cpu'> = {
       if (hotspot.category !== 'node:builtin' && hotspot.category !== 'node_modules') continue;
       if (hotspot.selfPct < thresholds.minSelfPct && hotspot.totalPct < thresholds.minTotalPct)
         continue;
-      findings.push(buildFinding(hotspot, context));
+      findings.push(buildFinding(hotspot, context, cpu.view.bundle.target.cwd));
     }
     return findings;
   },
@@ -37,11 +38,20 @@ export const requireInHotPathDetector: KindScopedDetector<'cpu'> = {
 function buildFinding(
   hotspot: Hotspot,
   context: CpuHotspotContext,
+  cwd: string,
 ): BuiltinFinding<'require-in-hot-path'> {
   const { attribution, caller, candidateCallers } = resolveAttribution(hotspot, context);
+  const sourceCaller = pickPrimaryCallerBySource(
+    candidateCallers,
+    cwd,
+    /\b(?:require|import)\s*\(/,
+  );
+  const evidenceAttribution = sourceCaller ?? attribution;
+  const highConfidenceCaller =
+    evidenceAttribution?.confidence === 'high' ? evidenceAttribution : undefined;
   const evidenceExtra: RequireInHotPathEvidenceExtra = {
     callee: hotspot.function,
-    ...buildAttributionEvidence(attribution, caller, candidateCallers),
+    ...buildAttributionEvidence(evidenceAttribution, highConfidenceCaller, candidateCallers),
   };
   const thresholds = DETECTOR_THRESHOLDS.requireInHotPath;
   return defineBuiltinFinding(
@@ -51,7 +61,7 @@ function buildFinding(
       category: 'require-in-hot-path',
       title: 'Module loading on hot path',
       hotspot,
-      caller,
+      caller: sourceCaller ?? caller,
       selfPct: hotspot.selfPct,
       extra: evidenceExtra,
       measurements: {

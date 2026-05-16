@@ -101,6 +101,14 @@ When `measurementBasis === "histogram"`, `correlatedHotspots[]` is based on over
 
 Fires only when a function is **both** hot in the CPU profile **and** repeatedly deoptimised under `--deep`. Focus on stabilising shapes and types, then reprofile. One-off deopt entries are noise.
 
+#### Memory trend findings and `correlatedAllocator`
+
+`memory-growth:*` and `external-buffer-pressure` are process-level heuristics, so `evidence.file` stays on `process.memoryUsage`. When available, `evidence.extra.correlatedAllocator` is the allocator lead to inspect first; prefer its `userCaller` when present. `basis: heap-sampled-allocator` comes from the V8 heap sampler, while `basis: cpu-top-user-hotspot` is used for off-heap pressure when a CPU profile was captured.
+
+#### Async findings and `userCaller`
+
+Async findings can expose `evidence.extra.userCaller` from async init stacks or CPU-window attribution. For `hot-async-context:<id>`, `evidence.*` remains the hot execution frame, while `evidence.extra.entryFrame` names the async entry point that drove the chain.
+
 #### `node-modules-hotspot:<package>`
 
 A dependency hotspot is often a symptom — your code controls when and how often the dependency runs. Inspect the caller path, reduce input size or call frequency, and only then decide whether the dependency itself needs replacing.
