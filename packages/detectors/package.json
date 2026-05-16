@@ -1,6 +1,6 @@
 {
   "name": "@lanterna-profiler/detectors",
-  "version": "2.2.0",
+  "version": "2.3.0",
   "description": "Lanterna default detector pack — CPU, memory & experimental async detectors, thresholds, attribution helpers, plugin types",
   "type": "module",
   "main": "./dist/index.js",
@@ -25,7 +25,7 @@
     "clean": "rm -rf dist .turbo .tsbuildinfo"
   },
   "dependencies": {
-    "@lanterna-profiler/core": "^2.2.0"
+    "@lanterna-profiler/core": "^2.3.0"
   },
   "devDependencies": {
     "zod": "^4.4.3"
