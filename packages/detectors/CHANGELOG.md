@@ -1,5 +1,18 @@
 # @lanterna-profiler/detectors
 
+## 2.3.0
+
+### Minor Changes
+
+- aa7902f: Improve hotspot attribution diagnostics and agent report readability.
+
+  Lanterna now preserves anonymous user-code wrapper frames as actionable attribution clues, carries richer user-caller evidence through memory, async, GC, and CPU findings, and clarifies internal hotspot attribution naming without changing the public CLI contract.
+
+### Patch Changes
+
+- Updated dependencies [aa7902f]
+  - @lanterna-profiler/core@2.3.0
+
 ## 2.2.0
 
 ### Minor Changes
