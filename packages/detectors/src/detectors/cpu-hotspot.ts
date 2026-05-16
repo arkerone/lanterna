@@ -32,34 +32,28 @@ export const cpuHotspotDetector: KindScopedDetector<'cpu'> = {
   order: 90,
   detect({ cpu }, shared): Finding[] {
     const thresholds = DETECTOR_THRESHOLDS.cpuHotspot;
-    const candidates = cpu.report.hotspots
+    const unexplainedUserHotspots = cpu.report.hotspots
       .filter((hotspot) => hotspot.category === 'user')
       .filter(
         (hotspot) =>
           hotspot.selfPct >= thresholds.minSelfPct || hotspot.totalPct >= thresholds.minTotalPct,
       )
-      .filter(
-        (hotspot) =>
-          !(
-            hasSpecificCpuFindings(shared.findings) &&
-            isAnonymousWrapper(hotspot) &&
-            hotspot.selfPct < thresholds.minSelfPct
-          ),
-      )
       .filter((hotspot) => !isExplainedBySpecificFinding(hotspot, shared.findings))
-      .sort(compareHotspots);
-    const selfHotspots = candidates.filter((hotspot) => hotspot.selfPct >= thresholds.minSelfPct);
-    const mode: CpuHotspotMode = selfHotspots.length > 0 ? 'self' : 'inclusive-entry';
-    const explanationPool = selfHotspots.length > 0 ? selfHotspots : candidates;
-    const namedPool = explanationPool.some((hotspot) => !isAnonymousWrapper(hotspot))
-      ? explanationPool.filter((hotspot) => !isAnonymousWrapper(hotspot))
-      : explanationPool;
+      .sort(compareHotspotsBySelfThenTotalPct);
+    const selfCpuHotspots = unexplainedUserHotspots.filter(
+      (hotspot) => hotspot.selfPct >= thresholds.minSelfPct,
+    );
+    const mode: CpuHotspotMode = selfCpuHotspots.length > 0 ? 'self' : 'inclusive-entry';
+    const hotspotsToExplain =
+      selfCpuHotspots.length > 0 ? selfCpuHotspots : unexplainedUserHotspots;
 
-    return namedPool.slice(0, thresholds.maxFindings).map((hotspot, index) =>
-      buildFinding(
+    return hotspotsToExplain.slice(0, thresholds.maxFindings).map((hotspot, index) =>
+      buildCpuHotspotFinding(
         hotspot,
-        candidates.filter((candidate) => candidate.id !== hotspot.id).slice(0, 2),
-        cpu.report.eventLoop.correlatedHotspots?.find((candidate) => sameFrame(candidate, hotspot)),
+        unexplainedUserHotspots.filter((candidate) => candidate.id !== hotspot.id).slice(0, 2),
+        cpu.report.eventLoop.correlatedHotspots?.find((candidate) =>
+          sameFrameLocation(candidate, hotspot),
+        ),
         mode,
         index,
       ),
@@ -67,21 +61,13 @@ export const cpuHotspotDetector: KindScopedDetector<'cpu'> = {
   },
 };
 
-function compareHotspots(left: Hotspot, right: Hotspot): number {
+function compareHotspotsBySelfThenTotalPct(left: Hotspot, right: Hotspot): number {
   const selfDelta = right.selfPct - left.selfPct;
   if (selfDelta !== 0) return selfDelta;
   return right.totalPct - left.totalPct;
 }
 
-function isAnonymousWrapper(hotspot: Hotspot): boolean {
-  return hotspot.function === '(anonymous)' || hotspot.function.trim() === '';
-}
-
-function hasSpecificCpuFindings(findings: readonly LanternaReport['findings'][number][]): boolean {
-  return findings.some((finding) => SPECIFIC_CPU_FINDING_CATEGORIES.has(finding.category));
-}
-
-function buildFinding(
+function buildCpuHotspotFinding(
   hotspot: Hotspot,
   alternatives: Hotspot[],
   eventLoopCorrelation: StallCorrelation | undefined,
@@ -179,23 +165,26 @@ function isExplainedBySpecificFinding(
 ): boolean {
   return findings.some((finding) => {
     if (!SPECIFIC_CPU_FINDING_CATEGORIES.has(finding.category)) return false;
-    if (sameFrame(finding.evidence, hotspot)) return true;
-    if (sameSourceFrame(finding.evidence.source, hotspot)) return true;
+    if (sameFrameLocation(finding.evidence, hotspot)) return true;
+    if (sameSourceMappedFrame(finding.evidence.source, hotspot)) return true;
     const extra = finding.evidence.extra as
       | { userCaller?: unknown; candidateCallers?: unknown }
       | undefined;
-    if (sameUnknownFrame(extra?.userCaller, hotspot)) return true;
+    if (sameUnknownFindingFrame(extra?.userCaller, hotspot)) return true;
     if (!Array.isArray(extra?.candidateCallers)) return false;
-    return extra.candidateCallers.some((candidate) => sameUnknownFrame(candidate, hotspot));
+    return extra.candidateCallers.some((candidate) => sameUnknownFindingFrame(candidate, hotspot));
   });
 }
 
-function sameUnknownFrame(candidate: unknown, hotspot: Hotspot): boolean {
+function sameUnknownFindingFrame(candidate: unknown, hotspot: Hotspot): boolean {
   if (!candidate || typeof candidate !== 'object') return false;
-  return sameFrame(candidate as { file?: string; line?: number; function?: string }, hotspot);
+  return sameFrameLocation(
+    candidate as { file?: string; line?: number; function?: string },
+    hotspot,
+  );
 }
 
-function sameFrame(
+function sameFrameLocation(
   candidate: { file?: string; line?: number; function?: string },
   hotspot: Hotspot,
 ): boolean {
@@ -206,7 +195,7 @@ function sameFrame(
   );
 }
 
-function sameSourceFrame(
+function sameSourceMappedFrame(
   source: { file?: string; line?: number; name?: string } | undefined,
   hotspot: Hotspot,
 ): boolean {

@@ -250,7 +250,7 @@ async function stopProbes<TSourceOptions>(
 ): Promise<Record<string, unknown>> {
   const kindsData: Record<string, unknown> = {};
   for (const probeInstance of probeInstances) {
-    const result = await stopProbe(
+    const stoppedProbe = await stopProbe(
       probeInstance,
       connected,
       cdp,
@@ -259,8 +259,8 @@ async function stopProbes<TSourceOptions>(
       captureIntegrity,
       stopReason,
     );
-    if (!result.ok) continue;
-    kindsData[probeInstance.kind.id] = result.value;
+    if (!stoppedProbe.ok) continue;
+    kindsData[probeInstance.kind.id] = stoppedProbe.value;
   }
   return kindsData;
 }
@@ -285,7 +285,7 @@ async function stopProbe<TSourceOptions>(
         ? { liveSourceSignals: connected.drainLiveSignals.bind(connected) }
         : {}),
     });
-    const result =
+    const stopResult =
       stopTimeoutMs === false
         ? {
             ok: true as const,
@@ -293,9 +293,9 @@ async function stopProbe<TSourceOptions>(
           }
         : await withTimeoutResult(probe.stop(ctx), stopTimeoutMs);
 
-    if (result.ok) {
+    if (stopResult.ok) {
       stopSucceeded = true;
-      return result;
+      return stopResult;
     }
 
     recordCaptureDiagnostic(captureIntegrity, {
@@ -355,11 +355,11 @@ async function disposeProbe<TSourceOptions>(
       stopReason,
       stopSucceeded,
     });
-    const result =
+    const disposeResult =
       disposeTimeoutMs === false
         ? { ok: true as const, value: await probe.dispose(ctx) }
         : await withTimeoutResult(probe.dispose(ctx), disposeTimeoutMs);
-    if (result.ok) return;
+    if (disposeResult.ok) return;
     recordCaptureDiagnostic(captureIntegrity, {
       stage: 'probe-dispose',
       kindId: kind.id,

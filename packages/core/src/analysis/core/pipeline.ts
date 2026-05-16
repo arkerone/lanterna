@@ -93,12 +93,12 @@ export class AnalysisPipeline {
     // Phase 1 — kind contributors populate `profiles.<kindKey>` and views.
     for (const kind of this.kinds) {
       const dataKey = kind.id as keyof CaptureKindDataMap;
-      const data = bundle.kinds?.[dataKey];
-      if (data === undefined) continue;
+      const kindData = bundle.kinds?.[dataKey];
+      if (kindData === undefined) continue;
       try {
         const contributor = kind.createAnalysisContributor();
-        const kindCtx: KindCtx<unknown> = {
-          data,
+        const kindContext: KindCtx<unknown> = {
+          data: kindData,
           bundle,
           analysis: context,
           options,
@@ -110,7 +110,7 @@ export class AnalysisPipeline {
             context.setView(kind.id as keyof KindViews, view as KindViews[keyof KindViews]);
           },
         };
-        contributor.analyze(kindCtx);
+        contributor.analyze(kindContext);
       } catch (error) {
         logger.warn({ kindId: kind.id, err: error }, 'kind analysis contributor failed');
         recordCaptureDiagnostic(bundle.captureIntegrity, {
@@ -157,11 +157,11 @@ export class AnalysisPipeline {
     for (const kind of this.kinds) {
       if (!kind.finalize) continue;
       const dataKey = kind.id as keyof CaptureKindDataMap;
-      const data = bundle.kinds?.[dataKey];
-      if (data === undefined) continue;
+      const kindData = bundle.kinds?.[dataKey];
+      if (kindData === undefined) continue;
       try {
         kind.finalize({
-          data,
+          data: kindData,
           snapshot: { profiles: snapshot.profiles, findings: snapshot.findings },
         });
       } catch (error) {
@@ -174,14 +174,14 @@ export class AnalysisPipeline {
       }
     }
 
-    const result: AnalysisResult = {
+    const analysisResult: AnalysisResult = {
       profiles: snapshot.profiles,
       findings: snapshot.findings,
     };
     if (Object.keys(snapshot.extensions).length > 0) {
-      result.extensions = snapshot.extensions;
+      analysisResult.extensions = snapshot.extensions;
     }
-    return result;
+    return analysisResult;
   }
 }
 
@@ -312,11 +312,11 @@ function buildStubMeta(
   const kindsIntegrity: Record<string, unknown> = { ...bundle.captureIntegrity.kinds };
   const capturedKinds: string[] = [];
   for (const kind of kinds) {
-    const data = bundle.kinds?.[kind.id as keyof CaptureKindDataMap];
-    if (data === undefined) continue;
+    const kindData = bundle.kinds?.[kind.id as keyof CaptureKindDataMap];
+    if (kindData === undefined) continue;
     capturedKinds.push(kind.id);
-    if (kind.contributeMeta) kindsMeta[kind.id] = kind.contributeMeta(data);
-    if (kind.contributeIntegrity) kindsIntegrity[kind.id] = kind.contributeIntegrity(data);
+    if (kind.contributeMeta) kindsMeta[kind.id] = kind.contributeMeta(kindData);
+    if (kind.contributeIntegrity) kindsIntegrity[kind.id] = kind.contributeIntegrity(kindData);
   }
   return {
     schemaVersion: LANTERNA_REPORT_SCHEMA_VERSION,

@@ -307,7 +307,7 @@ describe('memory-growth detector', () => {
     expect(rssFinding?.suggestion).not.toContain('Chrome DevTools or `--inspect`');
   });
 
-  it('uses a named user allocator when the top allocator is an anonymous wrapper', () => {
+  it('keeps an anonymous user allocator wrapper when it is the dominant allocation site', () => {
     const bundle = makeBundle({
       samplingProfile: anonymousTimerAllocatorProfile(),
       memoryUsageSamples: externalGrowthSeries(6 * 1024),
@@ -321,9 +321,9 @@ describe('memory-growth detector', () => {
     const rssFinding = result.findings.find((f) => f.id === 'memory-growth:rss');
     expect(rssFinding?.evidence.extra).toMatchObject({
       correlatedAllocator: {
-        function: 'addToCache',
+        function: '(anonymous)',
         file: 'src/app.js',
-        line: 3,
+        line: 10,
       },
     });
   });

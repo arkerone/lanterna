@@ -21,24 +21,24 @@ export function correlatedAllocatorFromMemory(
 ): CorrelatedAllocatorEvidence | undefined {
   const topAllocator = summary.topAllocator;
   if (!topAllocator) return undefined;
-  const selected = selectMemoryAllocator(topAllocator, hotAllocators);
-  if (!selected) return undefined;
+  const allocator = selectCorrelatedMemoryAllocator(topAllocator, hotAllocators);
+  if (!allocator) return undefined;
   return {
-    function: selected.function,
-    file: selected.file,
-    line: selected.line,
-    totalPct: selected.totalPct,
-    selfPct: selected.selfPct,
+    function: allocator.function,
+    file: allocator.file,
+    line: allocator.line,
+    totalPct: allocator.totalPct,
+    selfPct: allocator.selfPct,
     basis: 'heap-sampled-allocator',
-    ...(selected.userCaller ? { userCaller: selected.userCaller } : {}),
-    ...(selected.source ? { source: selected.source } : {}),
+    ...(allocator.userCaller ? { userCaller: allocator.userCaller } : {}),
+    ...(allocator.source ? { source: allocator.source } : {}),
   };
 }
 
 export function correlatedAllocatorFromCpuHotspot(
   hotspot: SummaryUserHotspot | undefined,
 ): CorrelatedAllocatorEvidence | undefined {
-  if (!hotspot || isAnonymousFunction(hotspot.function)) return undefined;
+  if (!hotspot) return undefined;
   return {
     function: hotspot.function,
     file: hotspot.file,
@@ -50,59 +50,52 @@ export function correlatedAllocatorFromCpuHotspot(
   };
 }
 
-function selectMemoryAllocator(
+function selectCorrelatedMemoryAllocator(
   topAllocator: NonNullable<MemorySummary['topAllocator']>,
   hotAllocators: readonly MemoryHotAllocator[],
 ): MemoryHotAllocator | NonNullable<MemorySummary['topAllocator']> | undefined {
-  const topHotAllocator = hotAllocators.find(
+  const matchingHotAllocator = hotAllocators.find(
     (allocator) =>
       allocator.function === topAllocator.function &&
       allocator.file === topAllocator.file &&
       allocator.line === topAllocator.line,
   );
-  if (topHotAllocator && isEditableNamedAllocator(topHotAllocator)) return topHotAllocator;
-  if (!topHotAllocator && !isAnonymousFunction(topAllocator.function)) return topAllocator;
-  return findNamedUserAllocator(hotAllocators, topAllocator.file);
+  if (matchingHotAllocator && isEditableAllocator(matchingHotAllocator)) {
+    return matchingHotAllocator;
+  }
+  // Summary topAllocator lacks `category`; treat it as editable when the path
+  // is not a runtime path.
+  if (!matchingHotAllocator && !isRuntimeAllocatorPath(topAllocator.file)) return topAllocator;
+  return findEditableAllocatorForEvidence(hotAllocators, topAllocator.file);
 }
 
-function findNamedUserAllocator(
+/**
+ * Returns the first editable allocator, preferring one from `preferredFile`.
+ * Anonymous user-code wrappers remain editable because their file/line is
+ * actionable.
+ */
+function findEditableAllocatorForEvidence(
   hotAllocators: readonly MemoryHotAllocator[],
   preferredFile: string,
 ): MemoryHotAllocator | undefined {
   return (
-    // Prefer a named user/node_modules allocator from the dominant file.
     hotAllocators.find(
-      (allocator) => isEditableNamedAllocator(allocator) && allocator.file === preferredFile,
-    ) ??
-    // Then any named user/node_modules allocator.
-    hotAllocators.find(isEditableNamedAllocator) ??
-    // Finally fall back to an anonymous user/node_modules allocator: V8 names
-    // arrow functions assigned to const/let via name inference, but inline
-    // callbacks (`setInterval(() => ...)`, `.map(x => ...)`, `new Promise((r) => ...)`)
-    // stay `(anonymous)`. The file:line is still actionable for an agent.
-    hotAllocators.find(isEditableUserAllocator)
+      (allocator) => isEditableAllocator(allocator) && allocator.file === preferredFile,
+    ) ?? hotAllocators.find(isEditableAllocator)
   );
 }
 
-function isEditableNamedAllocator(
-  allocator: Pick<MemoryHotAllocator, 'category' | 'file' | 'function'>,
-): boolean {
-  return isEditableUserAllocator(allocator) && !isAnonymousFunction(allocator.function);
-}
-
-function isEditableUserAllocator(
-  allocator: Pick<MemoryHotAllocator, 'category' | 'file'>,
-): boolean {
+/**
+ * An allocator is "editable" when it belongs to user code or a `node_modules`
+ * dependency. Runtime paths are excluded.
+ */
+function isEditableAllocator(allocator: Pick<MemoryHotAllocator, 'category' | 'file'>): boolean {
   return (
     (allocator.category === 'user' || allocator.category === 'node_modules') &&
-    !isRuntimePath(allocator.file)
+    !isRuntimeAllocatorPath(allocator.file)
   );
 }
 
-function isAnonymousFunction(fn: string): boolean {
-  return fn === '(anonymous)' || fn.trim() === '';
-}
-
-function isRuntimePath(file: string): boolean {
+function isRuntimeAllocatorPath(file: string): boolean {
   return file.startsWith('node:') || file.includes('/node_modules/');
 }

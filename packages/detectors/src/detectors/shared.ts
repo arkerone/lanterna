@@ -72,6 +72,13 @@ export function exceedsCategoryThreshold(categoryTotalPct: number, thresholdPct:
   return categoryTotalPct >= thresholdPct;
 }
 
+export function findActionableUserCpuHotspot(
+  hotspots: readonly Hotspot[],
+  minTotalPct = 1,
+): Hotspot | undefined {
+  return hotspots.find((hotspot) => hotspot.category === 'user' && hotspot.totalPct > minTotalPct);
+}
+
 /**
  * Resolves the user-code caller most likely responsible for a non-user hotspot.
  *
@@ -109,14 +116,14 @@ export function buildAttributionEvidence(
   caller: UserCallerAttribution | undefined,
   candidateCallers: readonly UserCallerAttribution[] = attribution ? [attribution] : [],
 ): AttributionEvidence {
-  const candidates =
+  const candidateCallerEvidence =
     candidateCallers.length > 0 ? [...candidateCallers] : attribution ? [attribution] : undefined;
   return {
     proofLevel: caller ? 'attributed-caller' : 'direct-builtin',
     attributionBasis: attribution ? 'sample-path' : 'builtin-only',
     attributionConfidence: attribution?.confidence ?? 'low',
     userCaller: attribution,
-    candidateCallers: candidates,
+    candidateCallers: candidateCallerEvidence,
   };
 }
 
@@ -147,27 +154,27 @@ export function pickPrimaryCallerBySource(
   pattern: RegExp,
 ): UserCallerAttribution | undefined {
   for (const candidate of candidateCallers) {
-    const source = readFrameSourceText(candidate, cwd);
+    const sourceText = readFrameSourceText(candidate, cwd);
     const anchorLine = candidate.source?.line ?? candidate.line;
-    const line =
-      findPatternLineNearAnchor(source, anchorLine, pattern) ??
-      findPatternLineInFunctionBlock(source, anchorLine, pattern);
-    if (line === undefined) continue;
+    const matchedLine =
+      findPatternLineNearAnchor(sourceText, anchorLine, pattern) ??
+      findPatternLineInFunctionBlock(sourceText, anchorLine, pattern);
+    if (matchedLine === undefined) continue;
     return {
       ...candidate,
-      line,
-      ...(candidate.source ? { source: { ...candidate.source, line } } : {}),
+      line: matchedLine,
+      ...(candidate.source ? { source: { ...candidate.source, line: matchedLine } } : {}),
     };
   }
   return undefined;
 }
 
 export function sourceCallPatternForApi(api: string): RegExp {
-  const parts = api.split('.').filter(Boolean).map(escapeRegExp);
-  const leaf = parts.at(-1);
-  if (!leaf) return /$a/;
-  const dotted = parts.join('\\s*\\.\\s*');
-  return new RegExp(`\\b(?:${dotted}|${leaf})\\s*\\(`);
+  const apiPathParts = api.split('.').filter(Boolean).map(escapeRegExp);
+  const apiLeafName = apiPathParts.at(-1);
+  if (!apiLeafName) return /$a/;
+  const dottedApiPattern = apiPathParts.join('\\s*\\.\\s*');
+  return new RegExp(`\\b(?:${dottedApiPattern}|${apiLeafName})\\s*\\(`);
 }
 
 export function sourcePatternForTerms(terms: readonly string[]): RegExp {
@@ -346,12 +353,12 @@ export function readFrameSourceText(
   cwd: string,
 ): string | undefined {
   if (!frame) return undefined;
-  const candidates = [frame.source?.file, frame.file].filter((file): file is string =>
+  const sourceFileCandidates = [frame.source?.file, frame.file].filter((file): file is string =>
     Boolean(file),
   );
-  for (const candidate of candidates) {
-    if (candidate.startsWith('node:') || candidate.startsWith('native ')) continue;
-    const path = isAbsolute(candidate) ? candidate : join(cwd, candidate);
+  for (const sourceFile of sourceFileCandidates) {
+    if (sourceFile.startsWith('node:') || sourceFile.startsWith('native ')) continue;
+    const path = isAbsolute(sourceFile) ? sourceFile : join(cwd, sourceFile);
     if (!existsSync(path)) continue;
     try {
       return readFileSync(path, 'utf8');

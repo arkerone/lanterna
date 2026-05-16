@@ -377,7 +377,7 @@ describe('findings – sync-crypto exact source callsite', () => {
       'function processBatch(size) {',
       '  const out = [];',
       '  for (let i = 0; i < size; i++) {',
-      '    out.push(hashPassword(`user-${i}`, `salt-${i}`));',
+      `    out.push(hashPassword(\`user-\${i}\`, \`salt-\${i}\`));`,
       '  }',
       '  return out;',
       '}',

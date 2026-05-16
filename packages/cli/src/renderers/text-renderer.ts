@@ -105,12 +105,12 @@ export class TextReportRenderer implements ReportRenderer {
   }
 
   private renderHotspots(lines: string[], hotspots: Hotspot[], indent: string): void {
-    const top = hotspots.slice(0, 5);
-    if (top.length === 0) {
+    const topHotspots = hotspots.slice(0, 5);
+    if (topHotspots.length === 0) {
       lines.push(`${indent}None`);
       return;
     }
-    for (const hotspot of top) {
+    for (const hotspot of topHotspots) {
       lines.push(
         `${indent}${hotspot.function} (${formatFrameLocation(hotspot)}): self ${formatPct(hotspot.selfPct)}, total ${formatPct(hotspot.totalPct)}`,
       );
@@ -125,12 +125,12 @@ export class TextReportRenderer implements ReportRenderer {
     allocators: MemoryHotAllocator[],
     indent: string,
   ): void {
-    const top = allocators.slice(0, 5);
-    if (top.length === 0) {
+    const topAllocators = allocators.slice(0, 5);
+    if (topAllocators.length === 0) {
       lines.push(`${indent}None`);
       return;
     }
-    for (const allocator of top) {
+    for (const allocator of topAllocators) {
       lines.push(
         `${indent}${allocator.function} (${formatFrameLocation(allocator)}): self ${formatBytes(allocator.selfBytes)} (${formatPct(allocator.selfPct)}), total ${formatBytes(allocator.totalBytes)} (${formatPct(allocator.totalPct)})`,
       );
@@ -145,33 +145,33 @@ export class TextReportRenderer implements ReportRenderer {
     operations: AsyncTopOperation[],
     indent: string,
   ): void {
-    const top = operations.slice(0, 5);
-    if (top.length === 0) {
+    const topOperations = operations.slice(0, 5);
+    if (topOperations.length === 0) {
       lines.push(`${indent}None`);
       return;
     }
-    for (const op of top) {
+    for (const operation of topOperations) {
       lines.push(
-        `${indent}#${op.asyncId} ${op.kind} (${formatMs(op.durationMs)}, run ${formatMs(op.runMs)})`,
+        `${indent}#${operation.asyncId} ${operation.kind} (${formatMs(operation.durationMs)}, run ${formatMs(operation.runMs)})`,
       );
-      if (op.userCaller) {
-        lines.push(`${indent}  User caller: ${formatUserCaller(op.userCaller)}`);
+      if (operation.userCaller) {
+        lines.push(`${indent}  User caller: ${formatUserCaller(operation.userCaller)}`);
       }
     }
   }
 
   private renderAsyncHotFiles(lines: string[], hotFiles: AsyncHotFile[], indent: string): void {
-    const top = hotFiles.slice(0, 5);
-    if (top.length === 0) {
+    const topHotFiles = hotFiles.slice(0, 5);
+    if (topHotFiles.length === 0) {
       lines.push(`${indent}None`);
       return;
     }
-    for (const file of top) {
+    for (const hotFile of topHotFiles) {
       lines.push(
-        `${indent}${file.file}: cpu ${formatPct(file.cpuPct)}, ops ${file.operationCount}`,
+        `${indent}${hotFile.file}: cpu ${formatPct(hotFile.cpuPct)}, ops ${hotFile.operationCount}`,
       );
-      if (file.userCaller) {
-        lines.push(`${indent}  User caller: ${formatUserCaller(file.userCaller)}`);
+      if (hotFile.userCaller) {
+        lines.push(`${indent}  User caller: ${formatUserCaller(hotFile.userCaller)}`);
       }
     }
   }
@@ -181,12 +181,12 @@ export class TextReportRenderer implements ReportRenderer {
     chains: AsyncCpuAttributionEntry[],
     indent: string,
   ): void {
-    const top = chains.slice(0, 5);
-    if (top.length === 0) {
+    const topChains = chains.slice(0, 5);
+    if (topChains.length === 0) {
       lines.push(`${indent}None`);
       return;
     }
-    for (const chain of top) {
+    for (const chain of topChains) {
       lines.push(
         `${indent}root #${chain.rootAsyncId} ${chain.rootKind}: cpu ${formatPct(chain.cpuPct)} (${formatMs(chain.cpuMs)})`,
       );
@@ -201,25 +201,25 @@ export class TextReportRenderer implements ReportRenderer {
       lines.push(`${indent}No findings`);
       return;
     }
-    for (const f of findings) {
-      lines.push(`${indent}[${f.severity}] ${f.title}`);
-      lines.push(`${indent}  ${f.suggestion}`);
+    for (const finding of findings) {
+      lines.push(`${indent}[${finding.severity}] ${finding.title}`);
+      lines.push(`${indent}  ${finding.suggestion}`);
       lines.push(
-        `${indent}  Evidence: ${f.evidence.function} (${formatFrameLocation(f.evidence)})`,
+        `${indent}  Evidence: ${finding.evidence.function} (${formatFrameLocation(finding.evidence)})`,
       );
-      const userCaller = userCallerFromEvidenceExtra(f.evidence.extra);
+      const userCaller = userCallerFromEvidenceExtra(finding.evidence.extra);
       if (userCaller) {
         lines.push(`${indent}  User caller: ${formatUserCaller(userCaller)}`);
       }
-      const candidateCallers = candidateCallersFromEvidenceExtra(f.evidence.extra);
+      const candidateCallers = candidateCallersFromEvidenceExtra(finding.evidence.extra);
       if (candidateCallers.length > 0) {
         lines.push(`${indent}  Candidate callers:`);
         for (const caller of candidateCallers) {
           lines.push(`${indent}    - ${formatUserCaller(caller)}`);
         }
       }
-      if (f.evidence.extra !== undefined) {
-        const extra = renderValue(f.evidence.extra);
+      if (finding.evidence.extra !== undefined) {
+        const extra = renderValue(finding.evidence.extra);
         if (extra.length > 0) {
           lines.push(`${indent}  Details:`);
           for (const line of extra) lines.push(`${indent}    ${line}`);
@@ -248,6 +248,6 @@ function userCallerFromEvidenceExtra(extra: unknown): UserCallerAttribution | un
 
 function candidateCallersFromEvidenceExtra(extra: unknown): UserCallerAttribution[] {
   if (!extra || typeof extra !== 'object') return [];
-  const value = (extra as { candidateCallers?: unknown }).candidateCallers;
-  return Array.isArray(value) ? (value as UserCallerAttribution[]) : [];
+  const candidateCallers = (extra as { candidateCallers?: unknown }).candidateCallers;
+  return Array.isArray(candidateCallers) ? (candidateCallers as UserCallerAttribution[]) : [];
 }
