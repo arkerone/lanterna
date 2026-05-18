@@ -4,9 +4,11 @@ Use this when answering from a Lanterna agent report. The answer should expose t
 
 Start from `$LANTERNA report report.json --format agent --output report.agent.md` (set `$LANTERNA` per the SKILL prefix block). Read frontmatter, `## Findings`, each `## Finding N`, every present `## Kind Review`, and `## Files To Read First`. Read implicated source files before making source-backed recommendations. Use frontmatter `rerun_required`, `blocking_caveats`, `degrading_caveats`, and any `decision = rerun` finding to decide whether a better capture is needed. Use the JSON only for a targeted field missing from the agent report (full retainer paths, source-map failures, complete memory series).
 
+Every answer, including quick replies, must surface the frontmatter gate: available `kinds`, relevant quality fields, `memory_signal` when memory is discussed, source-map quality when locations matter, `rerun_required`, caveats, and the confidence limit those signals impose.
+
 ## Choosing The Form
 
-- Use **Quick Form** when exactly one finding is `decision = actionable`, `confidence = high`, the cited source has been read, and there are no `blocking_caveats` / `degrading_caveats` that change the conclusion.
+- Use **Quick Form** when exactly one finding is `decision = actionable`, `confidence = high`, the cited source has been read, `rerun_required: false`, the needed kind is present, and there are no `blocking_caveats` / `degrading_caveats` that change the conclusion.
 - Use **Substantive Answer Shape** otherwise: multiple findings competing, unclear root cause, hypotheses needing validation, degraded or partial signal, or when the user asked for a written-up investigation (issue, PR description, post-mortem).
 
 ## Substantive Answer Shape
@@ -17,8 +19,11 @@ Start from `$LANTERNA report report.json --format agent --output report.agent.md
 - <strongest lead and whether it is actionable, hypothesis, or rerun-only>
 - <confidence level and the main reason>
 
+## Report Gate
+<mode/pid/command/duration/cwd as relevant, kinds, quality, memory signal, source-map status, rerun_required, blocking/degrading caveats, and confidence limits>
+
 ## Observed Symptoms
-<metrics, kind availability, quality, integrity, caveats, idle/workload notes>
+<metrics, idle/workload notes, user-visible symptom, and baseline if known>
 
 ## Hypotheses
 | Hypothesis | Evidence | Confidence | Needs validation |
@@ -46,11 +51,13 @@ Start from `$LANTERNA report report.json --format agent --output report.agent.md
 - **High**: report quality is sufficient, no blocking caveats, finding is actionable or direct, and relevant editable source confirms the hot path.
 - **Medium**: signal is useful but degraded, source confirmation is partial, the user caller is medium confidence, or causality depends on a reasonable but unmeasured link.
 - **Low**: capture is short, idle, low-sample, attach-limited, source maps are weak, event-loop timing is unavailable, or the finding is a heuristic.
+- **Rerun-only**: `rerun_required: true`, a non-empty `blocking_caveats` list, a `decision = rerun` finding, or a missing kind required for the user's symptom. Do not claim root cause or propose a patch.
 - Never increase confidence above the report's caveats. A good-looking source explanation does not rescue a non-representative capture.
 
 ## Evidence Rules
 
 - Lead with quality when confidence is not high.
+- Combine frontmatter quality, rerun status, caveats, finding decision/proof/confidence, kind review details, source-map status, `Files To Read First` decision, and `user_caller` confidence before deciding whether a lead is actionable, a hypothesis, or rerun-only.
 - Include the specific report observation: finding id, decision, proof, metric, threshold, hotspot, allocator, async operation, caveat, or kind review line.
 - For CPU reports, separate the self-heavy culprit from caller context when both are present: `top_cpu_culprit` answers which function body burned CPU; `top_request_entry` / `top_user_hotspot` explains the request or caller path.
 - Treat `cpu-hotspot:*` according to `evidence.extra.mode`: `self` can be actionable direct CPU evidence when quality and source inspection support it; `inclusive-entry` is a caller/context hypothesis until callees or hot stacks confirm the expensive body.
@@ -64,10 +71,11 @@ Start from `$LANTERNA report report.json --format agent --output report.agent.md
 ## Quick Form
 
 ```md
-Profile quality: <quality and caveat>
+Profile quality: <kinds, relevant quality fields, memory_signal/source-map status if relevant>
+Rerun status: <rerun_required and blocking/degrading caveats>
 Top lead: <finding/hotspot/allocator/async operation> (<decision>, <confidence>)
 Evidence: <one or two report/code observations>
-Confidence: <high/medium/low with reason>
+Confidence: <high/medium/low/rerun-only with frontmatter-imposed limit>
 Next step: <source file/function to inspect or exact rerun command>
 ```
 

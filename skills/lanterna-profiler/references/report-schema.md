@@ -4,7 +4,39 @@ Use this only for targeted JSON field lookup after reading the agent report. The
 
 Current built-in report schema version is `2.0.0`. Schema v2 stores built-in data under `profiles.<kind>.*` and per-kind metadata under `meta.kinds.<kind>.*`. Additive optional fields can appear without changing the major shape.
 
-For agent analysis, capture in JSON (`--format json --output report.json`), then render the agent contract with `$LANTERNA report report.json --format agent --output report.agent.md` (set `$LANTERNA` per the SKILL prefix block), and read that output in skill order. Do not start with `--format text`, `--format markdown`, or raw JSON. The JSON paths below are a schema dictionary for targeted clarification only when the agent report omits a field you need. The agent format renders the contract sections: frontmatter with `rerun_required`, `## Findings` table, `## Finding N` blocks, `Findings.decision` column, `Kind Review`, and `Files To Read First`.
+For agent analysis, capture in JSON (`--format json --output report.json`), then render the agent contract with `$LANTERNA report report.json --format agent --output report.agent.md` (set `$LANTERNA` per the SKILL prefix block), and read that output in skill order. Do not start with `--format text`, `--format markdown`, or raw JSON. The JSON paths below are a schema dictionary for targeted clarification only when the agent report omits a field you need. The agent format renders the contract sections: frontmatter with `rerun_required`, `## Findings` table, `## Finding N` blocks, the `decision` column, `Kind Review`, and `Files To Read First`.
+
+## Agent Frontmatter Contract
+
+The current frontmatter source of truth is `packages/cli/src/renderers/agent-renderer.ts`. Read this YAML block before `## Findings`; it is the report-level signal gate that decides whether detailed evidence can be used for diagnosis.
+
+| Key | Renderer source | Analysis use |
+|---|---|---|
+| `mode` | `meta.mode ?? "unknown"` | Capture shape: `spawn`, `attach`, or `in-process`; affects rerun command and workload assumptions. |
+| `pid` | `meta.pid` | Target process identity, especially for attach captures. |
+| `command` | formatted `meta.command` | Spawned command; empty or absent command usually means attach/in-process context. |
+| `duration_ms` | `meta.durationMs` | Capture length; short windows cap confidence and may require rerun. |
+| `cwd` | `meta.cwd ?? "unknown"` | Base path for resolving rendered relative source locations. |
+| `kinds` | `meta.profileKinds ?? []` | Kinds that actually produced capture data. Missing required kinds block conclusions for that subsystem. |
+| `lanterna_version` | `meta.lanternaVersion ?? "unknown"` | Version context for report behavior and reproducibility. |
+| `cpu_quality` | `profiles.cpu.quality.confidence ?? "absent"` | CPU confidence gate; see [cpu-profiling.md](cpu-profiling.md). |
+| `memory_quality` | `profiles.memory.quality.confidence ?? "absent"` | Memory confidence gate; see [memory-profiling.md](memory-profiling.md). |
+| `memory_signal` | `absent`, `present`, or `usage-unavailable` | `usage-unavailable` blocks memory-growth claims from usage series data. |
+| `async_quality` | `profiles.async.quality.confidence ?? "absent"` | Async confidence gate; see [async-profiling.md](async-profiling.md). |
+| `integrity` | `unknown`, `ok`, or `degraded` | Global capture integrity; `degraded` means `blocking_caveats` exists. |
+| `rerun_required` | blocking caveats, rerun-level degrading caveats, or any `decision = rerun` finding | When `true`, stop root-cause claims and request a better capture. |
+| `sourcemap_coverage` | source-map coverage when enabled; otherwise `null` | Coverage below 70% means mapped locations are hints until confirmed. |
+| `sourcemap_status` | `sourceMaps.status` when source maps are enabled and status is defined | Failed/degraded status lowers confidence in mapped locations. This key is conditional. |
+| `sourcemap_maps_loaded` | `sourceMaps.mapsLoaded` when source maps are enabled | Zero or unexpectedly low map count explains weak mapping. This key is conditional. |
+| `blocking_caveats` | `blockingIntegrityCaveats(report)` | Non-empty list is a hard stop. Current examples include missing capture integrity and unavailable expected control channel. |
+| `degrading_caveats` | `degradingSignalCaveats(report)` | Continue only for unaffected conclusions when `rerun_required: false`; otherwise rerun. |
+
+Decision precedence:
+
+1. Non-empty `blocking_caveats`: hard stop; request corrected capture.
+2. `rerun_required: true`: do not claim root cause or propose a patch; cite the caveat or `decision = rerun` finding.
+3. Non-empty `degrading_caveats` with `rerun_required: false`: continue only for unaffected conclusions and lower confidence for degraded subsystems. Event-loop or GC timing unavailability degrades those causal claims without necessarily forcing CPU rerun.
+4. Missing required `kind`: request a rerun with the specific `--kind` needed for the symptom.
 
 ## Top-Level Shape
 
@@ -217,10 +249,10 @@ Common fields:
 
 Rules:
 
-- Read the agent report's `Source` and `Generated fallback` before proposing code changes.
+- Read the agent report's rendered `location` line before proposing code changes. When it contains `(fallback <generated-file:line>)`, treat the fallback as generated context, not the first patch target.
 - `cpu-hotspot:<frame>` is the built-in generic CPU fallback for hot user code not explained by a more specific detector. `evidence.extra.mode: "self"` is a direct source-inspection lead. `mode: "inclusive-entry"` is a lower-confidence caller/context lead and should be confirmed through callees or hot stacks.
 - `event-loop-stall` can include `evidence.extra.proofLevel: "aggregate-correlation"` or `"hotspot-fallback"`. The fallback form anchors lag to the hottest user CPU frame when direct stall-window attribution is not strong enough.
-- In agent reports, `## Findings` table may include `User caller: <fn> (<location>) [confidence, support X%]`. Use that location before dependency/runtime frames, but only treat high-confidence user callers as potentially actionable.
+- In agent reports, `## Finding N` blocks may include `- user_caller: <fn> at <location> (<confidence>, <basis>, support X%)`. Use that location before dependency/runtime frames, but only treat high-confidence user callers as potentially actionable.
 - `Files To Read First` is a table of `location`, `reason`, `source`, `signal`, and `decision`. It excludes `node_modules`, `node:`, pnpm store, virtual source-map paths, pseudo-files, and runtime locations unless an editable user-code `userCaller` location is available. Generated output folders such as `dist/`, `build/`, `out/`, `.next/`, `.nuxt/`, `.svelte-kit/`, `.vite/`, and `coverage/` are rendered as `generated output fallback` with `decision = inspect-lead`, not `read-first`. Treat `read-first` as the source-reading queue, `inspect-lead` as a confirmation lead, and `supporting-context` as surrounding evidence. Reasons distinguish finding locations, dependency callers, runtime callers, CPU hotspots/stacks, memory allocators, and async leads such as `top async hot file`, `long async operation`, and `async CPU attribution`.
 - Use `confidence`, `proofLevel`, `measurements`, and `priority`, not severity alone.
 - Use `confidence`, `proofLevel`, `priority.actionConfidence`, `sourceMaps.coverage`, and `userCaller.confidence` together: high can be actionable; medium/low user callers are inspection leads; missing or unknown proof with non-high confidence means rerun.

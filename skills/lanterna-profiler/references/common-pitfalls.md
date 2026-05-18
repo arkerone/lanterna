@@ -17,16 +17,21 @@ Node.js is single-threaded. Any synchronous work on the main thread stalls **eve
 
 **Fix pattern:**
 ```js
+import { pbkdf2, pbkdf2Sync } from 'node:crypto';
+import { promisify } from 'node:util';
+import Piscina from 'piscina';
+
+const pbkdf2Async = promisify(pbkdf2);
+
 // BAD
-const hash = crypto.pbkdf2Sync(pw, salt, 100_000, 64, 'sha512');
+const syncHash = pbkdf2Sync(pw, salt, 100_000, 64, 'sha512');
 
 // GOOD — async
-const hash = await crypto.pbkdf2(pw, salt, 100_000, 64, 'sha512');
+const asyncHash = await pbkdf2Async(pw, salt, 100_000, 64, 'sha512');
 
 // BETTER for >100 req/s — worker thread pool
-import Piscina from 'piscina';
-const pool = new Piscina({ filename: './workers/hash.js' });
-const hash = await pool.run({ pw, salt });
+const pool = new Piscina({ filename: new URL('./workers/hash.js', import.meta.url).href });
+const pooledHash = await pool.run({ pw, salt });
 ```
 
 ---

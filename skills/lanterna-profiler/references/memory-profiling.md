@@ -33,7 +33,7 @@ Stop conditions specific to memory:
 Start from the agent report, not from JSON:
 
 1. frontmatter — memory usage availability, heap snapshot warnings, `rerun_required`, integrity and source-map caveats.
-2. `## Findings` table / `## Finding N` blocks / `Findings.decision` column — memory findings, proof level, measurements, and actionability.
+2. `## Findings` table / `## Finding N` blocks / `decision` column — memory findings, proof level, measurements, and actionability.
 3. `Kind Review` -> `memory` — memory usage, top allocator, hot allocators, user callers, and heap snapshot summary.
 4. `Files To Read First` — table of editable source locations to inspect before proposing patches. `read-first` rows are the primary queue; `inspect-lead` rows need confirmation; `supporting-context` rows provide surrounding evidence.
 5. Use `rerun_required`, caveats, and any `decision = rerun` finding to decide whether to request a better capture before diagnosis.
@@ -171,7 +171,7 @@ Stop and ask the user when:
 
 - The capture window is < 2 s — slope is unreliable, do not assert a leak.
 - The agent frontmatter section does not list `memory` — the user did not request memory capture; do not invent memory observations from the CPU profile.
-- `memoryUsage.available` is false — the preload hook didn't run (e.g. no inspector). Time-series claims are not supported; only `hotAllocators` (from the CDP-side sampling profile) remain trustworthy.
+- `memoryUsage.available` is false — the runtime memory-usage hook was not available or could not be read at finalization. Time-series claims are not supported; only `hotAllocators` (from the CDP-side sampling profile) remain trustworthy.
 - `heapSnapshotAnalysis.available` is false — snapshot capture or parsing failed. Read `warnings[]`, keep using `summary`, `hotAllocators`, and `memoryUsage`, and avoid retainer claims.
 - The user mentions "OOM" but `summary.rss.maxBytes` is far below the host memory limit — the run probably did not reach the failure window; ask for a longer capture or one started closer to the OOM event.
 

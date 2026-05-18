@@ -5,7 +5,7 @@ Use this when adding Lanterna detectors, authoring plugins, or wiring programmat
 ## Package Boundary
 
 - `@lanterna-profiler/core`: orchestration, capture, reports, profile kinds, `runProfile`, `attachProfile`, `createKindRegistry`, `KindScopedDetector`, and `createFindingAnalyzerFromKindScopedDetector`.
-- `@lanterna-profiler/detectors`: built-in CPU detector pack, `createCpuProfileKindWithBuiltInDetectors`, `withBuiltInCpuDetectors`, thresholds, and attribution helpers.
+- `@lanterna-profiler/detectors`: built-in CPU, memory, and async detector packs; kind factories such as `createCpuProfileKindWithBuiltInDetectors`, `createMemoryProfileKindWithBuiltInDetectors`, and `createAsyncProfileKindWithBuiltInDetectors`; thresholds; and attribution helpers.
 - `@lanterna-profiler/cli`: command parsing, output, attach picker, plugin loading.
 
 Do not import `runProfile`, `attachProfile`, or `createKindRegistry` from `@lanterna-profiler/detectors`. Do not assume detector helpers own capture orchestration.

@@ -16,7 +16,7 @@ The current built-in kind id and report section key are both `cpu`, so CPU analy
 
 ## Report Paths
 
-These are targeted JSON lookup paths. For analysis, read the agent report first and use its frontmatter, `## Findings` table, `## Finding N` blocks, `Findings.decision` column, `Kind Review`, and `Files To Read First` sections as the contract.
+These are targeted JSON lookup paths. For analysis, read the agent report first and use its frontmatter, `## Findings` table, `## Finding N` blocks, the `decision` column, `Kind Review`, and `Files To Read First` sections as the contract.
 
 - `profiles.cpu.summary`: on-CPU ratio, idle ratio, category ratios, `topCpuCulprit`, `topRequestEntry`, and backward-compatible `topUserHotspot`.
 - `profiles.cpu.hotspots[]`: aggregated frames by `(file, function, line)`.
@@ -91,7 +91,7 @@ Every CPU frame may carry an optional `source` object resolved from a source map
 ## Interpretation Order
 
 1. Read agent frontmatter.
-2. Summarize actionable findings from `## Findings` table, `## Finding N` blocks, and `Findings.decision` column.
+2. Summarize actionable findings from `## Findings` table, `## Finding N` blocks, and the `decision` column.
 3. Use `## Kind Review` for top user-relevant hotspots, even when no detector fired. Prefer `top_cpu_culprit` for "which line burns CPU?" and `top_request_entry` / `top_user_hotspot` for the caller or request context.
 4. Use `## Files To Read First` as a table, not a plain list: `read-first` rows are the source-reading queue, `inspect-lead` rows need confirmation, and `supporting-context` rows explain the sampled stack. Generated output fallbacks (`dist/`, `build/`, `.next/`, etc.) are `inspect-lead` rows until resolved back to editable source.
 5. If frontmatter has `rerun_required: true`, explain the caveat or `decision = rerun` finding and request a better capture before patching.
