@@ -30,8 +30,8 @@ npx -y @lanterna-profiler/cli report report.json --format text
 - `findings[]` entries:
   - `memory-growth:rss` — the slope of `rssBytes` over the capture window is positive and large.
   - `memory-growth:heapUsed` — same on `heapUsedBytes`.
-  - `large-allocator` — `cacheLine` (or its inlined site) ranks at the top of `profiles.memory.allocators[]`.
-- With `--heap-snapshot-analysis`: `profiles.memory.heapSnapshotAnalysis.retainers[]` should highlight the `cache` Map and the closure wrapper.
+  - `large-allocator` — `cacheLine` (or its inlined site) ranks at the top of `profiles.memory.hotAllocators[]`.
+- With `--heap-snapshot-analysis`: `profiles.memory.heapSnapshotAnalysis.retainerPaths[]` should highlight the `cache` Map and the closure wrapper.
 
 ## What to try next
 
