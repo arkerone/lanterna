@@ -37,7 +37,7 @@ Attach reports can still be useful for new resources created during the capture 
 
 ## Report Paths
 
-These are targeted JSON lookup paths. For analysis, read the agent report first and use its frontmatter, `## Findings` table, `## Finding N` blocks, `Findings.decision` column, `Kind Review`, and `Files To Read First` sections as the contract.
+These are targeted JSON lookup paths. For analysis, read the agent report first and use its frontmatter, `## Findings` table, `## Finding N` blocks, the `decision` column, `Kind Review`, and `Files To Read First` sections as the contract.
 
 - `profiles.async.summary`: availability, counts, top kinds, `collectedVia`, dropped record count, and optional `topAsyncHotFile`.
 - `profiles.async.quality`: confidence, reasons, recommendations, dropped records, `attachPartialCapture`, CDP stack coverage.
@@ -83,7 +83,7 @@ Async findings usually include:
 - `hot-async-context` / async CPU attribution findings when combined with CPU data.
 - `microtask-flood` when microtask or TickObject volume dominates and microtasks were included.
 
-Prefer findings that the `Findings.decision` column marks actionable, with high confidence, clear rendered `Source` / generated fallback, and corroborating top operations or chains. For orphan resources, inspect whether the resource is intentionally long-lived before patching.
+Prefer findings that the `decision` column marks actionable, with high confidence, clear rendered `location` / fallback, and corroborating top operations or chains. For orphan resources, inspect whether the resource is intentionally long-lived before patching.
 
 ## Source Positions
 

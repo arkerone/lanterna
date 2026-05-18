@@ -6,7 +6,7 @@ Lanterna pays for its observability with two distinct costs: a fixed **startup c
 
 - **Startup cost (spawn mode):** ~600 ms on Linux/x64. Constant — does not scale with capture duration.
 - **CPU kind, steady-state:** ~1–2 % wall-time overhead on a CPU-bound workload at the default `--sample-interval` (1000 µs).
-- **Memory kind, steady-state:** ~5–10 % wall-time overhead on an allocation-heavy workload at default `--heap-sample-interval` (512 KiB) and `--memory-usage-interval` (50 ms).
+- **Memory kind, steady-state:** ~5–10 % wall-time overhead on an allocation-heavy workload at default `--heap-sample-interval` (512 KiB) and `--memory-usage-interval` (250 ms).
 - **Attach mode:** zero startup cost; the inspector is already running in the target.
 
 If you can run a representative load for ≥ 5 s, the steady-state cost dominates and overhead is in the single digits. For shorter captures, the fixed startup dominates and the percentage looks worse — that's a measurement artifact, not a profiler defect.
@@ -48,7 +48,7 @@ Captures longer than ~5 s should see the steady-state numbers; shorter captures 
 
 - **`--sample-interval` (default 1000 µs).** Lower values (e.g. 250 µs) capture rarer hot paths but quadruple the sampler's wake-ups. Increase to 2000 µs or 4000 µs for very hot CPU loops where you want minimal perturbation.
 - **`--heap-sample-interval` (default 512 KiB).** Smaller values catch smaller allocators at the cost of higher overhead and larger profiles. Don't drop below 64 KiB unless you have a specific allocator hunt in mind.
-- **`--memory-usage-interval` (default 50 ms).** This is `process.memoryUsage()` polled on a timer. Going below 20 ms adds noticeable overhead on Linux without much extra signal.
+- **`--memory-usage-interval` (default 250 ms, min 10 ms).** This is `process.memoryUsage()` polled on a timer. Going below 20 ms adds noticeable overhead on Linux without much extra signal.
 - **`--heap-snapshot-analysis`.** Heap snapshots are expensive (seconds, not milliseconds, and proportional to heap size). The bench above does **not** include this flag.
 - **`--async-instrumentation full`.** The full async transform rewrites `await` sites at load time. It's experimental and adds a one-off cost per loaded module. `safe` (default) is the cheap path.
 - **`--deep` (run mode only).** Adds `--trace-deopt`. The runtime cost is small but stderr volume can dominate I/O on noisy targets.

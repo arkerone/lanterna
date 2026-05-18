@@ -28,7 +28,7 @@ Most Node.js profilers were designed for a human staring at a flamegraph. That's
 Lanterna takes a different stance:
 
 - **Structured JSON, not pixels.** The `LanternaReport` is a stable schema — hotspots, allocators, async chains, GC pauses, event-loop lag, and findings — that an agent can read, correlate, and act on directly.
-- **Detectors, not just data.** 17 built-in detectors emit categorized `findings` (sync crypto, blocking I/O, deopt loops, memory growth, orphan async resources, …) with `confidence` and `proofLevel` so consumers know when to trust a hypothesis vs. require corroboration.
+- **Detectors, not just data.** 18 built-in detectors emit categorized `findings` (sync crypto, blocking I/O, deopt loops, memory growth, orphan async resources, …) with `confidence` and `proofLevel` so consumers know when to trust a hypothesis vs. require corroboration.
 - **CPU + memory + async in one capture.** Combine kinds in a single run; cross-kind detectors like `alloc-in-hot-path` and `hot-async-context` surface the highest-priority fixes (something flamegraph tools can't represent).
 - **Spawn or attach.** Profile a CLI, a server under load, or a live production process — same report shape, same detector surface.
 
@@ -36,7 +36,7 @@ Lanterna takes a different stance:
 
 | Tool | Primary output | CPU | Memory | Async | Findings / detectors | Agent-friendly |
 | --- | --- | :-: | :-: | :-: | :-: | :-: |
-| **Lanterna** | Structured JSON (+ text/markdown/agent renderers) | ✅ | ✅ | ✅ (experimental) | ✅ 17 built-in, pluggable | ✅ |
+| **Lanterna** | Structured JSON (+ text/markdown/agent renderers) | ✅ | ✅ | ✅ (experimental) | ✅ 18 built-in, pluggable | ✅ |
 | `node --prof` / `--cpu-prof` | V8 isolate log / `.cpuprofile` | ✅ | — | — | — | ⚠️ raw, post-processing required |
 | [0x](https://github.com/davidmarkclements/0x) | HTML flamegraph | ✅ | — | — | — | ❌ |
 | [Clinic.js](https://github.com/clinicjs/node-clinic) (Doctor / Flame / Bubbleprof) | HTML dashboards | ✅ | ⚠️ via Doctor | ⚠️ via Bubbleprof | ⚠️ heuristic recommendations | ❌ |
@@ -54,7 +54,7 @@ Lanterna is the right fit when the consumer of the report is **an agent or an au
 - **Two capture modes** — `lanterna run` to spawn & profile a command, `lanterna attach` to connect to a live process via the inspector.
 - **Three profile kinds** — opt in with `--kind`: `cpu` (V8 sampling profiler, default), `memory` (heap allocation profile + RSS series), and `async` (experimental async-resource profiling). Combine kinds by repeating `--kind` (`--kind cpu --kind memory`) or using commas (`--kind cpu,memory`).
 - **Enriched `LanternaReport`** — categorized hotspots, hot stacks, GC pauses, event-loop lag, allocator ranking, async chains, capture-integrity flags.
-- **17 built-in detectors** across CPU, memory, and async kinds — see the [Built-in detectors](#built-in-detectors) section below.
+- **18 built-in detectors** across CPU, memory, and async kinds, including 2 cross-kind detectors (`alloc-in-hot-path`, `hot-async-context`) — see the [Built-in detectors](#built-in-detectors) section below.
 - **Stable JSON schema** with finding `confidence` and `proofLevel` fields so consumers can distinguish direct sampled evidence from heuristics.
 - **Extensible** — ship your own detectors and profile kinds as plugins.
 
@@ -87,9 +87,9 @@ lanterna run --kind memory --heap-snapshot-analysis --duration 60s -- node app.j
 
 ## Built-in detectors
 
-Lanterna ships 17 detectors out of the box. Each emits a `Finding` in the report with `confidence` and `proofLevel` so consumers can distinguish direct sampled evidence from heuristics.
+Lanterna ships 18 detectors out of the box, including 2 cross-kind detectors (`alloc-in-hot-path` for `cpu + memory`, `hot-async-context` for `cpu + async`). Each emits a `Finding` in the report with `confidence` and `proofLevel` so consumers can distinguish direct sampled evidence from heuristics.
 
-**CPU kind** (8)
+**CPU kind** (9)
 
 | ID | What it flags |
 | --- | --- |
@@ -101,6 +101,7 @@ Lanterna ships 17 detectors out of the box. Each emits a `Finding` in the report
 | `deopt-loop` | V8 deoptimisation cycles repeatedly hit on the same function |
 | `require-in-hot-path` | Dynamic `require()` resolved on hot stacks (cold-start surprise) |
 | `node-modules-hotspot` | A third-party dependency dominating CPU |
+| `cpu-hotspot` | Generic fallback: hot user-code frames not explained by any other detector |
 
 **Memory kind** (4)
 
@@ -121,7 +122,7 @@ Lanterna ships 17 detectors out of the box. Each emits a `Finding` in the report
 | `microtask-flood` | Microtask queue saturation starving the event loop |
 | `hot-async-context` | Async contexts dominating CPU (cross-kind: requires both `cpu` and `async`, auto-skips otherwise) |
 
-Thresholds are configurable via `.lanterna.json` — see [docs/configuration.md](docs/configuration.md). To ship your own detectors, see [docs/extending/detectors.md](docs/extending/detectors.md).
+Built-in thresholds are exported as `DETECTOR_THRESHOLDS` for detector authors — see [docs/extending/detectors.md](docs/extending/detectors.md#thresholds). `.lanterna.json` configures capture options and plugin loading; see [docs/configuration.md](docs/configuration.md). To ship your own detectors, see [docs/extending/detectors.md](docs/extending/detectors.md).
 
 ## Requirements
 

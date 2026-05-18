@@ -20,7 +20,7 @@ Lanterna produces agent-facing Node.js profiling reports. Your job is not to sum
 0. **No report yet? Capture first.**
    - If the user only provided a target (command, PID, inspector URL) without a report, drive a capture before diagnosing. See [Lanterna Capture & Rerun Commands](#lanterna-capture--rerun-commands).
    - **Default kinds — pick from the symptom, do not ask blindly.** Start with `cpu`. Add `memory` when the symptom is a leak, OOM, sustained RSS/heap growth, off-heap Buffer pressure, or allocation-heavy hot path. Add `async` when the symptom is long awaits, deep async chains, orphan resources, or concurrency shape. Add `--heap-snapshot-analysis` only for retainer / leak retention investigations. Confirm the selection with the user only when the symptom is genuinely ambiguous between CPU, memory, and async.
-   - Ask the user for the inputs you cannot infer: target (`run -- <cmd>` / `attach --pid` / `attach --inspect-url`) and duration are always needed; for HTTP servers also ask for a representative `--workload` and a `--wait-for-url` readiness URL. CLI scripts, batch jobs, queue consumers, and cron tasks usually do not need an external workload — the target itself drives the load.
+   - Ask the user for the inputs you cannot infer: target (`run -- <cmd>` / `attach --pid` / `attach --inspect-url`) is always needed. Duration is needed for long-running targets; finite CLI scripts and batch jobs can instead run until the target exits, but a duration is still useful when you need a fixed comparison window. For HTTP servers also ask for a representative `--workload` and a `--wait-for-url` readiness URL. CLI scripts, batch jobs, queue consumers, and cron tasks usually do not need an external workload — the target itself drives the load.
    - After capture, the contract output is `report.agent.md`. Only then enter step 1.
 
 1. **Clarify the performance question**
@@ -28,16 +28,24 @@ Lanterna produces agent-facing Node.js profiling reports. Your job is not to sum
    - Identify the user-visible impact and target baseline: endpoint/job, expected workload, duration, p95/p99/throughput/RSS target when available.
    - If the user did not provide the symptom, ask one targeted question before deep analysis.
 
-2. **Gate the report quality**
-   - Read frontmatter first: `kinds`, `cpu_quality`, `memory_signal`, `async_quality`, `integrity`, `rerun_required`, source-map coverage, `blocking_caveats`, `degrading_caveats`.
-   - If `blocking_caveats` is non-empty, do not diagnose. Explain the blocker and request a corrected capture.
-   - If CPU idle ratio is mostly idle, sample count is low, capture is too short, or workload is not representative, request a rerun using `--workload`.
-   - If a needed kind is absent, request a new capture with the needed `--kind`.
+2. **Frontmatter Signal Gate**
+   - Read every frontmatter signal before the findings table: `mode`, `pid`, `command`, `duration_ms`, `cwd`, `kinds`, `lanterna_version`, `cpu_quality`, `memory_quality`, `memory_signal`, `async_quality`, `integrity`, `rerun_required`, `sourcemap_coverage`, optional `sourcemap_status`, optional `sourcemap_maps_loaded`, `blocking_caveats`, and `degrading_caveats`.
+   - Use capture context signals (`mode`, `pid`, `command`, `duration_ms`, `cwd`, `lanterna_version`) to judge representativeness and to construct corrected capture commands. In attach mode, do not invent HTTP load; ask for the workload that exercises that running process.
+   - Use `kinds` as a capability list, not a symptom list. If the user's symptom requires a missing kind, request a rerun with the needed `--kind` before diagnosing that subsystem.
+   - Use quality signals (`cpu_quality`, `memory_quality`, `memory_signal`, `async_quality`, `integrity`) to set subsystem confidence before reading detailed evidence. `memory_signal: usage-unavailable` blocks memory-growth claims from usage series data.
+   - Use source-map signals (`sourcemap_coverage`, plus `sourcemap_status` / `sourcemap_maps_loaded` when rendered) before treating mapped files as editable patch targets. Low coverage or failed status means mapped locations are hints until source inspection confirms them.
+   - Apply decision precedence:
+     1. `blocking_caveats` non-empty: hard stop. Explain the blocker and request a corrected capture.
+     2. `rerun_required: true`: do not claim a root cause or propose a patch. Explain the exact caveat or `decision = rerun` finding that forced the rerun, then request a better capture.
+     3. `degrading_caveats` non-empty with `rerun_required: false`: continue only for conclusions unaffected by the degraded subsystem, and lower confidence for conclusions that depend on it.
+     4. Missing required `kind`: request a rerun with the specific `--kind` needed for the symptom.
+   - If CPU idle ratio is mostly idle, sample count is low, capture is too short, or workload is not representative, request a rerun with representative input. Use `--workload` for `run` server captures; for finite jobs, adjust the target args/data; for `attach`, run load externally while the capture is active.
 
 3. **Build an evidence map**
    - Read in order, every time: frontmatter → `## Findings` table → each `## Finding N` block in table order → every present `## Kind Review` section (including kinds with no finding) → `## Files To Read First`. Do not skip a `Kind Review` for a kind listed in frontmatter `kinds`.
    - Use `## Files To Read First` as the source inspection queue: `read-first` rows are the primary queue, `inspect-lead` rows need confirmation, `supporting-context` rows explain surrounding evidence.
-   - Classify each lead as `proven/actionable`, `hypothesis needing source confirmation`, `hypothesis needing another measurement`, or `non-representative signal requiring rerun`. Treat `rerun_required: true` as the report-level signal for that last class, then use `blocking_caveats`, `degrading_caveats`, and any `decision = rerun` finding to explain why.
+   - Combine frontmatter quality, finding decision/proof/confidence, kind review detail, source-map status, file-read decision, and `user_caller` confidence before classifying a lead as `proven/actionable`, `hypothesis needing source confirmation`, `hypothesis needing another measurement`, or `non-representative signal requiring rerun`.
+   - Treat `rerun_required: true` as the report-level signal for `non-representative signal requiring rerun`, then use `blocking_caveats`, `degrading_caveats`, and any `decision = rerun` finding to explain why.
 
 4. **Diagnose by subsystem** (see per-kind references for interpretation rules: [cpu-profiling.md](references/cpu-profiling.md), [memory-profiling.md](references/memory-profiling.md), [async-profiling.md](references/async-profiling.md))
    - CPU: check `top_cpu_culprit` first for the self-heavy line, then `top_request_entry` / `top_user_hotspot` for caller context, dependency/runtime hotspot with user caller, sync crypto, blocking I/O, JSON/serialization, require/import in hot path, generic `cpu-hotspot:*`, deopt loops, and GC-correlated CPU.
@@ -93,11 +101,11 @@ $LANTERNA report report.json --format agent --output report.agent.md
 
 If the user already has a `report.json`, skip step 1 and run step 2 directly.
 
-Use the **first capture** form when there is no report yet. Use the **rerun** form (same shape) when the existing report has degraded signal — typically a non-representative workload, mostly-idle CPU, missing kind, or `blocking_caveats`. For server profiles without load, ask the user to rerun with `--workload`, including realistic headers, auth, payload, concurrency, and route mix. See [workload-guidance.md](references/workload-guidance.md) for autocannon/artillery examples. Do not invent an endpoint for attach mode; ask for the representative workload.
+Use the **first capture** form when there is no report yet. Use the **rerun** form (same shape) when the existing report has degraded signal — typically `rerun_required: true`, a non-representative workload, mostly-idle CPU, missing kind, or `blocking_caveats`. For `run` server profiles without load, ask the user to rerun with `--workload`, including realistic headers, auth, payload, concurrency, and route mix. For `attach`, run the representative workload externally while the attach capture is active; `attach` does not accept `--workload`. See [workload-guidance.md](references/workload-guidance.md) for autocannon/artillery examples. Do not invent an endpoint for attach mode; ask for the representative workload.
 
 ## Output Format
 
-Use [analysis-output.md](references/analysis-output.md) for substantive answers. For quick answers, still include quality, top lead, evidence, confidence, and next step.
+Use [analysis-output.md](references/analysis-output.md) for substantive answers. For quick answers, still include quality, rerun status, caveats, top lead, evidence, confidence, and next step.
 
 ## Stop Conditions
 
@@ -107,7 +115,9 @@ Stop and ask instead of diagnosing when:
 - the target is an HTTP server and no representative workload can be supplied — for CLI scripts, batch jobs, queue consumers, or cron tasks this clause does not apply because the target drives its own load;
 - the target is not Node.js;
 - the report has blocking caveats;
+- `rerun_required: true` is present in frontmatter;
 - the capture is mostly idle or the chosen workload is non-representative for the symptom;
+- the frontmatter `kinds` list lacks the kind needed to investigate the user's symptom;
 - the user asks for a patch but the relevant source files have not been read;
 - the finding is only `rerun` (no further diagnosis is possible without a better capture);
 - source-map locations are virtual or generated and no editable source has been confirmed.
