@@ -113,6 +113,18 @@ export const ASYNC_OPTIONS = [
   },
 ] as const satisfies readonly CliOptionDescriptor[];
 
+export const PS_OPTIONS = [
+  {
+    flag: '--format <text|json>',
+    description: 'Output format',
+    hint: 'default: table on a TTY, json when piped',
+  },
+  {
+    flag: '--pretty',
+    description: 'Pretty-print JSON output',
+  },
+] as const satisfies readonly CliOptionDescriptor[];
+
 export const OUTPUT_OPTIONS = [
   {
     flag: '--output, -o <path>',

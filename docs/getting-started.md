@@ -59,6 +59,15 @@ lanterna run \
 
 ### Attach to a running process (`lanterna attach`)
 
+Find candidate PIDs first:
+
+```bash
+lanterna ps
+lanterna ps --format json
+```
+
+`lanterna ps` lists live `node`/`nodejs` runtimes. It does not try to classify application processes versus tooling; commands launched by `node` can appear if the OS reports their runtime as `node`.
+
 ```bash
 lanterna attach --pid 4242 --duration 15s --output report.json
 ```
