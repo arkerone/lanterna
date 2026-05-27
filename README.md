@@ -51,7 +51,7 @@ Lanterna is the right fit when the consumer of the report is **an agent or an au
 
 ## What you get
 
-- **Two capture modes** — `lanterna run` to spawn & profile a command, `lanterna attach` to connect to a live process via the inspector.
+- **Two capture modes** — `lanterna run` to spawn & profile a command, `lanterna attach` to connect to a live process via the inspector. `lanterna ps` lists live `node`/`nodejs` processes (table or JSON) when you need to find a PID first.
 - **Three profile kinds** — opt in with `--kind`: `cpu` (V8 sampling profiler, default), `memory` (heap allocation profile + RSS series), and `async` (experimental async-resource profiling). Combine kinds by repeating `--kind` (`--kind cpu --kind memory`) or using commas (`--kind cpu,memory`).
 - **Enriched `LanternaReport`** — categorized hotspots, hot stacks, GC pauses, event-loop lag, allocator ranking, async chains, capture-integrity flags.
 - **18 built-in detectors** across CPU, memory, and async kinds, including 2 cross-kind detectors (`alloc-in-hot-path`, `hot-async-context`) — see the [Built-in detectors](#built-in-detectors) section below.

@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import chalk from 'chalk';
 import { AttachSelectionCancelledError } from './attach-target.js';
 import { attachCommand } from './commands/attach.js';
+import { psCommand } from './commands/ps.js';
 import { reportCommand } from './commands/report.js';
 import { runCommand } from './commands/run.js';
 import {
@@ -23,10 +24,11 @@ import {
   MEMORY_OPTIONS,
   OUTPUT_OPTIONS,
   PLUGIN_OPTIONS,
+  PS_OPTIONS,
   RUN_CAPTURE_OPTIONS,
   SOURCE_MAP_OPTIONS,
 } from './option-descriptors.js';
-import { parseAttachArgs, parseReportArgs, parseRunArgs } from './parse.js';
+import { parseAttachArgs, parsePsArgs, parseReportArgs, parseRunArgs } from './parse.js';
 import { renderBrandHeader, renderCommandHeader } from './terminal-style.js';
 
 function readPackageVersion(): string {
@@ -55,6 +57,7 @@ const captureAttachRows = renderOptionRows([...ATTACH_CAPTURE_OPTIONS, ...COMMON
 const outputRows = renderOptionRows(OUTPUT_OPTIONS);
 const sourceMapRows = renderOptionRows(SOURCE_MAP_OPTIONS);
 const pluginRows = renderOptionRows(PLUGIN_OPTIONS);
+const psOptionRows = renderOptionRows(PS_OPTIONS);
 const generalRows = renderOptionRows(GENERAL_OPTIONS);
 
 const GLOBAL_HELP = `${renderBrandHeader({
@@ -66,12 +69,14 @@ const GLOBAL_HELP = `${renderBrandHeader({
 ${formatSection('Usage', [
   `  ${chalk.cyan('lanterna run')} ${chalk.gray('[options] -- <command> [args...]')}`,
   `  ${chalk.cyan('lanterna attach')} ${chalk.gray('[options]')}`,
+  `  ${chalk.cyan('lanterna ps')} ${chalk.gray('[options]')}`,
   `  ${chalk.cyan('lanterna report')} ${chalk.gray('<file> [options]')}`,
 ])}
 
 ${formatSection('Commands', [
   formatOptionRow('run', 'Start a Node.js command under Lanterna and capture a profile'),
   formatOptionRow('attach', 'Attach to a running Node.js process by PID, URL, or picker'),
+  formatOptionRow('ps', 'List live node/nodejs runtimes (as a table or JSON)'),
   formatOptionRow('report', 'Render an existing Lanterna JSON report'),
 ])}
 
@@ -246,6 +251,31 @@ ${formatNotes('Notes', [
 ])}
 `;
 
+const PS_HELP = `${renderCommandHeader({
+  command: 'ps',
+  subtitle: 'Live node/nodejs process list',
+})}
+
+${formatSection('Usage', [`  ${chalk.cyan('lanterna ps')} ${chalk.gray('[options]')}`])}
+
+${formatSection('Options', psOptionRows)}
+
+${formatSection('General', generalRows)}
+
+${formatExamples('Examples', [
+  { comment: 'List live node/nodejs runtimes as a table', cmd: 'lanterna ps' },
+  { comment: 'Machine-readable list for scripts and agents', cmd: 'lanterna ps --format json' },
+  { comment: 'Then attach to the chosen pid', cmd: 'lanterna attach --pid <pid> --duration 30s' },
+])}
+
+${formatNotes('Notes', [
+  `Lists live direct ${chalk.cyan('node')}/${chalk.cyan('nodejs')} runtimes and does not classify app processes versus tooling`,
+  `Attach mode is ${chalk.cyan('CDP ready')} (inspector already open) or ${chalk.cyan('PID attach')} (signalable via SIGUSR1)`,
+  `Defaults to a table on a TTY and ${chalk.cyan('json')} when piped; force either with ${chalk.cyan('--format')}`,
+  `${chalk.cyan('PID attach')} is POSIX-only; on Windows only already-inspectable processes appear`,
+])}
+`;
+
 const REPORT_HELP = `${renderCommandHeader({
   command: 'report',
   subtitle: 'Existing report renderer',
@@ -309,6 +339,14 @@ export async function main(argv: string[]): Promise<void> {
     }
     return;
   }
+  if (subcommand === 'ps') {
+    if (rest[0] === '-h' || rest[0] === '--help') {
+      process.stdout.write(PS_HELP);
+      return;
+    }
+    await psCommand(parsePsArgs(rest));
+    return;
+  }
   if (subcommand === 'report') {
     if (rest.length === 0 || rest[0] === '-h' || rest[0] === '--help') {
       process.stdout.write(REPORT_HELP);
@@ -322,4 +360,4 @@ export async function main(argv: string[]): Promise<void> {
   process.exitCode = 2;
 }
 
-export { ATTACH_HELP, GLOBAL_HELP, REPORT_HELP, RUN_HELP, VERSION };
+export { ATTACH_HELP, GLOBAL_HELP, PS_HELP, REPORT_HELP, RUN_HELP, VERSION };

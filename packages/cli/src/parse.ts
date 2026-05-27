@@ -145,6 +145,14 @@ export interface ReportOptions {
   pretty: boolean;
 }
 
+export type PsFormat = 'text' | 'json';
+
+export interface PsOptions {
+  /** Omitted means "auto": table on a TTY, JSON when piped. */
+  format?: PsFormat;
+  pretty: boolean;
+}
+
 const PROVIDED_FLAGS = Symbol('lanterna.providedFlags');
 
 export function parseRunArgs(args: string[]): RunProfileOptions {
@@ -202,6 +210,17 @@ export function parseReportArgs(args: string[]): ReportOptions {
     pretty: Boolean(parsed.pretty),
   };
   if (parsed.output) options.output = parsed.output;
+  return withProvidedFlags(options, collectProvidedFlags(args));
+}
+
+export function parsePsArgs(args: string[]): PsOptions {
+  const command = createPsParser();
+  parseCommand(command, args);
+  const parsed = command.opts<{ format?: PsFormat; pretty?: boolean }>();
+  const options: PsOptions = {
+    pretty: Boolean(parsed.pretty),
+  };
+  if (parsed.format) options.format = parsed.format;
   return withProvidedFlags(options, collectProvidedFlags(args));
 }
 
@@ -371,6 +390,17 @@ function createReportParser(): Command {
     .option(OPTION_FLAGS.pretty, 'Pretty-print JSON output');
 }
 
+function createPsParser(): Command {
+  return createBaseParser('ps')
+    .allowUnknownOption(false)
+    .option(
+      OPTION_FLAGS.format,
+      'Output format: text or json (default: table on a TTY, json when piped)',
+      parsePsFormat,
+    )
+    .option(OPTION_FLAGS.pretty, 'Pretty-print JSON output');
+}
+
 function appendRepeatableValue(value: string, previous: string[]): string[] {
   return [...previous, value];
 }
@@ -483,6 +513,15 @@ function parseOutputFormat(value: string): OutputFormat {
       `invalid --format: ${value} (expected json, text, markdown, or agent)`,
     );
   }
+}
+
+function parsePsFormat(value: string): PsFormat {
+  if (value === 'text' || value === 'json') return value;
+  throw new CommanderError(
+    1,
+    'lanterna.invalidFormat',
+    `invalid --format: ${value} (expected text or json)`,
+  );
 }
 
 function parseSampleInterval(value: string): number {

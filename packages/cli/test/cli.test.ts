@@ -6,7 +6,7 @@ import {
   DEFAULT_MEMORY_USAGE_INTERVAL_MS,
 } from '@lanterna-profiler/core';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { parseAttachArgs, parseReportArgs, parseRunArgs } from '../src/parse.js';
+import { parseAttachArgs, parsePsArgs, parseReportArgs, parseRunArgs } from '../src/parse.js';
 
 const MEMORY_DEFAULTS = {
   heapSamplingIntervalBytes: DEFAULT_MEMORY_SAMPLING_INTERVAL_BYTES,
@@ -443,5 +443,30 @@ describe('parseReportArgs', () => {
     expect(() => parseReportArgs([])).toThrow(
       'no report file provided. Use: lanterna report <file> [options]',
     );
+  });
+});
+
+describe('parsePsArgs', () => {
+  it('defaults to no explicit format so the command can auto-detect', () => {
+    expect(parsePsArgs([])).toEqual({ pretty: false });
+  });
+
+  it('accepts --format json with --pretty', () => {
+    expect(parsePsArgs(['--format', 'json', '--pretty'])).toEqual({
+      format: 'json',
+      pretty: true,
+    });
+  });
+
+  it('accepts --format text', () => {
+    expect(parsePsArgs(['--format', 'text'])).toEqual({ format: 'text', pretty: false });
+  });
+
+  it('rejects formats other than text or json', () => {
+    expect(() => parsePsArgs(['--format', 'markdown'])).toThrow(/expected text or json/);
+  });
+
+  it('rejects unknown options', () => {
+    expect(() => parsePsArgs(['--bogus'])).toThrow(/unknown option/);
   });
 });

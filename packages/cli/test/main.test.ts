@@ -1,5 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { ATTACH_HELP, GLOBAL_HELP, main, REPORT_HELP, RUN_HELP, VERSION } from '../src/main.js';
+import {
+  ATTACH_HELP,
+  GLOBAL_HELP,
+  main,
+  PS_HELP,
+  REPORT_HELP,
+  RUN_HELP,
+  VERSION,
+} from '../src/main.js';
 import {
   ASYNC_OPTIONS,
   ATTACH_CAPTURE_OPTIONS,
@@ -7,6 +15,7 @@ import {
   MEMORY_OPTIONS,
   OUTPUT_OPTIONS,
   PLUGIN_OPTIONS,
+  PS_OPTIONS,
   RUN_CAPTURE_OPTIONS,
   SOURCE_MAP_OPTIONS,
 } from '../src/option-descriptors.js';
@@ -67,6 +76,19 @@ describe('main help routing', () => {
     expect(stdoutWrite).toHaveBeenCalledWith(ATTACH_HELP);
   });
 
+  it('prints ps help for ps --help', async () => {
+    await main(['ps', '--help']);
+    expect(stdoutWrite).toHaveBeenCalledWith(PS_HELP);
+    expect(PS_HELP).toContain('Live node/nodejs process list');
+    expect(PS_HELP).toContain('--format');
+    expect(PS_HELP).toContain('json');
+  });
+
+  it('lists ps as a command in the global help', () => {
+    expect(GLOBAL_HELP).toContain('lanterna ps');
+    expect(GLOBAL_HELP).toContain('List live node/nodejs runtimes');
+  });
+
   it('prints version for --version', async () => {
     await main(['--version']);
     const written = stdoutWrite.mock.calls.map((call) => String(call[0])).join('');
@@ -120,6 +142,7 @@ describe('main help routing', () => {
     for (const option of runOptions) expect(RUN_HELP).toContain(option.flag);
     for (const option of attachOptions) expect(ATTACH_HELP).toContain(option.flag);
     for (const option of globalOptions) expect(GLOBAL_HELP).toContain(option.flag);
+    for (const option of PS_OPTIONS) expect(PS_HELP).toContain(option.flag);
   });
 
   it('does not show capture-only source map flags in report help', () => {

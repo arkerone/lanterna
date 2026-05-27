@@ -17,7 +17,7 @@ Do **not** trigger memory capture for "code is slow" alone — that's a CPU ques
 
 ## How memory capture works
 
-- **V8 sampling heap profiler** (`HeapProfiler.startSampling` / `stopSampling`). Statistical: each sampled allocation is attributed to its call stack with a size estimate. Default sampling interval is 512 KiB (`--heap-sample-interval <bytes>` to override).
+- **V8 sampling heap profiler** (`HeapProfiler.startSampling` / `stopSampling`). Statistical: each sampled allocation is attributed to its call stack with a size estimate. Default sampling interval is 512 KiB (`--heap-sample-interval <size>` to override — bytes, or a KiB/MiB suffix like `512KiB` / `1MiB`).
 - **`process.memoryUsage()` time series** — a preload hook samples at a fixed cadence (default 250 ms, `--memory-usage-interval <ms>` to override) and emits RSS / heapTotal / heapUsed / external / arrayBuffers.
 - **Optional heap snapshot analysis** (`--heap-snapshot-analysis`) captures one V8 heap snapshot before sampling and one after sampling, writes both `.heapsnapshot` files, parses the V8 graph, ignores weak edges for retention paths, computes retained-size growth by constructor, and adds short retainer paths with heuristic labels. Files default to `.lanterna-heapsnapshots` under the launch cwd; use `--heap-snapshot-dir <dir>` to choose a different directory.
 - The sampling profiler is low overhead (typically < 3 % wall-time on the synthetic test workload). Heap snapshot analysis is not low overhead; reserve it for leak/retention investigations and longer windows where the extra capture cost is acceptable.
@@ -125,9 +125,9 @@ Targeted lookup order after the agent report:
 
 | Finding id | Category | Trigger |
 |---|---|---|
-| `memory-growth:rss` | `memory-growth` | RSS linear slope ≥ 1 MB/s (warning) or ≥ 5 MB/s (critical), capture ≥ 2 s and ≥ 8 samples. |
-| `memory-growth:heapUsed` | `memory-growth` | Same shape as `:rss` but on `heapUsed`. Less prone to off-heap noise. |
-| `large-allocator:<frame>` | `large-allocator` | A single frame ≥ 15 % of sampled bytes (`totalPct` or `selfPct`); critical at ≥ 40 %. Skips synthetic frames `(root)`, `(idle)`, `(program)`, `(garbage collector)`. |
+| `memory-growth:rss` | `memory-growth` | RSS linear slope ≥ 1 MB/s (warning) or ≥ 5 MB/s (critical), **and** corroborated by `heapUsed`, `external`, or `arrayBuffers` also growing ≥ 1 MB/s; capture ≥ 2 s and ≥ 8 samples. Pure RSS growth with flat heap/external/arrayBuffers does not fire. |
+| `memory-growth:heapUsed` | `memory-growth` | `heapUsed` linear slope ≥ 1 MB/s; **warning only** (no critical escalation), and fires on the `heapUsed` slope alone (no corroboration gate). Less prone to off-heap noise. Capture ≥ 2 s and ≥ 8 samples. |
+| `large-allocator:<frame>` | `large-allocator` | A single `user`/`node_modules` frame ≥ 15 % of sampled bytes (`totalPct` or `selfPct`); critical at ≥ 40 %. Skips synthetic frames `(root)`, `(idle)`, `(program)`, `(garbage collector)`, `(anonymous)` and `node:`/native/runtime paths. |
 | `external-buffer-pressure` | `external-buffer-pressure` | Mean `external` ≥ 0.5 × `heapUsed` and ≥ 32 MB absolute. Critical at ≥ 1.5×. |
 | `alloc-in-hot-path:<frame>` | `alloc-in-hot-path` | Same frame appears in top CPU hotspots (`totalPct ≥ 5 %`) **and** top memory allocators (`totalPct ≥ 5 %`). Requires `--kind cpu --kind memory` or `--kind cpu,memory`. Critical when combined % ≥ 60. |
 

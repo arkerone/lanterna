@@ -8,6 +8,7 @@ Complete reference for the `lanterna` binary shipped by [`@lanterna-profiler/cli
 | --- | --- |
 | [`lanterna run`](#lanterna-run) | Spawn a Node program and profile it. |
 | [`lanterna attach`](#lanterna-attach) | Connect to an already-running Node process. |
+| [`lanterna ps`](#lanterna-ps) | List live `node`/`nodejs` runtimes Lanterna can attach to. |
 | [`lanterna report`](#lanterna-report) | Render an existing JSON report as text, markdown, agent markdown or reformatted JSON. |
 
 The `--` separator is required before the target command in `run`. `attach` never takes `-- <command>`; it takes `--pid` or `--inspect-url` instead.
@@ -89,6 +90,48 @@ Constraints:
 - Attach mode does **not** support `--deep` — V8 deopt tracing cannot be enabled on a process that has already started.
 - `--kind async` works in attach mode but capture is partial: resources and code loaded before hook installation cannot be observed. See [kinds/async.md](./kinds/async.md).
 
+## `lanterna ps`
+
+```bash
+lanterna ps [options]
+```
+
+Lists the running `node`/`nodejs` processes Lanterna can attach to, so you can find a PID before `lanterna attach`. Each entry is classified by attach mode: **CDP ready** (an inspector is already open — the cleanest attach) or **PID attach** (reached best-effort by sending `SIGUSR1`). `lanterna ps` does not try to classify application processes versus tooling; commands launched by `node` can appear if the OS reports their runtime as `node`. Package-manager wrappers such as `npm`, `pnpm`, and `yarn` are not listed unless the OS exposes the child process itself as `node`.
+
+```bash
+# Human-readable table (default on a TTY)
+lanterna ps
+
+# Machine-readable JSON (default when piped; shown explicitly here)
+lanterna ps --format json
+
+# Pretty-printed JSON
+lanterna ps --format json --pretty
+```
+
+Without `--format`, the output is a colored table on an interactive terminal and JSON when stdout is piped — so `lanterna ps | jq` and agent tooling get JSON automatically, while a human at a terminal gets the table.
+
+The JSON form is an array of objects:
+
+| Field | Meaning |
+| --- | --- |
+| `pid` | Process id to pass to `lanterna attach --pid`. |
+| `runtime` | Runtime binary for the listed process, usually `node` or `nodejs`. |
+| `attachMode` | `cdp-ready` or `pid-attach`. |
+| `command` | Full command line. |
+| `cwd` | Working directory (Linux only; omitted when unknown). |
+| `ageMs` | Milliseconds since the process started (omitted when unknown). |
+| `cpu` | CPU percentage, when the OS reports it. |
+| `memory` | Memory percentage, when the OS reports it. |
+
+Entries are ordered `cdp-ready` first, then by CPU, then by pid.
+
+Constraints:
+
+- **PID attach** is POSIX-only (it relies on `SIGUSR1`). On Windows, only already-inspectable (`cdp-ready`) processes appear; reach others with `lanterna attach --inspect-url`.
+- The list is a point-in-time snapshot. A `pid-attach` candidate only means the process is signalable now, not that it will expose an inspector when you attach.
+- This is a discovery aid, not a capture command — it never starts profiling. Pick a pid and pass it to `lanterna attach`.
+
 ## `lanterna report`
 
 ```bash
@@ -108,7 +151,7 @@ lanterna report report.json --format json --pretty
 
 ## Options
 
-Options are grouped by purpose. Capture options apply to `run` and `attach` unless noted; output options apply to all three commands.
+Options are grouped by purpose. Capture options apply to `run` and `attach` unless noted; output options apply to `run`, `attach`, and `report`. `lanterna ps` has its own small option set (`--format text|json` and `--pretty`) documented in [its section above](#lanterna-ps).
 
 ### Common capture
 
