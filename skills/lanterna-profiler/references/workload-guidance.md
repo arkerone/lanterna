@@ -8,9 +8,10 @@ Ask only the questions needed to build the next capture:
 
 1. What symptom should the workload reproduce: latency, throughput drop, CPU saturation, event-loop delay, memory growth, OOM, async wait, or startup cost?
 2. Which endpoint, job, queue consumer, cron task, or user flow shows the symptom?
-3. What request details are required: method, URL, body, content type, query params, tenant/project id, cookies, bearer token, API key, custom headers, and accepted response status?
-4. What is representative traffic: concurrency, request rate, duration, ramp-up, payload size, route mix, data cardinality, cache state, and external dependencies?
-5. What metric will prove the issue improved: p95/p99 latency, throughput, CPU self time, event-loop delay, RSS/heap slope, GC pause time, or async wait time?
+3. Who launches the workload: it is already active, the user will run it during capture, or the agent should launch/propose a command?
+4. What request details are required: method, URL, body, content type, query params, tenant/project id, cookies, bearer token, API key, custom headers, and accepted response status?
+5. What is representative traffic: concurrency, request rate, duration, ramp-up, payload size, route mix, data cardinality, cache state, and external dependencies?
+6. What metric will prove the issue improved: p95/p99 latency, throughput, CPU self time, event-loop delay, RSS/heap slope, GC pause time, or async wait time?
 
 If auth or tenant context matters, ask for a safe short-lived token or a local test credential. Do not ask the user to paste production secrets into a persistent file. Prefer environment variables for headers in shell commands.
 
