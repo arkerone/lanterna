@@ -137,6 +137,8 @@ export interface CaptureBundle {
   captureIntegrity: CaptureIntegrity;
   runtimeSignals: RuntimeSignalsData;
   kinds: Partial<CaptureKindDataMap>;
+  /** Half the CDP round-trip span of the capture-start clock read (ms) — a bound on cross-kind clock-alignment uncertainty. */
+  cdpClockJitterMs?: number;
 }
 
 /**

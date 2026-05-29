@@ -22,6 +22,34 @@ export type AsyncOperationKind =
   | 'other';
 
 /**
+ * Async families that represent genuine external I/O. Used by latency
+ * cause-classification to distinguish real I/O waits from loop/GC stalls.
+ */
+export const ASYNC_IO_KINDS: ReadonlySet<AsyncOperationKind> = new Set([
+  'tcp',
+  'udp',
+  'fs',
+  'http',
+  'http2',
+  'tls',
+  'dns',
+  'pipe',
+]);
+
+/** Why an async operation spent its wall-clock latency (root-cause classification). */
+export type AsyncLatencyCause =
+  | 'event-loop-blocked'
+  | 'gc-pause'
+  | 'downstream-async'
+  | 'io-wait'
+  | 'cpu-bound'
+  | 'background'
+  | 'unknown';
+
+/** Provenance of the user-code frame attributed to an async operation. */
+export type AsyncAttributedFrameOrigin = 'self' | 'inherited-trigger' | 'cpu-window' | 'cdp';
+
+/**
  * One async-resource lifecycle, post-aggregated in the preload hook from the
  * raw async_hooks callbacks. We deliberately drop sub-callback granularity
  * (`before`/`after` pairs are summed into `runMs`) to keep payloads compact —
@@ -71,6 +99,8 @@ export interface AsyncOperationRecord {
   destroyedAtMs?: number;
   /** Total elapsed time the resource was alive (resolved or destroyed - init). */
   durationMs?: number;
+  /** ms from capture-start to the first `before` (first time the resource ran). */
+  firstRunAtMs?: number;
   /** Sum of (after - before) over the resource's run windows. */
   runMs: number;
   /** Number of times the resource ran (before/after pair count). */
@@ -129,6 +159,8 @@ export interface AsyncKindData {
   instrumentationMode?: AsyncInstrumentationMode;
   attachPartialCapture?: boolean;
   clockSyncUncertaintyMs?: number;
+  /** Measured `performance.now()` tick resolution in the target (ms). Feeds the reported clock-sync uncertainty. */
+  clockResolutionMs?: number;
   /**
    * Outcome of `Debugger.setAsyncCallStackDepth` at start. `unsupported`
    * means CDP rejected the call (older Node) — CPU samples will lack their

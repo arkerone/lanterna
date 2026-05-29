@@ -164,11 +164,14 @@ export { LANTERNA_REPORT_SCHEMA_VERSION } from './report/meta.js';
 export { buildReportSchema } from './report/schema.js';
 export type {
   AlternativeHotspotEvidence,
+  AsyncAttributedFrameOrigin,
+  AsyncByKindLatency,
   AsyncChainSummary,
   AsyncConcurrencyTimelineSample,
   AsyncCpuAttribution,
   AsyncCpuAttributionEntry,
   AsyncHotFile,
+  AsyncLatencyCause,
   AsyncOperationKindReport,
   AsyncOrphan,
   AsyncProfileQuality,
@@ -181,6 +184,7 @@ export type {
   BlockingIoEvidenceExtra,
   BuiltinFinding,
   BuiltinFindingCategory,
+  CorrelatedHotspot,
   CpuHotspotEvidenceExtra,
   CpuProfileReport,
   CpuSummary,
