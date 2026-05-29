@@ -114,6 +114,18 @@ export interface DetectorThresholds {
   readonly deepAsyncChain: DeepAsyncChainThresholds;
   readonly microtaskFlood: MicrotaskFloodThresholds;
   readonly hotAsyncContext: HotAsyncContextThresholds;
+  readonly eventLoopBlockedAsync: EventLoopBlockedAsyncThresholds;
+}
+
+export interface EventLoopBlockedAsyncThresholds {
+  /** Async op wait time (ms) that triggers a finding. */
+  readonly minWaitMs: number;
+  /** Above this wait the finding is `critical`. */
+  readonly criticalWaitMs: number;
+  /** Only blame a stall when the overlapping event-loop lag is at least this (ms). */
+  readonly minStallLagMs: number;
+  /** Cap on emitted findings. */
+  readonly maxFindings: number;
 }
 
 export interface HotAsyncContextThresholds {
@@ -371,5 +383,14 @@ export const DETECTOR_THRESHOLDS: DetectorThresholds = {
     criticalCpuPct: 30,
     minAttributedCoveragePct: 15,
     maxFindings: 3,
+  },
+  // Async ops whose latency is explained by a blocked event loop (not the
+  // awaited I/O). 100ms wait blames the loop; 500ms is unambiguously bad. Only
+  // attribute when a stall ≥200ms (the event-loop stall threshold) overlaps.
+  eventLoopBlockedAsync: {
+    minWaitMs: 100,
+    criticalWaitMs: 500,
+    minStallLagMs: 200,
+    maxFindings: 5,
   },
 };
