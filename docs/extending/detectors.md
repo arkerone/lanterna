@@ -167,6 +167,7 @@ The default pack lives in `@lanterna-profiler/detectors` and pre-wires detectors
 | `orphan-async-resource` | Async resources never resolved or destroyed during capture. |
 | `microtask-flood` | Microtask volume crosses a per-window threshold (requires `--async-include-microtasks`). |
 | `hot-async-context:<rootAsyncId>` | Same async context repeatedly entered. |
+| `event-loop-blocked-async:<asyncId>` | An async op's `waitMs` overlaps an event-loop stall, with the loop still blocked when the callback became runnable — latency is a blocked loop, not slow I/O. Anchored on the synchronous CPU frame. Requires `--kind cpu,async`. |
 
 ### Cross-kind
 
