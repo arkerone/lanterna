@@ -10,6 +10,7 @@ import {
 } from '@lanterna-profiler/core';
 import { describe, expect, it } from 'vitest';
 import { deepAsyncChainDetector } from '../src/detectors/deep-async-chain.js';
+import { eventLoopBlockedAsyncDetector } from '../src/detectors/event-loop-blocked-async.js';
 import { hotAsyncContextDetector } from '../src/detectors/hot-async-context.js';
 import { longAwaitDetector } from '../src/detectors/long-await.js';
 import { microtaskFloodDetector } from '../src/detectors/microtask-flood.js';
@@ -736,5 +737,258 @@ describe('async detector edge cases', () => {
     });
     const result = pipeline.run(bundle, { command: ['node', 'app.js'], mode: 'spawn' });
     expect(result.findings).toEqual([]);
+  });
+});
+
+describe('long-await latency cause', () => {
+  it('classifies a slow op as event-loop-blocked when its wait overlaps a stall', () => {
+    const records: AsyncOperationRecord[] = [];
+    for (let i = 0; i < 5; i++) {
+      records.push(
+        withFrame(makeRecord(10 + i, 1, 'promise', 10), {
+          function: 'warm',
+          file: '/app/src/warm.js',
+          line: 1,
+        }),
+      );
+    }
+    const slow = withFrame(makeRecord(999, 1, 'promise', 600), {
+      function: 'handler',
+      file: '/app/src/handler.js',
+      line: 5,
+    });
+    records.push(slow);
+    const bundle = makeBundle({ records });
+    bundle.captureIntegrity.eventLoopTimed = true;
+    bundle.runtimeSignals = {
+      gcEvents: [],
+      eventLoopSamples: [{ atMs: 500, lagMs: 400 }],
+      eventLoopAvailable: true,
+    };
+    const pipeline = createAnalysisPipeline({
+      kinds: [createAsyncProfileKind()],
+      findingAnalyzers: [createFindingAnalyzerFromKindScopedDetector(longAwaitDetector)],
+    });
+    const result = pipeline.run(bundle, { command: ['node', 'app.js'], mode: 'spawn' });
+    const finding = result.findings.find((f) => f.id === 'long-await:999');
+    expect(finding?.evidence.extra).toMatchObject({
+      latencyCause: 'event-loop-blocked',
+      waitMs: 600,
+    });
+    expect(finding?.suggestion).toContain('event loop');
+  });
+});
+
+describe('event-loop-blocked-async detector', () => {
+  function bundleWithStallAndCpu(): CaptureBundle {
+    const slow = withFrame(makeRecord(999, 0, 'promise', 600), {
+      function: 'handler',
+      file: '/app/src/handler.js',
+      line: 5,
+    });
+    const bundle = makeBundle({ records: [slow] });
+    bundle.captureIntegrity.eventLoopTimed = true;
+    bundle.runtimeSignals = {
+      gcEvents: [],
+      eventLoopSamples: [{ atMs: 400, lagMs: 400 }],
+      eventLoopAvailable: true,
+    };
+    bundle.kinds.cpu = {
+      cpuProfile: {
+        nodes: [
+          {
+            id: 1,
+            callFrame: {
+              functionName: '(root)',
+              scriptId: '0',
+              url: '',
+              lineNumber: -1,
+              columnNumber: -1,
+            },
+            hitCount: 0,
+            children: [2],
+          },
+          {
+            id: 2,
+            callFrame: {
+              functionName: 'blockingFn',
+              scriptId: '1',
+              url: 'file:///app/src/block.js',
+              lineNumber: 10,
+              columnNumber: 0,
+            },
+            hitCount: 400,
+            children: [],
+          },
+        ],
+        startTime: 0,
+        endTime: 400_000,
+        samples: Array.from({ length: 400 }, () => 2),
+        timeDeltas: Array.from({ length: 400 }, () => 1000),
+      },
+      deopts: [],
+      samplesTimed: true,
+    };
+    return bundle;
+  }
+
+  it('emits a correlated-window finding tying the slow op to the blocked loop', () => {
+    const pipeline = createAnalysisPipeline({
+      kinds: [
+        createCpuProfileKind({ readStderrSoFar: () => '', sampleIntervalMicros: 1000 }),
+        createAsyncProfileKind(),
+      ],
+      findingAnalyzers: [
+        createFindingAnalyzerFromKindScopedDetector(eventLoopBlockedAsyncDetector),
+      ],
+    });
+    const result = pipeline.run(bundleWithStallAndCpu(), {
+      command: ['node', 'app.js'],
+      mode: 'spawn',
+    });
+    const finding = result.findings.find((f) => f.id === 'event-loop-blocked-async:999');
+    expect(finding).toBeDefined();
+    expect(finding?.proofLevel).toBe('correlated-window');
+    expect(finding?.category).toBe('event-loop-blocked-async');
+    expect(finding?.evidence.extra).toMatchObject({ waitMs: 600 });
+  });
+
+  it('skips silently when the CPU kind is absent', () => {
+    const bundle = bundleWithStallAndCpu();
+    bundle.kinds.cpu = undefined;
+    const pipeline = createAnalysisPipeline({
+      kinds: [createAsyncProfileKind()],
+      findingAnalyzers: [
+        createFindingAnalyzerFromKindScopedDetector(eventLoopBlockedAsyncDetector),
+      ],
+    });
+    const result = pipeline.run(bundle, { command: ['node', 'app.js'], mode: 'spawn' });
+    expect(result.findings).toEqual([]);
+  });
+
+  it('stays silent when no CPU hotspot identifies the blocking frame', () => {
+    const bundle = bundleWithStallAndCpu();
+    // All CPU time is in (root): the correlation finds no user culprit frame, so
+    // this detector has nothing actionable to point at and must not emit a
+    // placeholder `(event-loop)` finding (the generic stall finding covers it).
+    bundle.kinds.cpu = {
+      cpuProfile: {
+        nodes: [
+          {
+            id: 1,
+            callFrame: {
+              functionName: '(root)',
+              scriptId: '0',
+              url: '',
+              lineNumber: -1,
+              columnNumber: -1,
+            },
+            hitCount: 400,
+            children: [],
+          },
+        ],
+        startTime: 0,
+        endTime: 400_000,
+        samples: Array.from({ length: 400 }, () => 1),
+        timeDeltas: Array.from({ length: 400 }, () => 1000),
+      },
+      deopts: [],
+      samplesTimed: true,
+    };
+    const pipeline = createAnalysisPipeline({
+      kinds: [
+        createCpuProfileKind({ readStderrSoFar: () => '', sampleIntervalMicros: 1000 }),
+        createAsyncProfileKind(),
+      ],
+      findingAnalyzers: [
+        createFindingAnalyzerFromKindScopedDetector(eventLoopBlockedAsyncDetector),
+      ],
+    });
+    const result = pipeline.run(bundle, { command: ['node', 'app.js'], mode: 'spawn' });
+    expect(result.findings.some((f) => f.category === 'event-loop-blocked-async')).toBe(false);
+  });
+
+  it('attributes each blocked op to its own stall frame, not one global frame', () => {
+    // Two distinct blockers: blockA stalls the loop during [0,300], blockB during
+    // [500,800]. opA becomes runnable at 300 (blocked by A), opB at 800 (by B).
+    const opA = { ...makeRecord(901, 0, 'timer', 300, 0), firstRunAtMs: 300 };
+    const opB = { ...makeRecord(902, 0, 'timer', 300, 500), firstRunAtMs: 800 };
+    const bundle = makeBundle({ records: [opA, opB], durationMs: 1000 });
+    bundle.captureIntegrity.eventLoopTimed = true;
+    bundle.runtimeSignals = {
+      gcEvents: [],
+      eventLoopSamples: [
+        { atMs: 300, lagMs: 300 },
+        { atMs: 800, lagMs: 300 },
+      ],
+      eventLoopAvailable: true,
+    };
+    bundle.kinds.cpu = {
+      cpuProfile: {
+        nodes: [
+          {
+            id: 1,
+            callFrame: {
+              functionName: '(root)',
+              scriptId: '0',
+              url: '',
+              lineNumber: -1,
+              columnNumber: -1,
+            },
+            hitCount: 0,
+            children: [2, 3],
+          },
+          {
+            id: 2,
+            callFrame: {
+              functionName: 'blockA',
+              scriptId: '1',
+              url: 'file:///app/blockA.js',
+              lineNumber: 1,
+              columnNumber: 0,
+            },
+            hitCount: 300,
+            children: [],
+          },
+          {
+            id: 3,
+            callFrame: {
+              functionName: 'blockB',
+              scriptId: '2',
+              url: 'file:///app/blockB.js',
+              lineNumber: 1,
+              columnNumber: 0,
+            },
+            hitCount: 300,
+            children: [],
+          },
+        ],
+        startTime: 0,
+        endTime: 1_000_000,
+        samples: [
+          ...Array(300).fill(2), // blockA during [0,300]
+          ...Array(200).fill(1), // gap
+          ...Array(300).fill(3), // blockB during [500,800]
+          ...Array(200).fill(1), // tail
+        ],
+        timeDeltas: Array.from({ length: 1000 }, () => 1000),
+      },
+      deopts: [],
+      samplesTimed: true,
+    };
+    const pipeline = createAnalysisPipeline({
+      kinds: [
+        createCpuProfileKind({ readStderrSoFar: () => '', sampleIntervalMicros: 1000 }),
+        createAsyncProfileKind(),
+      ],
+      findingAnalyzers: [
+        createFindingAnalyzerFromKindScopedDetector(eventLoopBlockedAsyncDetector),
+      ],
+    });
+    const result = pipeline.run(bundle, { command: ['node', 'app.js'], mode: 'spawn' });
+    const a = result.findings.find((f) => f.id === 'event-loop-blocked-async:901');
+    const b = result.findings.find((f) => f.id === 'event-loop-blocked-async:902');
+    expect(a?.evidence.function).toBe('blockA');
+    expect(b?.evidence.function).toBe('blockB');
   });
 });

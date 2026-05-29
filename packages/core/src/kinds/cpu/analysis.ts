@@ -95,6 +95,15 @@ export function createCpuAnalysisContributor(
       if (eventLoopCorrelation.coverage.windowCount > 0) {
         eventLoop.correlationCoverage = eventLoopCorrelation.coverage;
       }
+      // Per-stall blocking frame: the user frame that dominated CPU during *each*
+      // stall, so a delayed async op can be attributed to the specific stall that
+      // blocked it rather than the single globally-dominant frame.
+      for (const interval of eventLoop.stallIntervals) {
+        const top = correlateUserHotspotsWithCoverage(timedSamples, tree, [interval], {
+          topN: 1,
+        }).hotspots[0];
+        if (top) interval.topFrame = top;
+      }
 
       const summary = buildCpuSummary(tree);
       const quality = buildCpuProfileQuality({

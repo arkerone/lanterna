@@ -83,8 +83,12 @@ Memory-specific signals to inspect alongside `profiles.memory.quality`:
 The async kind reports its own quality fields:
 
 - `quality.attachPartialCapture` — `true` in attach mode, signaling that resources created before hook installation cannot be observed.
+- `quality.sampledStackRatio` — fraction of operations whose own init stack contained a user frame.
+- `quality.attributedStackRatio` — fraction of operations with a user-editable frame from their own stack **or** inherited via the trigger ancestry. Higher than `sampledStackRatio` because inheritance recovers call sites for operations created deep inside dependencies; drives how often a finding can point at editable code.
 - `quality.cdpAsyncStackCoverageRatio` — fraction of resources for which Lanterna obtained a CDP async stack. Low coverage weakens chain-related findings.
 - `quality.recordsDropped` — number of records discarded once `--async-max-events` was reached. A non-zero value means the report is sampled, not exhaustive.
+- `quality.ambiguousRatio` — fraction of CPU samples that fell in overlapping *unrelated* async run windows (related ancestor/descendant windows are resolved to the innermost context, not counted). CPU-attribution confidence is graded by this ratio rather than collapsing to `low` on the first ambiguous sample.
+- `quality.clockSyncUncertaintyMs` — a real measured bound on CPU↔async clock alignment (CDP round-trip jitter / `performance.now()` resolution), not a placeholder. CPU sample times are treated as capture-relative; this bounds the residual `Profiler.start`↔capture-start skew.
 - `meta.kinds.async.transformStats.failed` — counter for `--async-instrumentation full` rewrite failures. These are non-fatal; when full instrumentation is partial, `quality.reasons[]` and `quality.recommendations[]` explain how to interpret the report.
 
 ## Failure and degradation modes

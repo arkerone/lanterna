@@ -42,7 +42,7 @@ export function createAsyncOperationsInstaller(
   const maxRecords = options.maxRecords ?? 50_000;
   const concurrencyIntervalMs = options.concurrencyIntervalMs ?? 100;
   const includeMicrotasks = Boolean(options.includeMicrotasks);
-  const stackDepth = options.stackDepth ?? 8;
+  const stackDepth = options.stackDepth ?? 16;
   const maxRunWindows = options.maxRunWindows ?? 8;
   const instrumentationMode = options.instrumentationMode ?? 'safe';
   const attachPartialCapture = Boolean(options.attachPartialCapture);
@@ -152,6 +152,7 @@ interface RawRecord {
   resolvedAtMs: number | undefined;
   destroyedAtMs: number | undefined;
   durationMs: number | undefined;
+  firstRunAtMs: number | undefined;
   runMs: number;
   runCount: number;
   orphan: boolean;
@@ -199,21 +200,20 @@ function installAsyncOperations(
         filteredCounts: {},
         instrumentationMode,
         attachPartialCapture,
-        clockSyncUncertaintyMs: 0,
+        clockResolutionMs: 0,
       }),
       disable,
     });
     return;
   }
 
-  // Measure performance.now() tick resolution. NOTE this is a lower bound
-  // on jitter between consecutive in-target observations — it does NOT
-  // capture the offset between the V8 sampling profiler's zero-point
-  // (Profiler.start) and the async installer's zero-point (captureStartMs
-  // below). Those two events fire at slightly different instants in the
-  // same V8 process; the skew is typically tens of ms. Cross-clock
-  // attribution in `kinds/async/analysis.ts` accepts that imprecision —
-  // run windows are ms-granularity by design.
+  // Measure performance.now() tick resolution (a lower bound on jitter
+  // between consecutive in-target observations), reported as
+  // `clockResolutionMs`. CPU↔async alignment is not exact: the CPU sampler's
+  // clock (Profiler.start) and the async installer's clock (captureStartMs)
+  // share the V8 monotonic source but have different zero-points, so analysis
+  // treats CPU sample times as ~capture-relative and reports the residual
+  // skew via `quality.clockSyncUncertaintyMs`.
   const measureClockResolutionMs = (): number => {
     let smallest = Number.POSITIVE_INFINITY;
     for (let i = 0; i < 200; i += 1) {
@@ -229,7 +229,7 @@ function installAsyncOperations(
     }
     return Number.isFinite(smallest) ? smallest : 0;
   };
-  const clockSyncUncertaintyMs = measureClockResolutionMs();
+  const clockResolutionMs = measureClockResolutionMs();
 
   let captureStartMs = api.performance.now();
   const records = new Map<number, RawRecord>();
@@ -253,6 +253,9 @@ function installAsyncOperations(
   // stack (which the previous FIFO-only design allowed).
   const pendingAwaitStacks: Array<{ stack: RawFrame[]; triggerId: number }> = [];
   const PENDING_AWAIT_CAP = 256;
+  // How many of the oldest completed records to scan when choosing an eviction
+  // victim under buffer pressure (bounded so the hot init path stays cheap).
+  const EVICTION_SCAN_LIMIT = 64;
   const transformStats = {
     transformed: 0,
     skipped: 0,
@@ -330,12 +333,26 @@ function installAsyncOperations(
         return;
       }
       if (records.size >= maxRecords) {
-        // Evict the oldest already-completed record (Set preserves insertion
-        // order) so a long-running capture keeps room for fresh data instead
-        // of blindly dropping new observations.
-        const oldestCompleted = completedRecords.values().next();
-        if (!oldestCompleted.done) {
-          const evictId = oldestCompleted.value;
+        // Under buffer pressure, evict the SHORTEST-duration record among the
+        // oldest completed candidates (bounded scan). Slow/long-lived ops are
+        // the ones that matter for latency analysis, so they survive load
+        // instead of being dropped FIFO. Only completed records are eligible
+        // (Set is insertion = completion order); if none have completed yet,
+        // drop the new observation as a last resort.
+        let evictId: number | undefined;
+        let evictDurationMs = Number.POSITIVE_INFINITY;
+        let scanned = 0;
+        for (const id of completedRecords) {
+          if (scanned >= EVICTION_SCAN_LIMIT) break;
+          scanned += 1;
+          const candidate = records.get(id);
+          const durationMs = candidate?.durationMs ?? 0;
+          if (durationMs < evictDurationMs) {
+            evictDurationMs = durationMs;
+            evictId = id;
+          }
+        }
+        if (evictId !== undefined) {
           completedRecords.delete(evictId);
           records.delete(evictId);
         } else {
@@ -353,6 +370,7 @@ function installAsyncOperations(
         resolvedAtMs: undefined,
         destroyedAtMs: undefined,
         durationMs: undefined,
+        firstRunAtMs: undefined,
         runMs: 0,
         runCount: 0,
         orphan: false,
@@ -373,6 +391,7 @@ function installAsyncOperations(
       const rec = records.get(asyncId);
       if (!rec) return;
       const now = api.performance.now() - captureStartMs;
+      if (rec.firstRunAtMs === undefined) rec.firstRunAtMs = now;
       openRuns.set(asyncId, now);
       activeCount += 1;
     },
@@ -859,7 +878,7 @@ function installAsyncOperations(
         filteredCounts: { ...filteredCounts },
         instrumentationMode,
         attachPartialCapture,
-        clockSyncUncertaintyMs,
+        clockResolutionMs,
         transformStats: { ...transformStats },
       };
       clearRetainedState();

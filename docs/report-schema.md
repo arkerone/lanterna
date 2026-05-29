@@ -115,7 +115,7 @@ When present, prefer `source.file:source.line` for human diagnosis and patching,
 | `hotStacks` | Most frequent complete sampled stacks with `weightPct` and `frames[]`. |
 | `hotStackClusters` | Optional hot-stack groups anchored on the nearest user-code frame. |
 | `gc` | Pause totals, counts, `longestPauseMs`, `pausesOver10ms`, `correlatedHotspots`. |
-| `eventLoop` | `available`, `measurementBasis` (`both`/`heartbeats`/`histogram`/`none`), `confidence`, lag percentiles, `stallIntervals`, `correlatedHotspots`. |
+| `eventLoop` | `available`, `measurementBasis` (`both`/`heartbeats`/`histogram`/`none`), `confidence`, lag percentiles, `stallIntervals` (each with an optional `topFrame` — the user frame that dominated CPU during that specific stall), `correlatedHotspots`. |
 | `deopts` | V8 deoptimisation clusters — populated only when `meta.kinds.cpu.deep === true`. |
 
 Detail: [kinds/cpu.md](./kinds/cpu.md).
@@ -135,6 +135,8 @@ Detail: [kinds/memory.md](./kinds/memory.md).
 ## `profiles.async` (experimental)
 
 Async resource lifecycle summaries, `topOperations`, `hotFiles`, `chains`, `orphans`, `concurrencyTimeline`, `filteredCounts`, `cdpAsyncContexts`, `cpuAttribution`, and quality metadata. Only present when `--kind async` was selected. In attach mode, capture is intentionally partial — the section's `quality` records this.
+
+`summary.byKindLatency` adds per-family latency percentiles (`p50/p95/p99/maxMs` + `meanWaitMs`). Each `topOperations[]` entry decomposes latency into `durationMs` (total), `runMs` (on-CPU), `waitMs` (waiting, not on CPU), `scheduleDelayMs`, and `firstRunAtMs`, plus a classified `latencyCause` (`event-loop-blocked` | `gc-pause` | `downstream-async` | `io-wait` | `cpu-bound` | `background` | `unknown`) with `causeConfidence`/`causeEvidence` (where `causeEvidence.basis` distinguishes `no-eventloop-signal` from `none` for `unknown`), and `attributedFrameOrigin` (`self` | `inherited-trigger` | `cpu-window` | `cdp`). `quality` adds `attributedStackRatio` and `ambiguousRatio`, and `clockSyncUncertaintyMs` is now a real measured bound (CDP jitter / clock resolution) rather than a placeholder. These fields are additive and optional within schema v2.
 
 Detail: [kinds/async.md](./kinds/async.md).
 

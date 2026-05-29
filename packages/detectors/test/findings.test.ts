@@ -755,11 +755,17 @@ describe('findings – event-loop-stall', () => {
     findFindingOrFail(report, (f) => f.id === 'event-loop-stall', 'event-loop-stall finding');
   });
 
-  it('derives real stall intervals from timed heartbeats', () => {
-    assert.deepEqual(getCpuProfile(report).eventLoop.stallIntervals, [
-      { startMs: 20, endMs: 320, maxLagMs: 300 },
-      { startMs: 340, endMs: 1000, maxLagMs: 660 },
-    ]);
+  it('derives real stall intervals (with per-stall culprit frame) from timed heartbeats', () => {
+    const intervals = getCpuProfile(report).eventLoop.stallIntervals;
+    assert.deepEqual(
+      intervals.map(({ startMs, endMs, maxLagMs }) => ({ startMs, endMs, maxLagMs })),
+      [
+        { startMs: 20, endMs: 320, maxLagMs: 300 },
+        { startMs: 340, endMs: 1000, maxLagMs: 660 },
+      ],
+    );
+    // Each stall carries the user frame that dominated CPU during it (the culprit).
+    assert.match(String(intervals[0]?.topFrame?.function), /hashPassword/);
   });
 
   it('includes correlated hotspot candidates in event-loop evidence', () => {

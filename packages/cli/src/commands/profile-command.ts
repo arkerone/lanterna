@@ -114,7 +114,7 @@ function formatProfileQualityWarning(report: {
         recommendations?: string[];
         recordsDropped?: number;
         attachPartialCapture?: boolean;
-        cpuAmbiguousSamples?: number;
+        ambiguousRatio?: number;
         cdpAsyncStackCoverageRatio?: number;
         instrumentationMode?: string;
       };
@@ -144,7 +144,7 @@ function shouldWarnAsyncQuality(quality: {
   confidence?: string;
   recordsDropped?: number;
   attachPartialCapture?: boolean;
-  cpuAmbiguousSamples?: number;
+  ambiguousRatio?: number;
   cdpAsyncStackCoverageRatio?: number;
   instrumentationMode?: string;
 }): boolean {
@@ -152,7 +152,7 @@ function shouldWarnAsyncQuality(quality: {
     quality.confidence === 'low' ||
     (quality.recordsDropped ?? 0) > 0 ||
     Boolean(quality.attachPartialCapture) ||
-    (quality.cpuAmbiguousSamples ?? 0) > 0 ||
+    (quality.ambiguousRatio ?? 0) > 0.33 ||
     (quality.cdpAsyncStackCoverageRatio ?? 1) < 0.2
   );
 }

@@ -60,10 +60,24 @@ export function asyncEvidenceExtra(
     cdpAsyncStackCoverageRatio: report.quality.cdpAsyncStackCoverageRatio,
     instrumentationMode: report.quality.instrumentationMode,
     attachPartialCapture: report.quality.attachPartialCapture,
+    attributedStackRatio: report.quality.attributedStackRatio,
     cpuAttributionCoveragePct: report.quality.cpuAttributionCoveragePct,
     cpuAmbiguousSamples: report.quality.cpuAmbiguousSamples,
+    ambiguousRatio: report.quality.ambiguousRatio,
     clockSyncUncertaintyMs: report.quality.clockSyncUncertaintyMs,
   };
+}
+
+/** Returns the weaker of two confidence levels (an undefined input is ignored). */
+export function minConfidence(
+  a: BaseFinding['confidence'],
+  b: BaseFinding['confidence'],
+): BaseFinding['confidence'] {
+  if (a === undefined) return b;
+  if (b === undefined) return a;
+  const rank = (c: 'low' | 'medium' | 'high'): number =>
+    c === 'high' ? 2 : c === 'medium' ? 1 : 0;
+  return rank(a) <= rank(b) ? a : b;
 }
 
 export function resolveAsyncUserCaller(

@@ -41,6 +41,7 @@ const recordSchema = z.object({
   resolvedAtMs: z.number().optional(),
   destroyedAtMs: z.number().optional(),
   durationMs: z.number().optional(),
+  firstRunAtMs: z.number().optional(),
   runMs: z.number().nonnegative(),
   runCount: z.number().int().nonnegative(),
   orphan: z.boolean(),
@@ -76,7 +77,7 @@ const readSchema = z.object({
   filteredCounts: z.record(z.string(), z.number().int().nonnegative()),
   instrumentationMode: z.enum(['off', 'safe', 'full']).optional(),
   attachPartialCapture: z.boolean().optional(),
-  clockSyncUncertaintyMs: z.number().nonnegative().optional(),
+  clockResolutionMs: z.number().nonnegative().optional(),
   transformStats: z
     .object({
       transformed: z.number().int().nonnegative(),

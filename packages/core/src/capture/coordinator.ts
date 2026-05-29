@@ -94,7 +94,9 @@ export async function runCapture<TSourceOptions>(
   try {
     const target = await fetchTargetInfo(cdp, { pid: connected.target.pid });
     await markCaptureStart(cdp);
+    const clockReadStartHr = performance.now();
     const runtimeCaptureStartMs = await readRuntimeClockNow(cdp);
+    const cdpClockJitterMs = (performance.now() - clockReadStartHr) / 2;
     const startedAtHr = performance.now();
     emitCaptureProgress(options.sourceOptions, {
       stage: 'start-capture',
@@ -152,6 +154,7 @@ export async function runCapture<TSourceOptions>(
       durationMs,
       captureIntegrity,
       runtimeSignals,
+      cdpClockJitterMs,
       kinds: kindsData as CaptureBundle['kinds'],
     };
   } finally {
