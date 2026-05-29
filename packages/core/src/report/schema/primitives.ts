@@ -112,4 +112,6 @@ export const stallIntervalSchema = z.object({
   startMs: z.number(),
   endMs: z.number(),
   maxLagMs: z.number(),
+  /** The user frame that dominated CPU during this specific stall (the culprit blocking the loop here), when CPU was captured. Lets consumers attribute a delayed op to the stall that actually blocked it rather than the globally-dominant frame. */
+  topFrame: correlatedHotspotSchema.optional(),
 });

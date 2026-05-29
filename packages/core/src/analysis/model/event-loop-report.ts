@@ -1,4 +1,4 @@
-import type { CaptureBundle } from '../../capture/core/types.js';
+import type { CaptureBundle, EventLoopSample } from '../../capture/core/types.js';
 import type {
   EventLoopReport,
   MeasurementBasis,
@@ -72,11 +72,29 @@ function deriveStallIntervals(
   input: EventLoopInput,
   resolutionMs: number,
 ): EventLoopReport['stallIntervals'] {
-  const samples = input.runtimeSignals.eventLoopSamples;
+  return buildEventLoopStallWindows(
+    input.runtimeSignals.eventLoopSamples,
+    input.durationMs,
+    resolutionMs,
+  );
+}
+
+/**
+ * Pure stall-window builder shared by the event-loop report and async
+ * latency cause-classification. A stall window is `[atMs - lagMs, atMs]` for
+ * every sample whose lag crosses `thresholdMs`, plus a trailing-lag window
+ * when the loop was still stalled at capture end, then merged.
+ */
+export function buildEventLoopStallWindows(
+  samples: readonly EventLoopSample[],
+  durationMs: number,
+  resolutionMs: number,
+  thresholdMs: number = EVENT_LOOP_STALL_INTERVAL_MS,
+): EventLoopReport['stallIntervals'] {
   const intervals: EventLoopReport['stallIntervals'] = [];
 
   for (const sample of samples) {
-    if (sample.lagMs < EVENT_LOOP_STALL_INTERVAL_MS) continue;
+    if (sample.lagMs < thresholdMs) continue;
     intervals.push({
       startMs: Math.max(0, sample.atMs - sample.lagMs),
       endMs: sample.atMs,
@@ -84,14 +102,16 @@ function deriveStallIntervals(
     });
   }
 
-  const trailingLagMs = inferTrailingLag(input);
-  if (trailingLagMs >= EVENT_LOOP_STALL_INTERVAL_MS) {
-    const lastSampleAtMs = samples[samples.length - 1]?.atMs ?? 0;
-    intervals.push({
-      startMs: Math.max(0, lastSampleAtMs + resolutionMs),
-      endMs: input.durationMs,
-      maxLagMs: trailingLagMs,
-    });
+  const lastSampleAtMs = samples[samples.length - 1]?.atMs;
+  if (lastSampleAtMs !== undefined) {
+    const trailingLagMs = Math.max(0, durationMs - lastSampleAtMs - resolutionMs);
+    if (trailingLagMs >= thresholdMs) {
+      intervals.push({
+        startMs: Math.max(0, lastSampleAtMs + resolutionMs),
+        endMs: durationMs,
+        maxLagMs: trailingLagMs,
+      });
+    }
   }
 
   return mergeIntervals(intervals);

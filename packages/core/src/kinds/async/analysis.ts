@@ -1,4 +1,6 @@
 import { fileURLToPath } from 'node:url';
+import { buildGcCorrelationWindows, type TimeWindow } from '../../analysis/model/correlations.js';
+import { buildEventLoopStallWindows } from '../../analysis/model/event-loop-report.js';
 import type { SourceMapResolver } from '../../analysis/sourcemap/resolver.js';
 import type { CaptureBundle, RawCpuProfile } from '../../capture/core/types.js';
 import type {
@@ -16,8 +18,17 @@ import type {
   ProfileConfidence,
   UserCallerAttribution,
 } from '../../report/types.js';
+import { HEARTBEAT_RESOLUTION_MS } from '../../shared/config.js';
 import type { KindAnalysisContext, KindAnalysisContributor } from '../core/types.js';
 import { firstCdpAsyncContextFrame } from './cdp-stack.js';
+import {
+  buildByKindLatency,
+  buildWaitWindows,
+  classifyLatencyCause,
+  collectDescendantRunWindows,
+  deriveLatency,
+  resolveAttributedFrame,
+} from './latency.js';
 import type {
   AsyncCdpContext,
   AsyncChainNode,
@@ -120,23 +131,67 @@ function analyzeInner(
   const chains = buildChains(chainNodes, recordById);
   const orphans = buildOrphans(data.records, bundle.durationMs);
 
+  // Signal windows used to classify why each operation spent its latency
+  // (event-loop stalls, GC pauses, downstream async work). CPU sample times are
+  // profile-relative (≈ capture-relative); the residual skew is the small
+  // Profiler.start↔capture-start startup gap, reported via clockSyncUncertaintyMs.
+  const clockSyncUncertaintyMs = Math.max(
+    bundle.cdpClockJitterMs ?? 0,
+    data.clockResolutionMs ?? 0,
+  );
+  const stallWindows: TimeWindow[] = buildEventLoopStallWindows(
+    bundle.runtimeSignals.eventLoopSamples,
+    bundle.durationMs,
+    bundle.runtimeSignals.eventLoopResolutionMs ?? HEARTBEAT_RESOLUTION_MS,
+  );
+  // Exact GC pause windows (no ±lookaround padding): for latency attribution we
+  // ask "did GC run *during* this wait", so each window must be the real pause,
+  // not padded. Padding sub-millisecond scavenges by tens of ms makes them tile
+  // the whole timeline and blanket every wait with a spurious 100% gc overlap.
+  const gcWindows = buildGcCorrelationWindows(bundle.runtimeSignals.gcEvents, bundle.durationMs, 0);
+  // Which runtime signals were actually observed — so cause classification can
+  // say *why* it could not explain a wait rather than silently guessing.
+  const signals = {
+    eventLoop:
+      Boolean(bundle.captureIntegrity.eventLoopTimed) &&
+      bundle.runtimeSignals.eventLoopSamples.length > 0,
+    gc: Boolean(bundle.captureIntegrity.gcTimed),
+  };
+
   const cpuAttribution = buildCpuAttribution({
     records: data.records,
     recordById,
     rootByAsyncId,
+    chainNodes,
     cpuKind: bundle.kinds.cpu as { cpuProfile: RawCpuProfile } | undefined,
+    clockSyncUncertaintyMs,
   });
   const userCallerByRootId = new Map<number, UserCallerAttribution>();
   for (const entry of cpuAttribution.topChains) {
     if (entry.userCaller) userCallerByRootId.set(entry.rootAsyncId, entry.userCaller);
   }
-  const topOperations = buildTopOperations(
-    sortedByDuration,
-    bundle.durationMs,
+  const topOperations = buildTopOperations({
+    // Orphans (resources still in flight at capture end) have a fictional
+    // capture-clamped duration that would otherwise dominate this ranking; they
+    // are reported separately in `orphans[]`.
+    sorted: sortedByDuration.filter((rec) => !rec.orphan),
+    captureDurationMs: bundle.durationMs,
     rootByAsyncId,
     userCallerByRootId,
-  );
-  const quality = buildQuality(data, cpuAttribution);
+    recordById,
+    chainNodes,
+    stallWindows,
+    gcWindows,
+    signals,
+    clockSyncUncertaintyMs,
+  });
+  const quality = buildQuality({
+    data,
+    cpuAttribution,
+    recordById,
+    clockSyncUncertaintyMs,
+    eventLoopSignalAvailable: signals.eventLoop,
+  });
   const hotFiles = buildHotFiles({
     records: data.records,
     captureDurationMs: bundle.durationMs,
@@ -284,16 +339,42 @@ function buildSummary(
     };
   }
   if (concurrencyStats) summary.concurrency = concurrencyStats;
-  void captureDurationMs;
+  // Only completed operations have a real latency; orphans carry a fictional
+  // capture-clamped duration that would corrupt the percentiles.
+  const byKindLatency = buildByKindLatency(
+    data.records.filter((rec) => !rec.orphan),
+    captureDurationMs,
+  );
+  if (Object.keys(byKindLatency).length > 0) summary.byKindLatency = byKindLatency;
   return summary;
 }
 
-function buildTopOperations(
-  sorted: AsyncOperationRecord[],
-  captureDurationMs: number,
-  rootByAsyncId: Map<number, number>,
-  userCallerByRootId: Map<number, UserCallerAttribution>,
-): AsyncTopOperation[] {
+interface BuildTopOperationsArgs {
+  sorted: AsyncOperationRecord[];
+  captureDurationMs: number;
+  rootByAsyncId: Map<number, number>;
+  userCallerByRootId: Map<number, UserCallerAttribution>;
+  recordById: Map<number, AsyncOperationRecord>;
+  chainNodes: Map<number, AsyncChainNode>;
+  stallWindows: TimeWindow[];
+  gcWindows: TimeWindow[];
+  signals: { eventLoop: boolean; gc: boolean };
+  clockSyncUncertaintyMs: number;
+}
+
+function buildTopOperations(args: BuildTopOperationsArgs): AsyncTopOperation[] {
+  const {
+    sorted,
+    captureDurationMs,
+    rootByAsyncId,
+    userCallerByRootId,
+    recordById,
+    chainNodes,
+    stallWindows,
+    gcWindows,
+    signals,
+    clockSyncUncertaintyMs,
+  } = args;
   const out: AsyncTopOperation[] = [];
   for (const rec of sorted) {
     if (out.length >= MAX_TOP_OPERATIONS) break;
@@ -358,7 +439,7 @@ function buildTopOperations(
       op.executionConfidence = rec.executionConfidence ?? 'medium';
       op.cpuAttributedSamples = rec.cpuAttributedSamples ?? 0;
       op.cpuAmbiguousSamples = rec.cpuAmbiguousSamples ?? 0;
-      op.clockSyncUncertaintyMs = 0;
+      op.clockSyncUncertaintyMs = clockSyncUncertaintyMs;
     }
     if (cdpAsyncContextFrame) {
       op.cdpAsyncContextFrame = cdpAsyncContextFrame;
@@ -381,16 +462,50 @@ function buildTopOperations(
       op.overallConfidence =
         op.awaitConfidence ?? op.executionConfidence ?? op.creationConfidence ?? 'medium';
     }
+    const end = rec.initAtMs + durationMs;
+    const latency = deriveLatency(rec, end);
+    op.waitMs = latency.waitMs;
+    if (latency.scheduleDelayMs !== undefined) op.scheduleDelayMs = latency.scheduleDelayMs;
+    if (rec.firstRunAtMs !== undefined) op.firstRunAtMs = rec.firstRunAtMs;
+    const cause = classifyLatencyCause({
+      waitWindows: buildWaitWindows(rec, end),
+      stallWindows,
+      gcWindows,
+      descendantWindows: collectDescendantRunWindows(rec.asyncId, chainNodes, recordById),
+      kind: rec.kind,
+      runMs: rec.runMs,
+      runCount: rec.runCount,
+      durationMs,
+      captureDurationMs,
+      signals,
+      firstRunAtMs: rec.firstRunAtMs,
+    });
+    op.latencyCause = cause.cause;
+    op.causeConfidence = cause.confidence;
+    op.causeEvidence = cause.evidence;
+
+    const attributed = resolveAttributedFrame(rec, recordById);
+    if (attributed.origin) op.attributedFrameOrigin = attributed.origin;
+
     const rootId = rootByAsyncId.get(rec.asyncId) ?? rec.asyncId;
     const cpuCaller = userCallerByRootId.get(rootId);
-    op.userCaller =
-      cpuCaller ??
-      userCallerFromAsyncFrame(primaryFrame, {
+    if (cpuCaller) {
+      op.userCaller = cpuCaller;
+    } else if (attributed.origin === 'inherited-trigger' && attributed.frame) {
+      op.userCaller = userCallerFromAsyncFrame(toReportFrame(attributed.frame), {
+        profilePct: 0,
+        supportPct: 100,
+        confidence: 'low',
+        basis: 'async-stack',
+      });
+    } else {
+      op.userCaller = userCallerFromAsyncFrame(primaryFrame, {
         profilePct: 0,
         supportPct: 100,
         confidence: op.overallConfidence ?? 'medium',
         basis: 'async-stack',
       });
+    }
     out.push(op);
   }
   return out;
@@ -636,13 +751,31 @@ function buildOrphans(records: AsyncOperationRecord[], captureDurationMs: number
   return orphans.slice(0, MAX_ORPHANS);
 }
 
-function buildQuality(
-  data: AsyncKindData,
-  cpuAttribution: AsyncCpuAttribution,
-): AsyncProfileQuality {
+interface BuildQualityArgs {
+  data: AsyncKindData;
+  cpuAttribution: AsyncCpuAttribution;
+  recordById: Map<number, AsyncOperationRecord>;
+  clockSyncUncertaintyMs: number;
+  eventLoopSignalAvailable: boolean;
+}
+
+function buildQuality(args: BuildQualityArgs): AsyncProfileQuality {
+  const { data, cpuAttribution, recordById, clockSyncUncertaintyMs, eventLoopSignalAvailable } =
+    args;
   const operationCount = data.records.length;
   const recordsWithStacks = data.records.filter((rec) => rec.initStack.length > 0).length;
   const sampledStackRatio = operationCount > 0 ? recordsWithStacks / operationCount : 0;
+  const attributedStackRatio =
+    operationCount > 0
+      ? data.records.filter((rec) => {
+          const origin = resolveAttributedFrame(rec, recordById).origin;
+          return origin === 'self' || origin === 'inherited-trigger';
+        }).length / operationCount
+      : 0;
+  const cpuSamplesConsidered =
+    cpuAttribution.cpuAttributedSamples + cpuAttribution.cpuAmbiguousSamples;
+  const ambiguousRatio =
+    cpuSamplesConsidered > 0 ? cpuAttribution.cpuAmbiguousSamples / cpuSamplesConsidered : 0;
   const cdpAsyncStackCoverageRatio =
     operationCount > 0 ? Math.min(1, (data.cdpAsyncContexts?.length ?? 0) / operationCount) : 0;
   const runWindowCount = data.records.reduce((sum, rec) => sum + rec.runWindows.length, 0);
@@ -675,6 +808,14 @@ function buildQuality(
     reasons.push('attach mode can only observe async resources created after hooks were installed');
     recommendations.add('Use run mode for complete startup async lifecycle coverage.');
   }
+  if (operationCount > 0 && !eventLoopSignalAvailable) {
+    reasons.push(
+      'event-loop signal was unavailable, so latency causes cannot distinguish a blocked loop from genuine I/O wait (such operations are reported as `unknown` with basis `no-eventloop-signal`)',
+    );
+    recommendations.add(
+      'Capture in spawn mode (or ensure the event-loop heartbeat is available) to classify event-loop-blocked latency.',
+    );
+  }
   if (cpuAttribution.cpuAmbiguousSamples > 0) {
     reasons.push(
       `${cpuAttribution.cpuAmbiguousSamples} CPU samples overlapped multiple async run windows and were marked ambiguous`,
@@ -683,9 +824,9 @@ function buildQuality(
       'Treat CPU-to-async attribution as directional when async windows overlap.',
     );
   }
-  if ((data.clockSyncUncertaintyMs ?? 0) > 10) {
+  if (clockSyncUncertaintyMs > 10) {
     reasons.push(
-      `runtime/CDP clock synchronization uncertainty was ${data.clockSyncUncertaintyMs?.toFixed(1)}ms`,
+      `runtime/CDP clock synchronization uncertainty was ${clockSyncUncertaintyMs.toFixed(1)}ms`,
     );
   }
   if (cpuAttribution.available && runWindowCount === 0) {
@@ -710,7 +851,7 @@ function buildQuality(
       recordsDropped: data.integrity.recordsDropped,
       collectedVia: data.collectedVia,
       attachPartialCapture,
-      cpuAmbiguousSamples: cpuAttribution.cpuAmbiguousSamples,
+      cpuAmbiguousRatio: ambiguousRatio,
       fullTransformPartial: instrumentationMode === 'full' && Boolean(data.transformStats?.partial),
     }),
     instrumentationMode,
@@ -718,13 +859,15 @@ function buildQuality(
     operationCount,
     sampledStackRatio,
     initStackCoverageRatio: sampledStackRatio,
+    attributedStackRatio,
     cdpAsyncStackCoverageRatio,
     recordsDropped: data.integrity.recordsDropped,
     maxRecords: data.maxRecords,
     runWindowCount,
     cpuAttributionCoveragePct: cpuAttribution.attributedCpuPct,
     cpuAmbiguousSamples: cpuAttribution.cpuAmbiguousSamples,
-    clockSyncUncertaintyMs: data.clockSyncUncertaintyMs ?? cpuAttribution.clockSyncUncertaintyMs,
+    ambiguousRatio,
+    clockSyncUncertaintyMs,
     reasons,
     recommendations: Array.from(recommendations),
   };
@@ -736,10 +879,10 @@ function scoreAsyncConfidence(input: {
   recordsDropped: number;
   collectedVia: AsyncKindData['collectedVia'];
   attachPartialCapture: boolean;
-  cpuAmbiguousSamples: number;
+  cpuAmbiguousRatio: number;
   fullTransformPartial: boolean;
 }): ProfileConfidence {
-  if (input.attachPartialCapture || input.cpuAmbiguousSamples > 0 || input.fullTransformPartial) {
+  if (input.attachPartialCapture || input.cpuAmbiguousRatio > 0.5 || input.fullTransformPartial) {
     return 'low';
   }
   if (
@@ -902,7 +1045,10 @@ interface BuildAttributionArgs {
   records: AsyncOperationRecord[];
   recordById: Map<number, AsyncOperationRecord>;
   rootByAsyncId: Map<number, number>;
+  chainNodes: Map<number, AsyncChainNode>;
   cpuKind: { cpuProfile: RawCpuProfile } | undefined;
+  /** Real clock-alignment uncertainty (CDP jitter / perf.now resolution) to report. */
+  clockSyncUncertaintyMs: number;
 }
 
 /**
@@ -915,7 +1061,7 @@ interface BuildAttributionArgs {
  * the CPU profile lacks per-sample timestamps, or no run windows exist.
  */
 function buildCpuAttribution(args: BuildAttributionArgs): AsyncCpuAttribution {
-  const { records, recordById, rootByAsyncId, cpuKind } = args;
+  const { records, recordById, rootByAsyncId, chainNodes, cpuKind } = args;
   if (!cpuKind) {
     return emptyAttribution('cpu kind not captured');
   }
@@ -992,11 +1138,19 @@ function buildCpuAttribution(args: BuildAttributionArgs): AsyncCpuAttribution {
       windowCursor += 1;
     }
     activeWindows = activeWindows.filter((w) => w.endMs >= tMs);
+    let win: Window | undefined;
     if (activeWindows.length > 1) {
-      ambiguousCount += 1;
-      continue;
+      // Overlapping windows from one ancestor/descendant chain belong to the
+      // innermost (deepest) async context; only unrelated concurrent chains
+      // are genuinely ambiguous.
+      win = resolveOverlappingWindow(activeWindows, recordById, chainNodes);
+      if (!win) {
+        ambiguousCount += 1;
+        continue;
+      }
+    } else {
+      win = findLatestStartedWindow(activeWindows);
     }
-    const win = findLatestStartedWindow(activeWindows);
     if (!win) continue;
     attributedCount += 1;
     const bucket = cpuByRoot.get(win.rootId) ?? {
@@ -1032,6 +1186,10 @@ function buildCpuAttribution(args: BuildAttributionArgs): AsyncCpuAttribution {
   const totalCpuMs = samples.length * sampleIntervalMs;
   const attributedCpuPct =
     totalCpuMs > 0 ? (attributedCount * sampleIntervalMs * 100) / totalCpuMs : 0;
+  const samplesConsidered = attributedCount + ambiguousCount;
+  const ambiguousRatio = samplesConsidered > 0 ? ambiguousCount / samplesConsidered : 0;
+  const executionConfidence: ProfileConfidence =
+    ambiguousRatio < 0.1 ? 'high' : ambiguousRatio < 0.33 ? 'medium' : 'low';
 
   const topChains: AsyncCpuAttributionEntry[] = [];
   for (const [rootId, bucket] of cpuByRoot.entries()) {
@@ -1050,7 +1208,7 @@ function buildCpuAttribution(args: BuildAttributionArgs): AsyncCpuAttribution {
     if (executionFrame) {
       const reportFrame = toReportFrame(executionFrame);
       entry.executionFrame = reportFrame;
-      entry.executionConfidence = ambiguousCount > 0 ? 'low' : 'high';
+      entry.executionConfidence = executionConfidence;
       root.executionStack = [executionFrame];
       root.executionConfidence = entry.executionConfidence;
       root.cpuAttributedSamples = bucket.sampleNodeIds.length;
@@ -1075,7 +1233,7 @@ function buildCpuAttribution(args: BuildAttributionArgs): AsyncCpuAttribution {
     totalCpuMs,
     cpuAttributedSamples: attributedCount,
     cpuAmbiguousSamples: ambiguousCount,
-    clockSyncUncertaintyMs: 0,
+    clockSyncUncertaintyMs: args.clockSyncUncertaintyMs,
     topChains: topChains.slice(0, MAX_CPU_ATTRIBUTION_CHAINS),
   };
 }
@@ -1131,6 +1289,51 @@ function emptyAttribution(reason: string): AsyncCpuAttribution {
     clockSyncUncertaintyMs: 0,
     topChains: [],
   };
+}
+
+/** True when `ancestorId` is `descendantId` or one of its trigger ancestors. */
+function isAsyncAncestor(
+  ancestorId: number,
+  descendantId: number,
+  recordById: Map<number, AsyncOperationRecord>,
+  maxHops = 256,
+): boolean {
+  if (ancestorId === descendantId) return true;
+  const seen = new Set<number>();
+  let current = recordById.get(descendantId);
+  let hops = 0;
+  while (current && !seen.has(current.asyncId) && hops < maxHops) {
+    seen.add(current.asyncId);
+    if (current.triggerAsyncId === ancestorId) return true;
+    current = recordById.get(current.triggerAsyncId);
+    hops += 1;
+  }
+  return false;
+}
+
+/**
+ * When several run windows overlap a CPU sample, attribute it to the innermost
+ * (deepest) async context — but only if all active windows lie on a single
+ * ancestor/descendant chain. Unrelated concurrent chains return undefined so
+ * the caller marks the sample ambiguous.
+ */
+function resolveOverlappingWindow<W extends { asyncId: number; order: number }>(
+  windows: readonly W[],
+  recordById: Map<number, AsyncOperationRecord>,
+  chainNodes: Map<number, AsyncChainNode>,
+): W | undefined {
+  let deepest = windows[0];
+  if (!deepest) return undefined;
+  for (const w of windows) {
+    const depth = chainNodes.get(w.asyncId)?.depth ?? 0;
+    const bestDepth = chainNodes.get(deepest.asyncId)?.depth ?? 0;
+    if (depth > bestDepth || (depth === bestDepth && w.order > deepest.order)) deepest = w;
+  }
+  for (const w of windows) {
+    if (w.asyncId === deepest.asyncId) continue;
+    if (!isAsyncAncestor(w.asyncId, deepest.asyncId, recordById)) return undefined;
+  }
+  return deepest;
 }
 
 function mean(values: readonly number[]): number {

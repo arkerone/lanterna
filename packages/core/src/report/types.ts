@@ -207,7 +207,13 @@ export interface EventLoopReport {
   p50LagMs: number;
   meanLagMs: number;
   sampleCount: number;
-  stallIntervals: Array<{ startMs: number; endMs: number; maxLagMs: number }>;
+  stallIntervals: Array<{
+    startMs: number;
+    endMs: number;
+    maxLagMs: number;
+    /** User frame that dominated CPU during this specific stall (the culprit here), when CPU was captured. */
+    topFrame?: CorrelatedHotspot;
+  }>;
   available: boolean;
   measurementBasis: MeasurementBasis;
   confidence: MeasurementConfidence;
@@ -611,6 +617,28 @@ export type AsyncOperationKindReport =
   | 'microtask'
   | 'other';
 
+/** Why an async operation spent its wall-clock latency (mirrors kinds/async/types). */
+export type AsyncLatencyCause =
+  | 'event-loop-blocked'
+  | 'gc-pause'
+  | 'downstream-async'
+  | 'io-wait'
+  | 'cpu-bound'
+  | 'background'
+  | 'unknown';
+
+/** Provenance of the user-code frame attributed to an async operation. */
+export type AsyncAttributedFrameOrigin = 'self' | 'inherited-trigger' | 'cpu-window' | 'cdp';
+
+export interface AsyncByKindLatency {
+  count: number;
+  p50Ms: number;
+  p95Ms: number;
+  p99Ms: number;
+  maxMs: number;
+  meanWaitMs: number;
+}
+
 export interface AsyncSummary {
   available: boolean;
   collectedVia: 'async-hooks' | 'cdp-only' | 'unavailable';
@@ -631,6 +659,8 @@ export interface AsyncSummary {
   };
   orphanCount: number;
   recordsDropped: number;
+  /** Per-family latency percentiles + mean wait time (e.g. http p99 vs fs p99). */
+  byKindLatency?: Partial<Record<AsyncOperationKindReport, AsyncByKindLatency>>;
   topAsyncHotFile?: {
     function: string;
     file: string;
@@ -672,6 +702,19 @@ export interface AsyncTopOperation {
   initAtMs: number;
   triggerAsyncId: number;
   orphan: boolean;
+  /** ms from capture-start to first execution (first `before`) — scheduling/queue delay precursor. */
+  firstRunAtMs?: number;
+  /** Wall-clock time alive but NOT executing on CPU (durationMs - runMs). The real "latency". */
+  waitMs?: number;
+  /** init → first run: time the resource sat queued before it first executed. */
+  scheduleDelayMs?: number;
+  /** Classified root cause of the operation's latency. */
+  latencyCause?: AsyncLatencyCause;
+  causeConfidence?: ProfileConfidence;
+  /** Supporting numbers for the classified cause (overlap %, basis, overlap ms). */
+  causeEvidence?: { overlapPct: number; basis: string; windowMs: number };
+  /** Where the attributed user-code frame came from (self stack, trigger ancestry, CPU window, CDP). */
+  attributedFrameOrigin?: AsyncAttributedFrameOrigin;
   /** First user-code frame at init, when available. */
   initFrame?: AsyncStackFrameReport;
   primaryFrame?: AsyncStackFrameReport;
@@ -756,12 +799,16 @@ export interface AsyncProfileQuality {
   operationCount: number;
   sampledStackRatio: number;
   initStackCoverageRatio: number;
+  /** Fraction of operations with a user-editable frame (own stack or inherited via trigger chain). */
+  attributedStackRatio: number;
   cdpAsyncStackCoverageRatio: number;
   recordsDropped: number;
   maxRecords: number;
   runWindowCount: number;
   cpuAttributionCoveragePct: number;
   cpuAmbiguousSamples: number;
+  /** cpuAmbiguousSamples / (attributed + ambiguous) — drives graded CPU-attribution confidence. */
+  ambiguousRatio: number;
   clockSyncUncertaintyMs: number;
   reasons: string[];
   recommendations: string[];

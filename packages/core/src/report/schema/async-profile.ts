@@ -43,6 +43,19 @@ const asyncSummarySchema = z.object({
     .optional(),
   orphanCount: z.number().int().nonnegative(),
   recordsDropped: z.number().int().nonnegative(),
+  byKindLatency: z
+    .partialRecord(
+      asyncOperationKindSchema,
+      z.object({
+        count: z.number().int().nonnegative(),
+        p50Ms: z.number().nonnegative(),
+        p95Ms: z.number().nonnegative(),
+        p99Ms: z.number().nonnegative(),
+        maxMs: z.number().nonnegative(),
+        meanWaitMs: z.number().nonnegative(),
+      }),
+    )
+    .optional(),
   topAsyncHotFile: z
     .object({
       function: z.string(),
@@ -92,6 +105,25 @@ const asyncTopOperationSchema = z.object({
   initAtMs: z.number(),
   triggerAsyncId: z.number().int(),
   orphan: z.boolean(),
+  firstRunAtMs: z.number().optional(),
+  waitMs: z.number().nonnegative().optional(),
+  scheduleDelayMs: z.number().nonnegative().optional(),
+  latencyCause: z
+    .enum([
+      'event-loop-blocked',
+      'gc-pause',
+      'downstream-async',
+      'io-wait',
+      'cpu-bound',
+      'background',
+      'unknown',
+    ])
+    .optional(),
+  causeConfidence: z.enum(['low', 'medium', 'high']).optional(),
+  causeEvidence: z
+    .object({ overlapPct: z.number(), basis: z.string(), windowMs: z.number() })
+    .optional(),
+  attributedFrameOrigin: z.enum(['self', 'inherited-trigger', 'cpu-window', 'cdp']).optional(),
   initFrame: asyncStackFrameSchema.optional(),
   primaryFrame: asyncStackFrameSchema.optional(),
   primaryReason: z
@@ -170,12 +202,14 @@ const asyncQualitySchema = z.object({
   operationCount: z.number().int().nonnegative(),
   sampledStackRatio: z.number().min(0).max(1),
   initStackCoverageRatio: z.number().min(0).max(1),
+  attributedStackRatio: z.number().min(0).max(1),
   cdpAsyncStackCoverageRatio: z.number().min(0).max(1),
   recordsDropped: z.number().int().nonnegative(),
   maxRecords: z.number().int().nonnegative(),
   runWindowCount: z.number().int().nonnegative(),
   cpuAttributionCoveragePct: z.number().nonnegative(),
   cpuAmbiguousSamples: z.number().int().nonnegative(),
+  ambiguousRatio: z.number().min(0).max(1),
   clockSyncUncertaintyMs: z.number().nonnegative(),
   reasons: z.array(z.string()),
   recommendations: z.array(z.string()),

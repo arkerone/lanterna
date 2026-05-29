@@ -1370,4 +1370,189 @@ describe('async installer eviction', () => {
     expect(read.records.length).toBe(2);
     expect(read.integrity.recordsDropped).toBe(2);
   });
+
+  it('evicts the shortest-duration completed record under buffer pressure', () => {
+    let now = 0;
+    let globalValue: { read: () => AsyncKindData } | undefined;
+    let callbacks: Partial<AsyncHookCallbacks> = {};
+    vi.stubGlobal('setInterval', () => ({ unref() {} }));
+    vi.stubGlobal('clearInterval', () => {});
+    const api = {
+      performance: { now: () => now },
+      registerGlobal: (_name: string, value: unknown) => {
+        globalValue = value as typeof globalValue;
+      },
+      addResetHook: () => {},
+      getBuiltin: (name: string) =>
+        name === 'async_hooks'
+          ? {
+              createHook: (cbs: Partial<AsyncHookCallbacks>) => {
+                callbacks = cbs;
+                return { enable() {}, disable() {} };
+              },
+            }
+          : null,
+    };
+
+    const installer = createAsyncOperationsInstaller({ maxRecords: 3, instrumentationMode: 'off' });
+    new Function('__lanterna', installer.source)(api);
+    if (!globalValue || !callbacks.init || !callbacks.promiseResolve) {
+      throw new Error('install failed');
+    }
+
+    // Three completed records with durations 100 (id1), 10 (id2), 50 (id3).
+    now = 0;
+    callbacks.init(1, 'PROMISE', 0);
+    now = 5;
+    callbacks.init(2, 'PROMISE', 0);
+    now = 10;
+    callbacks.init(3, 'PROMISE', 0);
+    now = 15;
+    callbacks.promiseResolve(2); // dur 10
+    now = 60;
+    callbacks.promiseResolve(3); // dur 50
+    now = 100;
+    callbacks.promiseResolve(1); // dur 100
+    // Buffer is full; the new init must evict the SHORTEST completed (id2),
+    // keeping the slow/long ops that matter for latency analysis.
+    now = 200;
+    callbacks.init(4, 'PROMISE', 0);
+
+    const ids = globalValue
+      .read()
+      .records.map((r) => r.asyncId)
+      .sort((a, b) => a - b);
+    expect(ids).toEqual([1, 3, 4]);
+  });
+});
+
+describe('async CPU attribution precision', () => {
+  function cpuProfileOf(sampleCount: number): CaptureBundle['kinds']['cpu'] {
+    return {
+      cpuProfile: {
+        nodes: [
+          {
+            id: 1,
+            callFrame: {
+              functionName: '(root)',
+              scriptId: '0',
+              url: '',
+              lineNumber: -1,
+              columnNumber: -1,
+            },
+            hitCount: 0,
+            children: [],
+          },
+        ],
+        startTime: 0,
+        endTime: sampleCount * 1000,
+        samples: Array.from({ length: sampleCount }, () => 1),
+        timeDeltas: Array.from({ length: sampleCount }, () => 1000),
+      },
+      deopts: [],
+      samplesTimed: true,
+    };
+  }
+
+  it('attributes nested ancestor/descendant overlap to the innermost context, not ambiguous', () => {
+    // child #2 (run [50,150]) is nested inside parent #1 (run [0,200]).
+    const records: AsyncOperationRecord[] = [
+      record(1, 0, 200, 0, [{ startMs: 0, endMs: 200 }]),
+      record(2, 1, 100, 50, [{ startMs: 50, endMs: 150 }]),
+    ];
+    const bundle = makeBundle(records);
+    bundle.kinds.cpu = cpuProfileOf(200);
+    const pipeline = createAnalysisPipeline({ kinds: [createAsyncProfileKind()] });
+    const result = pipeline.run(bundle, { command: ['node', 'app.js'], mode: 'spawn' });
+    const attribution = result.profiles.async?.cpuAttribution;
+    expect(attribution?.available).toBe(true);
+    expect(attribution?.cpuAmbiguousSamples).toBe(0);
+    expect(result.profiles.async?.quality.ambiguousRatio).toBe(0);
+    expect(attribution?.attributedCpuPct).toBeGreaterThan(50);
+  });
+
+  it('counts unrelated overlapping windows as ambiguous without collapsing confidence', () => {
+    // #1 and #2 share no ancestry (both triggerAsyncId 0); they overlap only in [190,200].
+    const records: AsyncOperationRecord[] = [
+      withFrame(record(1, 0, 200, 0, [{ startMs: 0, endMs: 200 }]), {
+        function: 'a',
+        file: 'file:///app/a.js',
+        line: 1,
+      }),
+      withFrame(record(2, 0, 20, 180, [{ startMs: 190, endMs: 200 }]), {
+        function: 'b',
+        file: 'file:///app/b.js',
+        line: 1,
+      }),
+    ];
+    const bundle = makeBundle(records);
+    bundle.kinds.cpu = cpuProfileOf(200);
+    const pipeline = createAnalysisPipeline({ kinds: [createAsyncProfileKind()] });
+    const result = pipeline.run(bundle, { command: ['node', 'app.js'], mode: 'spawn' });
+    const attribution = result.profiles.async?.cpuAttribution;
+    expect(attribution?.cpuAmbiguousSamples).toBeGreaterThan(0);
+    expect(attribution?.cpuAmbiguousSamples).toBeLessThan(40);
+    // Small ambiguous ratio must NOT force the whole kind to low confidence.
+    expect(result.profiles.async?.quality.confidence).not.toBe('low');
+  });
+});
+
+describe('async latency cause wiring (regression)', () => {
+  function signalBundle(
+    records: AsyncOperationRecord[],
+    signals: {
+      gcEvents?: Array<{ atMs: number; kind: string; durationMs: number }>;
+      eventLoopSamples?: Array<{ atMs: number; lagMs: number }>;
+    } = {},
+  ): CaptureBundle {
+    const base = makeBundle(records);
+    return {
+      ...base,
+      captureIntegrity: {
+        ...base.captureIntegrity,
+        gcTimed: (signals.gcEvents?.length ?? 0) > 0,
+        eventLoopTimed: (signals.eventLoopSamples?.length ?? 0) > 0,
+      },
+      runtimeSignals: {
+        ...base.runtimeSignals,
+        gcEvents: signals.gcEvents ?? [],
+        eventLoopSamples: signals.eventLoopSamples ?? [],
+        eventLoopAvailable: (signals.eventLoopSamples?.length ?? 0) > 0,
+      },
+    };
+  }
+
+  it('does not blanket-classify waits as gc-pause from many tiny scavenges', () => {
+    // 50 sub-millisecond GC events densely spread across a 200ms wait. Their real
+    // overlap is ~5ms (2.5%), so the completed op must NOT be gc-pause. Padding
+    // each event by ±20ms would tile the timeline and force a spurious gc-pause.
+    const gcEvents = Array.from({ length: 50 }, (_, i) => ({
+      atMs: i * 4,
+      kind: 'minor',
+      durationMs: 0.1,
+    }));
+    const op = record(1, 0, 200, 0); // completed promise, waited 200ms
+    const result = createAnalysisPipeline({ kinds: [createAsyncProfileKind()] }).run(
+      signalBundle([op], { gcEvents }),
+      { command: ['node', 'app.js'], mode: 'spawn' },
+    );
+    const top = result.profiles.async?.topOperations.find((o) => o.asyncId === 1);
+    expect(top?.latencyCause).not.toBe('gc-pause');
+  });
+
+  it('excludes orphans from topOperations and byKindLatency', () => {
+    const completed = record(1, 0, 100, 0); // promise, duration 100ms
+    const orphan = record(2, 0, undefined, 0); // never resolved -> capture-length duration
+    const result = createAnalysisPipeline({ kinds: [createAsyncProfileKind()] }).run(
+      signalBundle([completed, orphan]),
+      { command: ['node', 'app.js'], mode: 'spawn' },
+    );
+    const async = result.profiles.async;
+    expect(async?.topOperations.some((o) => o.asyncId === 2)).toBe(false);
+    expect(async?.orphans.some((o) => o.asyncId === 2)).toBe(true);
+    // byKindLatency reflects only the completed op, not the orphan's fictional
+    // capture-length duration.
+    expect(async?.summary.byKindLatency?.promise?.count).toBe(1);
+    expect(async?.summary.byKindLatency?.promise?.maxMs).toBe(100);
+  });
 });
