@@ -1,5 +1,26 @@
 # @lanterna-profiler/core
 
+## 2.4.0
+
+### Minor Changes
+
+- 703d967: Make async profiling pinpoint _which_ code is slow, _what_ the latency is, and _why_.
+
+  - Decompose async latency: capture `firstRunAtMs` (scheduling delay precursor) and derive `waitMs` (time waiting, not on CPU) and `scheduleDelayMs` per operation, plus per-family latency percentiles (`summary.byKindLatency`).
+  - Classify the root cause of each operation's latency (`latencyCause` + `causeConfidence` + `causeEvidence`) by overlapping its wait windows with event-loop stalls, GC pauses, downstream-async activity, I/O kind, or CPU-bound execution.
+  - Improve "which code" attribution: when an operation's own stack has no user frame, inherit the nearest one via the trigger ancestry (`attributedFrameOrigin`), and raise the default init-stack capture depth.
+  - Make CPU→async attribution more precise and honest: attribute samples in overlapping ancestor/descendant run windows to the innermost async context instead of dropping them, grade CPU-attribution confidence by the unrelated-overlap ratio instead of collapsing on the first ambiguous sample, and report a real `clockSyncUncertaintyMs` (CDP jitter / clock resolution) instead of a placeholder.
+  - Enrich the `long-await` finding with the latency decomposition and cause-specific guidance, and add a new `event-loop-blocked-async` detector that ties a slow async operation to the synchronous frame blocking the event loop.
+  - Reliability refinements: classify long-lived idle resources as a distinct `background` latency cause (instead of mis-reading their incidental stall overlap as `event-loop-blocked`); when the event-loop heartbeat is unavailable, mark an `unknown` cause with `causeEvidence.basis = "no-eventloop-signal"` and add a quality reason, so missing signal is not conflated with "no problem"; and under `--async-max-events` pressure, evict the shortest-duration completed record instead of FIFO so the slow/long operations that matter for latency survive.
+  - Cause-classification hardening (from an empirical audit against real targets):
+    - GC-pause overlap now uses each GC event's **actual pause duration** instead of a ±20ms padded window. Padding made dense sub-millisecond scavenges tile the whole timeline and blanket nearly every wait with a spurious ~100% GC overlap, so most operations — even on event-loop-blocked or I/O workloads — were mislabelled `gc-pause`. `gc-pause` is now correctly rare.
+    - The documented priority is now actually applied: a blocked event loop outranks a coincidental GC/downstream overlap rather than losing to whichever signal had the higher raw percentage.
+    - `event-loop-blocked` now requires the loop to have **still been stalled when the callback became runnable** (around `firstRunAtMs`); a stall that ended well before the operation ran is treated as a coincidental overlap, eliminating false `event-loop-blocked` labels on genuinely slow I/O whose wait merely spans an unrelated stall.
+    - Orphans (resources still in flight at capture end) are excluded from `topOperations` and `summary.byKindLatency` — their capture-clamped, fictional duration was dominating the ranking and skewing the percentiles — and remain reported in `orphans[]`.
+    - The `event-loop-blocked-async` detector stands down when no CPU hotspot identifies a culprit frame, instead of emitting a critical finding anchored at a placeholder `(event-loop)` location.
+    - Persistent/multiplexed handles (keep-alive sockets, HTTP parsers, pools, intervals) that activated more than once and stayed alive for ~the whole capture are now classified `background` instead of having their capture-length aggregate `waitMs` reported as a single `event-loop-blocked`/`long-await` finding. The `runCount > 1` discriminator preserves genuine single long operations (a discrete delayed callback runs at most once). Validated on a real HTTP server under load: the blocking `pbkdf2Sync` handler is still correctly surfaced, without the misleading multi-second findings on keep-alive connections.
+    - The `event-loop-blocked-async` detector now attributes the blocking frame **per stall** instead of stamping the single globally-dominant CPU hotspot on every blocked op. `profiles.cpu.eventLoop.stallIntervals[]` gains an optional `topFrame` (the user frame that dominated CPU during that specific stall), and the detector matches each delayed op to the stall active when its callback became runnable (`firstRunAtMs`), falling back to the global hotspot only when no stall matches. With several distinct blocking call sites, each delayed operation now points at its own culprit.
+
 ## 2.3.0
 
 ### Minor Changes
