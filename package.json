@@ -10,6 +10,7 @@
   "scripts": {
     "build": "turbo run build",
     "test": "turbo run test",
+    "test:e2e": "npm run test:e2e -w @lanterna-profiler/cli",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "bench": "node bench/run.mjs",
