@@ -116,6 +116,7 @@ Common fixes:
 2. **The profiling window missed the hot code.** If your app has a startup phase that loads modules and then settles, the default window may land on idle steady state. Use `--wait-for-url` to skip startup, then generate traffic during capture.
 3. **Deopts not detected — missing `--deep`.** The `deopt-loop` detector only fires when `--deep` is passed and only for functions also hot in the CPU profile. Without `--deep`, `deopts[]` is empty by design.
 4. **GC findings suppressed on very short captures.** If `durationMs < 250` and no timed GC events were captured, the `excessive-gc` detector suppresses findings to avoid false positives. Run for longer.
+5. **`excessive-gc` not firing on a near-idle process.** `gcRatio` is GC time / on-CPU time, so on a mostly-idle process a few milliseconds of GC inflate the ratio against a tiny denominator. The detector requires a minimum on-CPU presence (`onCpuRatio ≥ 5%`) before firing on the ratio alone; a genuine long pause (`longestPauseMs > 100ms`) still fires. Generate representative load if you expect GC pressure.
 
 If `findings[]` is empty but `profiles.cpu.summary.topCpuCulprit` or `profiles.cpu.hotspots[0]` is strong, inspect that frame anyway. A missing specialized finding only means Lanterna did not match a known pattern; custom CPU-heavy code can still be the bottleneck.
 

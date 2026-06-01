@@ -86,7 +86,7 @@ V8 deoptimisation clusters with `function`, `file`, `line`, `reason`, `bailoutTy
 | `json-on-hot-path:<api>` | `JSON.parse` / `JSON.stringify` consuming meaningful CPU. |
 | `node-modules-hotspot:<package>` | A dependency frame dominates meaningful CPU time. |
 | `cpu-hotspot:<frame>` | Generic fallback for user-code CPU not explained by a more specific CPU detector. Self-heavy frames are direct hotspots; inclusive-only frames are lower-confidence caller leads. |
-| `excessive-gc` | `gcRatio > 10%` or `longestPauseMs > 100ms`. |
+| `excessive-gc` | `gcRatio > 10%` on a non-idle process (`onCpuRatio ≥ 5%`), or `longestPauseMs > 100ms`. |
 | `event-loop-stall` | `p99LagMs >= 100` or `maxLagMs >= 200`; evidence points at a strongly correlated frame when possible, otherwise the hottest user CPU fallback. |
 | `deopt-loop:<function>` | Same deoptimised function seen ≥ 5 times (`--deep`) and hot in the CPU profile. |
 | `require-in-hot-path` | Module loading functions sampled on the hot path. |
