@@ -145,7 +145,7 @@ The default pack lives in `@lanterna-profiler/detectors` and pre-wires detectors
 | `json-on-hot-path:<api>` | `JSON.parse` / `JSON.stringify` consuming meaningful CPU. |
 | `node-modules-hotspot:<package>` | A dependency frame dominates CPU time. |
 | `cpu-hotspot:<frame>` | User-code self CPU ≥ 10%, or inclusive CPU ≥ 25% as a lower-confidence caller lead, when no more specific CPU detector already explains the frame. |
-| `excessive-gc` | `gcRatio > 10%` or `longestPauseMs > 100ms`. |
+| `excessive-gc` | `gcRatio > 10%` on a non-idle process (`onCpuRatio ≥ 5%`), or `longestPauseMs > 100ms`. |
 | `event-loop-stall` | `p99LagMs >= 100` or `maxLagMs >= 200`; anchors to strong stall correlation when available, otherwise to the hottest user CPU fallback. |
 | `deopt-loop:<function>` | Same deoptimised function seen ≥ 5 times (`--deep`) and hot in the profile. |
 | `require-in-hot-path` | Module loading functions sampled on the hot path. |
