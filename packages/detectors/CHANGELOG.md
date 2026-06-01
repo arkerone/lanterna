@@ -1,5 +1,19 @@
 # @lanterna-profiler/detectors
 
+## 2.4.1
+
+### Patch Changes
+
+- 2333c18: Stop `excessive-gc` from firing on near-idle processes.
+
+  `gcRatio` is GC time divided by **on-CPU** time, so on a mostly-idle process a few milliseconds of startup GC produce a high ratio against a tiny denominator (e.g. 12% from ~3ms of GC). `excessive-gc` now requires a minimum on-CPU presence (`minOnCpuRatio`) before firing on the ratio alone; a genuine long GC pause still fires on its own regardless of how busy the process was.
+
+- 2a189be: Fix a `long-await` false-positive present in every async capture.
+
+  Node opens an internal `FILEHANDLE` at startup (ESM loader / inspector) that lives ~300ms with `runCount: 0`, `triggerAsyncId: 0`, an empty init stack and no frames — zero JS attribution. The `long-await` detector was reporting it as a low-grade long await anchored on a _guessed_ fallback user frame, adding noise to the report on workloads that have no real slow await.
+
+  `long-await` now skips such unattributed bootstrap root handles (never ran in JS, no async parent, no frame anywhere). The guard is conservative: a genuine slow await always carries either a trigger ancestry or an init/creation frame, so real I/O and promise awaits are unaffected.
+
 ## 2.4.0
 
 ### Minor Changes
