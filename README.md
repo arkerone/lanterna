@@ -171,7 +171,7 @@ Extending Lanterna:
 
 Runnable examples:
 
-- **[examples/](examples)** — three tiny standalone scripts that exhibit a CPU hotspot, a memory leak, and an event-loop stall, with the matching `lanterna` command for each.
+- **[examples/](examples)** — a standalone workload for every built-in detector (one pathology each), plus a realistic HTTP server with several at once. Together they cover all 19 findings and double as an end-to-end verification suite (`npm run test:e2e`).
 
 For agents (Claude Code skill):
 

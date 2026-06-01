@@ -1,6 +1,9 @@
-# Event-loop stall example — sync `readFileSync` on a tick
+# Event-loop stall example — sync read + parse on a tick
 
-A Node script that re-reads `package-lock.json` synchronously on every interval tick. Each blocking read stalls the event loop; Lanterna picks up both the blocking I/O and the resulting event-loop lag.
+A Node script that synchronously reads a large (~40 MB) data file and
+`JSON.parse`s it on every interval tick. Both the read and the parse block the
+event loop, so other callbacks pile up; Lanterna picks up the blocking I/O and the
+resulting event-loop lag.
 
 ## Run
 
@@ -13,11 +16,15 @@ npx -y @lanterna-profiler/cli report report.json --format text
 
 ## What you should see
 
-- A `blocking-io` finding pointing at `readFileSync` inside `loadConfig`.
-- An `event-loop-stall` finding with `eventLoop.histogram.p99Ms` and `maxMs` well above the stall threshold.
-- `eventLoop.measurementBasis` set to `"heartbeats"` (spawn mode), and `correlatedHotspots[]` linking the stalls to `loadConfig`.
+- A `blocking-io:fs.readFileSync` finding pointing at `loadCatalog`.
+- An `event-loop-stall` finding with `eventLoop.p99LagMs` / `maxLagMs` well above
+  the stall threshold (the JSON parse is the long synchronous block).
+- `eventLoop.measurementBasis` reflecting heartbeat data (spawn mode), with the
+  stall correlated to `loadCatalog`.
 
 ## What to try next
 
-- Replace `readFileSync` with `await readFile(...)` from `node:fs/promises` — both findings should clear.
-- Cache the file once outside the interval — even simpler fix; the event-loop histogram should flatten.
+- Read + parse the file once at startup (cache it) instead of per tick — both
+  findings should clear and the histogram flattens.
+- Move the work to `await readFile(...)` plus a streaming JSON parser to keep the
+  loop responsive.

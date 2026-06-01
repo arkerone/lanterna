@@ -1,4 +1,7 @@
 node_modules/
+# Keep the vendored fixture dependency for the node-modules-hotspot example.
+!examples/node-modules-hotspot/node_modules/
+!examples/node-modules-hotspot/node_modules/**
 dist/
 dist-test/
 packages/*/dist/
