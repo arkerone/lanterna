@@ -1,6 +1,8 @@
-# Memory leak example — unbounded cache with closure retainer
+# Memory leak example — unbounded response cache
 
-A Node script that grows a `Map<string, () => string>` indefinitely. Each entry holds a heavy string via closure, defeating naive GC. Lanterna detects sustained growth and ranks the allocator.
+A Node script with a `store` Map that's never evicted, so every session record
+(built by `buildSession`) is retained forever — the classic unbounded-cache leak.
+Lanterna detects the sustained growth and ranks the dominant allocator.
 
 ## Run
 
@@ -30,10 +32,10 @@ npx -y @lanterna-profiler/cli report report.json --format text
 - `findings[]` entries:
   - `memory-growth:rss` — the slope of `rssBytes` over the capture window is positive and large.
   - `memory-growth:heapUsed` — same on `heapUsedBytes`.
-  - `large-allocator` — `cacheLine` (or its inlined site) ranks at the top of `profiles.memory.hotAllocators[]`.
-- With `--heap-snapshot-analysis`: `profiles.memory.heapSnapshotAnalysis.retainerPaths[]` should highlight the `cache` Map and the closure wrapper.
+  - `large-allocator` — `buildSession` ranks at the top of `profiles.memory.hotAllocators[]`.
+- With `--heap-snapshot-analysis`: `profiles.memory.heapSnapshotAnalysis.retainerPaths[]` should highlight the `store` Map retaining the session records.
 
 ## What to try next
 
-- Add `cache.delete(...)` after a TTL and re-run — `memory-growth` should drop or disappear.
+- Bound `store` (evict by TTL or use an LRU) and re-run — `memory-growth` should drop or disappear.
 - Combine with `--kind cpu --kind memory` to see the cross-kind `alloc-in-hot-path` finding flag the same allocator if it also dominates CPU.
