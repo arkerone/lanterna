@@ -35,6 +35,7 @@ export const longAwaitDetector: KindScopedDetector<'async'> = {
       // carry a capture-length aggregate waitMs that is not a single long await.
       if (op.latencyCause === 'background') continue;
       if (isBackgroundWindowOperation(op, captureDurationMs)) continue;
+      if (isUnattributedRootHandle(op)) continue;
       if (isShadowedByResumedOperation(op, report.topOperations)) continue;
       if (op.durationMs < thresholds.minDurationMs) break; // sorted desc
       const severity: BaseFinding['severity'] =
@@ -131,6 +132,27 @@ export const longAwaitDetector: KindScopedDetector<'async'> = {
 
 function isBackgroundWindowOperation(op: AsyncTopOperation, captureDurationMs: number): boolean {
   return op.runMs === 0 && op.durationMs > captureDurationMs * 0.9;
+}
+
+/**
+ * A resource that never executed any JS (`runCount === 0`), has no async parent
+ * (`triggerAsyncId === 0`) and carries no frame anywhere is an internal/bootstrap
+ * handle — e.g. the ESM loader / inspector FILEHANDLE that every async capture
+ * opens at startup. There is nothing for an agent to act on, and the detector
+ * would only be able to anchor it on a *guessed* fallback frame, so it is noise.
+ * A genuine slow await always carries either a trigger ancestry or an init frame.
+ */
+function isUnattributedRootHandle(op: AsyncTopOperation): boolean {
+  return (
+    op.runCount === 0 &&
+    op.runMs === 0 &&
+    op.triggerAsyncId === 0 &&
+    op.initStack.length === 0 &&
+    !op.initFrame &&
+    !op.creationFrame &&
+    !op.awaitFrame &&
+    !op.executionFrame
+  );
 }
 
 function rankLongAwaitOperations(operations: readonly AsyncTopOperation[]): AsyncTopOperation[] {

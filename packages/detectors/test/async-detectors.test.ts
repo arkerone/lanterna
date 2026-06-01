@@ -365,6 +365,33 @@ describe('microtask-flood detector', () => {
     expect(result.findings.some((f) => f.id === 'long-await:999')).toBe(false);
   });
 
+  it('long-await skips unattributed bootstrap handles but still fires for awaited ops', () => {
+    const records: AsyncOperationRecord[] = [];
+    for (let i = 0; i < 8; i++) records.push(makeRecord(100 + i, 1, 'promise', 10));
+    // The FILEHANDLE every async capture opens at startup: never ran in JS
+    // (runCount 0), no async parent (triggerAsyncId 0), no frames. It must not
+    // be reported as a long await.
+    records.push(makeRecord(999, 0, 'fs', 352, 8));
+    // A genuinely-awaited op of the same duration WITH a frame must still fire —
+    // proving the guard is narrow.
+    records.push(
+      withFrame(makeRecord(888, 1, 'tcp', 352, 8), {
+        function: 'queryDatabase',
+        file: 'file:///app/src/db.js',
+        line: 12,
+      }),
+    );
+    const bundle = makeBundle({ records, durationMs: 7000 });
+    const pipeline = createAnalysisPipeline({
+      kinds: [createAsyncProfileKind()],
+      findingAnalyzers: [createFindingAnalyzerFromKindScopedDetector(longAwaitDetector)],
+    });
+    const result = pipeline.run(bundle, { command: ['node', 'app.js'], mode: 'spawn' });
+
+    expect(result.findings.some((f) => f.id === 'long-await:999')).toBe(false);
+    expect(result.findings.some((f) => f.id === 'long-await:888')).toBe(true);
+  });
+
   it('long-await prefers a near-tied operation that actually resumed', () => {
     const records: AsyncOperationRecord[] = [];
     for (let i = 0; i < 8; i++) records.push(makeRecord(100 + i, 1, 'promise', 10));
@@ -714,9 +741,10 @@ describe('async detector edge cases', () => {
 
   it('caps long-await findings at maxFindings', () => {
     const records: AsyncOperationRecord[] = [];
-    for (let i = 0; i < 5; i++) records.push(makeRecord(i + 1, 0, 'promise', 10));
-    // 12 distinct slow ops — only the top 5 should produce findings.
-    for (let i = 0; i < 12; i++) records.push(makeRecord(1000 + i, 0, 'promise', 200 + i * 10));
+    for (let i = 0; i < 5; i++) records.push(makeRecord(i + 1, 1, 'promise', 10));
+    // 12 distinct slow ops (each awaited from a real context) — only the top 5
+    // should produce findings.
+    for (let i = 0; i < 12; i++) records.push(makeRecord(1000 + i, 1, 'promise', 200 + i * 10));
     const bundle = makeBundle({ records });
     const pipeline = createAnalysisPipeline({
       kinds: [createAsyncProfileKind()],
