@@ -660,6 +660,78 @@ describe('findings – excessive-gc', () => {
     assert.equal(userCaller?.basis, 'cpu-sample-path');
     assert.equal(candidateHotspots[0]?.function, 'allocBurst');
   });
+
+  it('does not fire ratio-only excessive-gc on a near-idle process', () => {
+    const idleReport = createReport(
+      makeRaw(
+        {
+          nodes: [
+            {
+              id: 1,
+              callFrame: {
+                functionName: '(root)',
+                scriptId: '0',
+                url: '',
+                lineNumber: -1,
+                columnNumber: -1,
+              },
+              hitCount: 0,
+              children: [2, 3, 4],
+            },
+            {
+              id: 2,
+              callFrame: {
+                functionName: '(garbage collector)',
+                scriptId: '0',
+                url: '',
+                lineNumber: -1,
+                columnNumber: -1,
+              },
+              hitCount: 6,
+              children: [],
+            },
+            {
+              id: 3,
+              callFrame: {
+                functionName: 'tick',
+                scriptId: '1',
+                url: `file://${CWD}/src/app.js`,
+                lineNumber: 2,
+                columnNumber: 0,
+              },
+              hitCount: 4,
+              children: [],
+            },
+            {
+              id: 4,
+              callFrame: {
+                functionName: '(idle)',
+                scriptId: '0',
+                url: '',
+                lineNumber: -1,
+                columnNumber: -1,
+              },
+              hitCount: 990,
+              children: [],
+            },
+          ],
+          startTime: 1000000,
+          endTime: 2000000,
+          samples: [...Array(6).fill(2), ...Array(4).fill(3), ...Array(990).fill(4)],
+          timeDeltas: Array(1000).fill(1000),
+        },
+        { durationMs: 1000, gcEvents: [] },
+      ),
+      { sampleIntervalMicros: 1000, deep: false, command: ['node', 'app.js'] },
+    );
+
+    // gcRatio is high (6 GC of 10 on-CPU samples) but the process was ~99% idle,
+    // so the ratio is noise — no excessive-gc finding.
+    assert.equal(
+      idleReport.findings.some((f) => f.id === 'excessive-gc'),
+      false,
+    );
+  });
 });
 
 describe('findings – excessive-gc confidence gating', () => {

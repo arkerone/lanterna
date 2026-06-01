@@ -17,7 +17,11 @@ export const excessiveGcDetector: KindScopedDetector<'cpu'> = {
     const thresholds = DETECTOR_THRESHOLDS.excessiveGc;
     const gcRatio = report.summary.gcRatio;
     const longestPauseMs = report.gc.longestPauseMs;
-    const gcRatioExceeded = gcRatio > thresholds.ratioTrigger;
+    // gcRatio is GC time / on-CPU time; it is noise on a near-idle process where
+    // the on-CPU denominator is tiny. Only trust the ratio when the process did
+    // meaningful on-CPU work. A genuine long pause still fires on its own.
+    const gcRatioExceeded =
+      gcRatio > thresholds.ratioTrigger && report.summary.onCpuRatio >= thresholds.minOnCpuRatio;
     const longPauseExceeded = longestPauseMs > thresholds.longestPauseTrigger;
     if (!gcRatioExceeded && !longPauseExceeded) return [];
 

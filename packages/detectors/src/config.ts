@@ -69,6 +69,13 @@ export interface GcThresholds {
   readonly longestPauseCritical: number;
   readonly minDurationMs: number;
   readonly minSamples: number;
+  /**
+   * `gcRatio` (= GC time / on-CPU time) is only meaningful when the process
+   * actually spent time on-CPU. On a near-idle process a few ms of startup GC
+   * inflate the ratio (tiny denominator); require at least this on-CPU presence
+   * before firing on ratio alone. A genuine long pause still fires regardless.
+   */
+  readonly minOnCpuRatio: number;
 }
 
 export interface EventLoopThresholds {
@@ -302,6 +309,9 @@ export const DETECTOR_THRESHOLDS: DetectorThresholds = {
     // trust the ratio).
     minDurationMs: 250,
     minSamples: 100,
+    // Don't fire ratio-only on a near-idle process (tiny on-CPU denominator
+    // makes a few ms of startup GC look like a huge ratio).
+    minOnCpuRatio: 0.05,
   },
   eventLoopStall: {
     // Heartbeat-backed thresholds.
