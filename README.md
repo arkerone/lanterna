@@ -89,6 +89,8 @@ lanterna run --kind memory --heap-snapshot-analysis --duration 60s -- node app.j
 
 Lanterna ships 19 detectors out of the box, including 3 cross-kind detectors (`alloc-in-hot-path` for `cpu + memory`, `hot-async-context` and `event-loop-blocked-async` for `cpu + async`). Each emits a `Finding` in the report with `confidence` and `proofLevel` so consumers can distinguish direct sampled evidence from heuristics.
 
+Most built-in detectors are stable in the example E2E suite. `deopt-loop`, `deep-async-chain`, and `hot-async-context` are treated as best-effort verification targets because they depend on V8 trace timing or async/CPU correlation; when present, agent output marks that evidence as caveated.
+
 **CPU kind** (9)
 
 | ID | What it flags |
@@ -153,9 +155,11 @@ Start here, then dive into whichever topic you need:
 - **[docs/report-schema.md](docs/report-schema.md)** — `LanternaReport` shape (schema v2).
 - **[docs/reading-a-report.md](docs/reading-a-report.md)** — interpretation playbook and common mistakes.
 - **[docs/signal-quality.md](docs/signal-quality.md)** — confidence, integrity flags, degradation modes.
+- **[docs/security-and-privacy.md](docs/security-and-privacy.md)** — inspector, plugin, report, and heap-snapshot trust model.
 - **[docs/architecture.md](docs/architecture.md)** — capture flow and enrichment pipeline.
 - **[docs/troubleshooting.md](docs/troubleshooting.md)** — symptom-keyed fixes.
 - **[docs/performance-overhead.md](docs/performance-overhead.md)** — measured startup cost and steady-state overhead per kind.
+- **[docs/testing-and-coverage.md](docs/testing-and-coverage.md)** — test layers, coverage gate, and known instrumentation coverage gaps.
 
 Per-kind details:
 
@@ -202,6 +206,7 @@ Dependency direction: `cli → core`, `cli → detectors`, `detectors → core`.
 npm install
 npm run build       # builds all three packages
 npm test            # runs every package's vitest suite
+npm run test:e2e:smoke
 ```
 
 Per-package work: `npm run build -w @lanterna-profiler/core`, `npm test -w @lanterna-profiler/cli`, etc.

@@ -14,6 +14,8 @@ A plugin is an ES module with at least one of:
 - a `default` export — `LanternaDetectorPlugin`, called with the analysis pipeline so it can register analyzers,
 - a named `kinds: ProfileKind[]` export — additional profile kinds.
 
+Plugins are trusted code. Detector plugins run in the Lanterna CLI process; profile-kind plugins can also contribute hook code that runs in the target process. Review and pin plugin packages before using them in shared configs. See [security-and-privacy.md](../security-and-privacy.md).
+
 ```ts
 // @acme/lanterna-detectors-prisma/src/index.ts
 import type { LanternaDetectorPlugin } from '@lanterna-profiler/detectors';

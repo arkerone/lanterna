@@ -89,7 +89,10 @@ This keeps a versioned baseline (e.g. workload, output format) and lets a develo
 
 Plugins listed here are loaded for every run. Authors can add more on the command line with `--detectors <spec>`.
 
+Plugins are trusted code loaded by the Lanterna CLI, and profile-kind plugins may inject target runtime hooks. Pin and review shared plugin entries the same way you review other developer tooling dependencies. See [security-and-privacy.md](./security-and-privacy.md).
+
 ## See also
 
 - [cli.md](./cli.md) — option reference and command semantics.
 - [extending/plugin-loading.md](./extending/plugin-loading.md) — how `detectors` entries are resolved and what a plugin module must export.
+- [security-and-privacy.md](./security-and-privacy.md) — trust model for reports, plugins, inspector, and heap snapshots.
