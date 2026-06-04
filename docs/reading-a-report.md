@@ -64,7 +64,7 @@ The full catalog (with triggers and remediations) lives in [extending/detectors.
 | `large-allocator:<frame>` | memory | A single frame owns ≥ 15 % of sampled allocations. |
 | `external-buffer-pressure` | memory | Off-heap (`external`) dominates `heapUsed`. Look at Buffer/ArrayBuffer churn. |
 | `alloc-in-hot-path:<frame>` | cross-kind | Frame hot on CPU **and** in top allocators — highest-leverage fix. |
-| `deep-async-chain:<id>` | async | Async parent chain too deep — often accidental sequential `await`. |
+| `deep-async-chain:<id>` | async | Recursion through promises (`recursionDepth` high). Sequential `await` loops and `Promise.all` fan-outs are not flagged. |
 | `long-await:<id>` | async | One `await` boundary is significantly longer than peers. |
 | `orphan-async-resource` | async | Async resources started during capture and never resolved. |
 | `microtask-flood` | async | Microtask volume crosses a per-window threshold (requires `--async-include-microtasks`). |

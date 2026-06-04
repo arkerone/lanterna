@@ -118,7 +118,7 @@ Lanterna ships 19 detectors out of the box, including 3 cross-kind detectors (`a
 | --- | --- |
 | `long-await` | `await` expressions exceeding the wait-time threshold |
 | `orphan-async-resource` | Async resources created but never resolved / destroyed |
-| `deep-async-chain` | Deeply nested await chains amplifying latency |
+| `deep-async-chain` | Recursive promise/await chains where the same user frame repeats across async creation stacks |
 | `microtask-flood` | Microtask queue saturation starving the event loop |
 | `hot-async-context` | Async contexts dominating CPU (cross-kind: requires both `cpu` and `async`, auto-skips otherwise) |
 | `event-loop-blocked-async` | An async op's wait overlaps an event-loop stall — latency is a blocked loop, not slow I/O; anchored on the synchronous CPU frame (cross-kind: requires both `cpu` and `async`, auto-skips otherwise) |

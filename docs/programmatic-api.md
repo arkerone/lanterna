@@ -216,7 +216,7 @@ From `@lanterna-profiler/core`:
 - **Sources** — `SpawnSource`, `AttachSource`, `ProfileSource`.
 - **Kind authoring** — `ProfileKind`, `CaptureProbe`, `KindAnalysisContributor`, `createKindRegistry`, `createCpuProfileKind`, `createMemoryProfileKind`, `createAsyncProfileKind`.
 - **Detectors seam** — `KindScopedDetector<K>`, `createFindingAnalyzerFromKindScopedDetector`, `defineFindingAnalyzer`, `defineSectionAnalyzer`, `createAnalysisPipeline`.
-- **Report** — `buildLanternaReport`, `serializeReport`, `buildReportSchema`, types (`LanternaReport`, `Finding`, `Hotspot`, `ProfileQuality`, `CaptureBundle`).
+- **Report** — `buildLanternaReport`, `serializeReport`, `buildReportSchema`, `parseAsyncProfileReport`, `asyncProfileReportSchema`, types (`LanternaReport`, `Finding`, `Hotspot`, `ProfileQuality`, `CaptureBundle`).
 - **Noise filters** — `registerNoiseFilter`, `classifyNoiseUrl`, `classifyNoisePackage`, `isNoiseCategory`, `isNoiseRetainerPath`, `shouldKeepNoiseFrames`.
 
 From `@lanterna-profiler/detectors`:

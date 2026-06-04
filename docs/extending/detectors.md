@@ -162,7 +162,7 @@ The default pack lives in `@lanterna-profiler/detectors` and pre-wires detectors
 
 | Finding id | Trigger |
 | --- | --- |
-| `deep-async-chain:<rootAsyncId>` | Async parent chain exceeds the configured depth threshold. |
+| `deep-async-chain:<rootAsyncId>` | Recursion through promises — a user frame repeats `recursionDepth`× in a creation stack, past the threshold; sequential `await` loops and fan-outs are not flagged. |
 | `long-await:<asyncId>` | An `await` boundary spent significantly longer than its peers. |
 | `orphan-async-resource` | Async resources never resolved or destroyed during capture. |
 | `microtask-flood` | Microtask volume crosses a per-window threshold (requires `--async-include-microtasks`). |

@@ -8,7 +8,7 @@ For agent analysis, capture in JSON (`--format json --output report.json`), then
 
 ## Agent Frontmatter Contract
 
-The current frontmatter source of truth is `packages/cli/src/renderers/agent-renderer.ts`. Read this YAML block before `## Findings`; it is the report-level signal gate that decides whether detailed evidence can be used for diagnosis.
+The current frontmatter source of truth is `packages/cli/src/renderers/agent/frontmatter.ts`, called by `packages/cli/src/renderers/agent/renderer.ts`. Read this YAML block before `## Findings`; it is the report-level signal gate that decides whether detailed evidence can be used for diagnosis.
 
 | Key | Renderer source | Analysis use |
 |---|---|---|
