@@ -230,3 +230,4 @@ These fields are intentionally separate from `severity`: severity estimates impa
 - [kinds/cpu.md](./kinds/cpu.md) / [kinds/memory.md](./kinds/memory.md) / [kinds/async.md](./kinds/async.md) — per-kind details.
 - [extending/profile-kinds.md](./extending/profile-kinds.md) — add a new measurement axis.
 - [extending/detectors.md](./extending/detectors.md) — add a new finding rule.
+- [adr/](./adr/) — recorded architecture decisions.

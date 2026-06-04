@@ -4,8 +4,8 @@ A minimal harness for measuring the overhead Lanterna adds on top of unprofiled 
 
 ## Scenarios
 
-- **cpu-fib** — recursive `fib(36)` repeated `BENCH_FIB_ITERATIONS` times. Pure CPU, no allocations, no I/O. Exercises the V8 sampling profiler hot path.
-- **alloc-heavy** — `BENCH_ALLOC_ITERATIONS` short-lived `Array(64)` allocations. Exercises the heap allocation profile and `process.memoryUsage()` sampling cadence.
+- **cpu-fib** — recursive `fib(BENCH_FIB_N)` repeated `BENCH_FIB_ITERATIONS` times. Defaults to `fib(37)` x 20. Pure CPU, no allocations, no I/O. Exercises the V8 sampling profiler hot path.
+- **alloc-heavy** — `BENCH_ALLOC_ITERATIONS` short-lived `Array(BENCH_ALLOC_PAYLOAD_SIZE)` allocations. Defaults to 25,000,000 x 64. Exercises the heap allocation profile and `process.memoryUsage()` sampling cadence.
 
 Both scenarios run for ~1–3 seconds at default settings.
 
@@ -20,7 +20,7 @@ The output is a Markdown table of median wall times and overhead percentages, su
 
 ## Methodology
 
-- Each scenario runs in baseline (no Lanterna) and one Lanterna mode, `BENCH_RUNS` (default 3) times.
+- Each scenario runs in baseline (no Lanterna) and its configured Lanterna mode, `BENCH_RUNS` (default 3) times. The current modes are `lanterna-cpu` for `cpu-fib` and `lanterna-memory` for `alloc-heavy`.
 - Wall time is measured with `process.hrtime.bigint()` around `child_process.spawn()` — includes child startup.
 - The Lanterna report is written to a temp directory and discarded; we only care about wall-time impact, not report contents.
 - Overhead is reported as `(lanterna_median - baseline_median) / baseline_median`.
@@ -30,9 +30,9 @@ The output is a Markdown table of median wall times and overhead percentages, su
 | Variable | Default | Effect |
 | --- | --- | --- |
 | `BENCH_RUNS` | 3 | Number of runs per (scenario, mode) — increase to reduce noise. |
-| `BENCH_FIB_N` | 36 | Recursion depth for cpu-fib. |
-| `BENCH_FIB_ITERATIONS` | 6 | Outer loop count for cpu-fib. |
-| `BENCH_ALLOC_ITERATIONS` | 800000 | Outer loop count for alloc-heavy. |
+| `BENCH_FIB_N` | 37 | Recursion depth for cpu-fib. |
+| `BENCH_FIB_ITERATIONS` | 20 | Outer loop count for cpu-fib. |
+| `BENCH_ALLOC_ITERATIONS` | 25000000 | Outer loop count for alloc-heavy. |
 | `BENCH_ALLOC_PAYLOAD_SIZE` | 64 | Per-iteration array size for alloc-heavy. |
 
 ## Caveats

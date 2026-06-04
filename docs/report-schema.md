@@ -4,6 +4,8 @@ A `LanternaReport` is the structured JSON Lanterna emits after every capture. Th
 
 > The Zod schema is composed dynamically from active kinds via `buildReportSchema(kinds)` exported by [`@lanterna-profiler/core`](../packages/core). The discriminator below is therefore the source of truth at runtime; this page mirrors it for human reading.
 
+For the built-in async section, `@lanterna-profiler/core` also exports `asyncProfileReportSchema` and `parseAsyncProfileReport()` so programmatic consumers can validate `profiles.async` directly. The generated JSON Schema lives at [docs/generated/async-profile-report.schema.json](./generated/async-profile-report.schema.json).
+
 ## Top-level shape
 
 ```ts

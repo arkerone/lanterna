@@ -279,4 +279,11 @@ export const FIXED_EXAMPLES = [
     durationMs: 7000,
     forbid: ['alloc-in-hot-path'],
   },
+  {
+    dir: 'deep-async-chain',
+    app: 'app.fixed.js',
+    kinds: ['cpu', 'async'],
+    durationMs: 8000,
+    forbid: ['deep-async-chain'],
+  },
 ];
