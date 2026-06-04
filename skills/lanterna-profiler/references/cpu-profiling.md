@@ -69,6 +69,7 @@ Start with the `## Findings` table, which renders findings in priority order. Va
 - Patch mechanically only when attribution is high-confidence and `remediation` is populated.
 - For attributed findings (`blocking-io`, `sync-crypto`, `require-in-hot-path`, `node-modules-hotspot`, `json-on-hot-path`), do not patch the user caller when `evidence.extra.attributionConfidence === "low"`.
 - For `cpu-hotspot:*`, check `evidence.extra.mode`. `self` is direct user-code CPU evidence: inspect the reported function body for loops, repeated transformations, CPU-bound scoring/parsing, cache misses, or work that belongs in `worker_threads` / Piscina. `inclusive-entry` is lower-confidence caller evidence: inspect callees and hot stacks first.
+- Treat `deopt-loop:*` as best-effort. It depends on `--deep` V8 trace output plus CPU profile overlap, so use it to inspect shape/type instability in the cited function and corroborate before claiming a definitive JIT root cause.
 - For legacy reports without top-level `finding.proofLevel`, fall back to `evidence.extra.proofLevel`.
 - If `categoryTotalPct` is much larger than `calleeTotalPct`, prefer a structural fix for the family of calls over replacing one call site.
 

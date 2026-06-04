@@ -102,6 +102,16 @@ The threshold block is `DETECTOR_THRESHOLDS.cpuHotspot`:
 
 `event-loop-stall` also has two evidence modes in `evidence.extra.proofLevel`: `aggregate-correlation` for strong stall-window attribution, and `hotspot-fallback` when the event-loop lag is real but the source location is only the hottest user CPU lead.
 
+## Detector Reliability Tiers
+
+Most built-in detectors are expected to be deterministic under representative load and sufficient signal quality. Three built-ins are explicitly best-effort:
+
+- `deopt-loop:*`: depends on V8 deopt trace output collected with `--deep` and matched back to hot CPU frames.
+- `deep-async-chain:*`: depends on async resource parentage and captured creation stacks.
+- `hot-async-context:*`: depends on async/CPU correlation and repeated context entry.
+
+When one of these findings is present, the agent renderer surfaces `best-effort detector evidence present` in `degrading_caveats`. Treat the finding as an inspection lead, not a standalone root-cause proof. Detector authors should set `confidence` and `proofLevel` honestly instead of relying on severity alone.
+
 ## Multi-Kind Contract
 
 - `ProfileKind.id`: CLI/runtime identity and `meta.kinds.<kindId>`; it appears in `meta.profileKinds[]` only when capture data was produced.
@@ -113,6 +123,8 @@ The threshold block is `DETECTOR_THRESHOLDS.cpuHotspot`:
 ## CLI Plugins
 
 Plugins are ES modules loaded with `--detectors <spec>` or from `.lanterna.json` / `.lanterna.config.json`.
+
+Plugins are trusted code. Detector plugins run in the Lanterna CLI process; profile-kind plugins can also contribute hooks that run in the target process. Review and pin plugin packages before using them in shared configs or production-like captures.
 
 A plugin may export:
 

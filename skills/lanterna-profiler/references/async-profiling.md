@@ -98,6 +98,8 @@ Async findings usually include:
 - `hot-async-context` / async CPU attribution findings when combined with CPU data.
 - `microtask-flood` when microtask or TickObject volume dominates and microtasks were included.
 
+Treat `deep-async-chain:*` and `hot-async-context:*` as best-effort detector findings. They are useful inspection leads for recursion-through-promises or repeated async context entry, but avoid definitive claims until the source shape and/or a repeat capture confirms the pattern.
+
 Prefer findings that the `decision` column marks actionable, with high confidence, clear rendered `location` / fallback, and corroborating top operations or chains. For orphan resources, inspect whether the resource is intentionally long-lived before patching.
 
 ## Source Positions

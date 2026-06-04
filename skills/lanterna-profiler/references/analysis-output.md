@@ -52,6 +52,7 @@ Every answer, including quick replies, must surface the frontmatter gate: availa
 - **Medium**: signal is useful but degraded, source confirmation is partial, the user caller is medium confidence, or causality depends on a reasonable but unmeasured link.
 - **Low**: capture is short, idle, low-sample, attach-limited, source maps are weak, event-loop timing is unavailable, or the finding is a heuristic.
 - **Rerun-only**: `rerun_required: true`, a non-empty `blocking_caveats` list, a `decision = rerun` finding, or a missing kind required for the user's symptom. Do not claim root cause or propose a patch.
+- `best-effort detector evidence present` is a degrading caveat, not rerun-only by itself. Cap affected `deopt-loop:*`, `deep-async-chain:*`, and `hot-async-context:*` conclusions at medium unless source inspection and/or a repeat capture corroborates them.
 - Never increase confidence above the report's caveats. A good-looking source explanation does not rescue a non-representative capture.
 
 ## Evidence Rules
@@ -61,6 +62,7 @@ Every answer, including quick replies, must surface the frontmatter gate: availa
 - Include the specific report observation: finding id, decision, proof, metric, threshold, hotspot, allocator, async operation, caveat, or kind review line.
 - For CPU reports, separate the self-heavy culprit from caller context when both are present: `top_cpu_culprit` answers which function body burned CPU; `top_request_entry` / `top_user_hotspot` explains the request or caller path.
 - Treat `cpu-hotspot:*` according to `evidence.extra.mode`: `self` can be actionable direct CPU evidence when quality and source inspection support it; `inclusive-entry` is a caller/context hypothesis until callees or hot stacks confirm the expensive body.
+- Treat best-effort findings (`deopt-loop:*`, `deep-async-chain:*`, `hot-async-context:*`) as inspection leads first. Name the caveat, inspect the cited source, and ask for a repeat capture when the proposed fix would be risky or expensive.
 - For `event-loop-stall` with `hotspot-fallback`, say event-loop lag was observed but causality is weaker; use the fallback frame as the next source lead or rerun target.
 - Include code observations only after reading the relevant files. Name the file/function and why it confirms or weakens the lead.
 - Keep `user_caller` confidence, support percentage, and generated/source-map fallback visible when those details affect actionability.
