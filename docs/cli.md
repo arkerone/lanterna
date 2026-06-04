@@ -89,6 +89,7 @@ Constraints:
 - `attach --pid` relies on `SIGUSR1` and is **POSIX-only**. On Windows, use `--inspect-url`.
 - Attach mode does **not** support `--deep` — V8 deopt tracing cannot be enabled on a process that has already started.
 - `--kind async` works in attach mode but capture is partial: resources and code loaded before hook installation cannot be observed. See [kinds/async.md](./kinds/async.md).
+- Attach mode uses the V8 inspector and installs runtime hooks in the target process. Read [security-and-privacy.md](./security-and-privacy.md) before using it against sensitive or production-like services.
 
 ## `lanterna ps`
 

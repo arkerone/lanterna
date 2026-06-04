@@ -134,7 +134,7 @@ pipeline.register(defineFindingAnalyzer({
 
 ## Built-in findings
 
-The default pack lives in `@lanterna-profiler/detectors` and pre-wires detectors per kind via `withBuiltIn{Cpu,Memory,Async}Detectors`. Use the table below as inspiration for your own rules.
+The default pack lives in `@lanterna-profiler/detectors` and pre-wires detectors per kind via `withBuiltIn{Cpu,Memory,Async}Detectors`. Use the table below as inspiration for your own rules. Findings marked best-effort depend on V8 trace timing or async/CPU correlation enough that the example E2E suite treats misses as warnings instead of hard failures.
 
 ### CPU detectors
 
@@ -147,7 +147,7 @@ The default pack lives in `@lanterna-profiler/detectors` and pre-wires detectors
 | `cpu-hotspot:<frame>` | User-code self CPU ≥ 10%, or inclusive CPU ≥ 25% as a lower-confidence caller lead, when no more specific CPU detector already explains the frame. |
 | `excessive-gc` | `gcRatio > 10%` on a non-idle process (`onCpuRatio ≥ 5%`), or `longestPauseMs > 100ms`. |
 | `event-loop-stall` | `p99LagMs >= 100` or `maxLagMs >= 200`; anchors to strong stall correlation when available, otherwise to the hottest user CPU fallback. |
-| `deopt-loop:<function>` | Same deoptimised function seen ≥ 5 times (`--deep`) and hot in the profile. |
+| `deopt-loop:<function>` | Same deoptimised function seen ≥ 5 times (`--deep`) and hot in the profile. Best-effort in E2E. |
 | `require-in-hot-path` | Module loading functions sampled on the hot path. |
 
 ### Memory detectors
@@ -162,11 +162,11 @@ The default pack lives in `@lanterna-profiler/detectors` and pre-wires detectors
 
 | Finding id | Trigger |
 | --- | --- |
-| `deep-async-chain:<rootAsyncId>` | Recursion through promises — a user frame repeats `recursionDepth`× in a creation stack, past the threshold; sequential `await` loops and fan-outs are not flagged. |
+| `deep-async-chain:<rootAsyncId>` | Recursion through promises — a user frame repeats `recursionDepth`× in a creation stack, past the threshold; sequential `await` loops and fan-outs are not flagged. Best-effort in E2E. |
 | `long-await:<asyncId>` | An `await` boundary spent significantly longer than its peers. |
 | `orphan-async-resource` | Async resources never resolved or destroyed during capture. |
 | `microtask-flood` | Microtask volume crosses a per-window threshold (requires `--async-include-microtasks`). |
-| `hot-async-context:<rootAsyncId>` | Same async context repeatedly entered. |
+| `hot-async-context:<rootAsyncId>` | Same async context repeatedly entered. Best-effort in E2E. |
 | `event-loop-blocked-async:<asyncId>` | An async op's `waitMs` overlaps an event-loop stall, with the loop still blocked when the callback became runnable — latency is a blocked loop, not slow I/O. Anchored on the synchronous CPU frame. Requires `--kind cpu,async`. |
 
 ### Cross-kind
