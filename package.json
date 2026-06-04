@@ -21,6 +21,8 @@
     "format:check": "biome format .",
     "check": "biome check .",
     "check:fix": "biome check --write .",
+    "docs:generate": "npm run build -w @lanterna-profiler/core && node scripts/generate-async-report-schema.mjs",
+    "docs:check": "npm run build -w @lanterna-profiler/core && node scripts/generate-async-report-schema.mjs --check",
     "typecheck": "turbo run typecheck",
     "pack:check": "node scripts/check-packages.mjs",
     "clean": "turbo run clean && rm -rf node_modules/.cache .turbo",
