@@ -689,6 +689,39 @@ describe('renderReport', () => {
     expect(output).not.toContain('## Kind Review — async');
   });
 
+  it('surfaces best-effort detector findings as agent caveats', () => {
+    const output = renderReport(
+      {
+        meta: baseMeta,
+        profiles: {},
+        findings: [
+          {
+            id: 'deopt-loop:unstableShape',
+            profileKind: 'cpu',
+            severity: 'warning',
+            category: 'deopt-loop',
+            title: 'Hot function repeatedly deoptimised',
+            confidence: 'medium',
+            proofLevel: 'trace-only',
+            evidence: {
+              file: '/repo/server.js',
+              line: 42,
+              function: 'handle',
+              selfPct: 0,
+            },
+            why: 'The function was hot and appeared in V8 deopt traces.',
+            suggestion: 'Stabilise object shapes and rerun with --deep.',
+            references: [],
+          },
+        ],
+      },
+      { format: 'agent' },
+    );
+
+    expect(output).toContain('best-effort detector evidence present');
+    expect(output).toContain('rerun_required: false');
+  });
+
   it('does not force rerun for CPU findings when only event-loop and GC timing are unavailable', () => {
     const output = renderReport(
       {
