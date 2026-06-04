@@ -18,6 +18,7 @@
     "LICENSE"
   ],
   "scripts": {
+    "prebuild": "npm run prebuild -w @lanterna-profiler/core",
     "build": "tsc -b",
     "dev": "tsc -b --watch",
     "test": "vitest run",
