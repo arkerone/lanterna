@@ -146,6 +146,22 @@ describe('profile commands', () => {
     );
   });
 
+  it('does not warn about async instrumentation when only cpu is selected', async () => {
+    await runCommand({
+      command: ['node', 'app.js'],
+      pretty: true,
+      format: 'json',
+      deep: false,
+      sampleIntervalMicros: 1000,
+      detectors: [],
+      kinds: ['cpu'],
+    });
+
+    expect(stderrWrite).not.toHaveBeenCalledWith(
+      expect.stringContaining('--kind async is experimental'),
+    );
+  });
+
   it('warns when async kind is selected', async () => {
     await runCommand({
       command: ['node', 'app.js'],

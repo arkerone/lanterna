@@ -12,8 +12,6 @@ import { Command, CommanderError } from 'commander';
 import { OPTION_FLAGS } from './option-descriptors.js';
 import {
   DEFAULT_WAIT_TIMEOUT_MS,
-  heapSnapshotOptionName,
-  normalizeKinds,
   type OutputFormat,
   PROVIDED_FLAG_ALIASES,
   parseDurationMs,
@@ -22,53 +20,15 @@ import {
   parseOutputFormat as parseOutputFormatValue,
   parseSampleIntervalMicros,
 } from './options-normalization.js';
+import {
+  type NormalizedProfileOptions,
+  normalizeProfileOptions,
+  type ParsedProfileOptionInput,
+} from './options-policy.js';
 
 export type { OutputFormat } from './options-normalization.js';
 
-interface ParsedCommonOptions {
-  duration?: number;
-  output?: string;
-  format?: OutputFormat;
-  pretty?: boolean;
-  sampleInterval?: number;
-  heapSampleInterval?: number;
-  memoryUsageInterval?: number;
-  includeMemorySamples?: boolean;
-  heapSnapshotAnalysis?: boolean;
-  heapSnapshotDir?: string;
-  asyncMaxEvents?: number;
-  asyncStackDepth?: number;
-  asyncIncludeMicrotasks?: boolean;
-  asyncConcurrencyInterval?: number;
-  asyncInstrumentation?: 'off' | 'safe' | 'full';
-  detectors?: string[];
-  kind?: string[];
-  /** Commander negates `--no-source-maps` to `sourceMaps: false`. Default true. */
-  sourceMaps?: boolean;
-}
-
-interface NormalizedCommonOptions {
-  durationMs?: number;
-  output?: string;
-  format: OutputFormat;
-  pretty: boolean;
-  sampleIntervalMicros: number;
-  heapSamplingIntervalBytes: number;
-  memoryUsageIntervalMs: number;
-  includeMemoryUsageSamples: boolean;
-  heapSnapshotAnalysis: {
-    enabled: boolean;
-    outputDir?: string;
-  };
-  asyncMaxRecords: number;
-  asyncStackDepth: number;
-  asyncIncludeMicrotasks: boolean;
-  asyncConcurrencyIntervalMs: number;
-  asyncInstrumentation: 'off' | 'safe' | 'full';
-  detectors: string[];
-  kinds: string[];
-  sourceMaps: boolean;
-}
+interface ParsedCommonOptions extends ParsedProfileOptionInput {}
 
 interface ParsedRunOptions extends ParsedCommonOptions {
   deep?: boolean;
@@ -224,46 +184,8 @@ export function parsePsArgs(args: string[]): PsOptions {
   return withProvidedFlags(options, collectProvidedFlags(args));
 }
 
-function normalizeCommonOptions(parsed: ParsedCommonOptions): NormalizedCommonOptions {
-  const kinds = normalizeKinds(parsed.kind, ['cpu']);
-  const heapSnapshotRequested = Boolean(parsed.heapSnapshotAnalysis || parsed.heapSnapshotDir);
-  if (heapSnapshotRequested && !kinds.includes('memory')) {
-    const option = heapSnapshotOptionName(parsed);
-    throw new Error(`${option} requires --kind memory`);
-  }
-  const asyncFlagRequested =
-    parsed.asyncMaxEvents !== undefined ||
-    parsed.asyncStackDepth !== undefined ||
-    parsed.asyncIncludeMicrotasks !== undefined ||
-    parsed.asyncConcurrencyInterval !== undefined ||
-    parsed.asyncInstrumentation !== undefined;
-  if (asyncFlagRequested && !kinds.includes('async')) {
-    throw new Error('--async-* options require --kind async');
-  }
-  const options: NormalizedCommonOptions = {
-    format: parsed.format ?? 'json',
-    pretty: Boolean(parsed.pretty),
-    sourceMaps: parsed.sourceMaps !== false,
-    sampleIntervalMicros: parsed.sampleInterval ?? DEFAULT_SAMPLE_INTERVAL_MICROS,
-    heapSamplingIntervalBytes: parsed.heapSampleInterval ?? DEFAULT_MEMORY_SAMPLING_INTERVAL_BYTES,
-    memoryUsageIntervalMs: parsed.memoryUsageInterval ?? DEFAULT_MEMORY_USAGE_INTERVAL_MS,
-    includeMemoryUsageSamples: Boolean(parsed.includeMemorySamples),
-    heapSnapshotAnalysis: {
-      enabled: Boolean(parsed.heapSnapshotAnalysis),
-    },
-    asyncMaxRecords: parsed.asyncMaxEvents ?? DEFAULT_ASYNC_MAX_RECORDS,
-    asyncStackDepth: parsed.asyncStackDepth ?? DEFAULT_ASYNC_STACK_DEPTH,
-    asyncIncludeMicrotasks: Boolean(parsed.asyncIncludeMicrotasks),
-    asyncConcurrencyIntervalMs:
-      parsed.asyncConcurrencyInterval ?? DEFAULT_ASYNC_CONCURRENCY_INTERVAL_MS,
-    asyncInstrumentation: parsed.asyncInstrumentation ?? 'safe',
-    detectors: parsed.detectors ?? [],
-    kinds,
-  };
-  if (parsed.duration !== undefined) options.durationMs = parsed.duration;
-  if (parsed.output) options.output = parsed.output;
-  if (parsed.heapSnapshotDir) options.heapSnapshotAnalysis.outputDir = parsed.heapSnapshotDir;
-  return options;
+function normalizeCommonOptions(parsed: ParsedCommonOptions): NormalizedProfileOptions {
+  return normalizeProfileOptions(parsed);
 }
 
 function splitRunArgs(args: string[]): { optionArgs: string[]; targetCommand: string[] } {

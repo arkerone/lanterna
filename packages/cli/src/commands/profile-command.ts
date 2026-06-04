@@ -78,6 +78,7 @@ export async function executeProfileCommand(command: ExecuteProfileCommandOption
     const asyncKind = buildAsyncKind(resolvedCommand);
     const registry = createKindRegistry([cpuKind, memoryKind, asyncKind, ...pluginKinds]);
     const kinds = registry.resolveMany(options.kinds);
+    warnForSelectedKinds(resolvedCommand, kinds);
     const result = await runProfileCommand(resolvedCommand, kinds, setupPipeline, (message) => {
       indicator.update(message);
     });
@@ -168,14 +169,6 @@ function formatQualityRecommendations(recommendations: string[]): string {
 }
 
 function buildAsyncKind(command: ExecuteProfileCommandOptions): ProfileKind {
-  process.stderr.write(
-    'lanterna: --kind async is experimental and opt-in. Attach mode remains partial because resources and already-loaded code from before hook installation cannot be fully observed.\n',
-  );
-  if (command.options.asyncInstrumentation === 'full') {
-    process.stderr.write(
-      'lanterna: --async-instrumentation=full is experimental and adds AST-based `await` source instrumentation. Attach mode remains partial because already-loaded code cannot be rewritten. Prefer `safe` for lowest-risk captures.\n',
-    );
-  }
   return createAsyncProfileKindWithBuiltInDetectors({
     maxRecords: command.options.asyncMaxRecords,
     asyncStackDepth: command.options.asyncStackDepth,
@@ -184,6 +177,18 @@ function buildAsyncKind(command: ExecuteProfileCommandOptions): ProfileKind {
     instrumentationMode: command.options.asyncInstrumentation,
     attachPartialCapture: command.mode === 'attach',
   });
+}
+
+function warnForSelectedKinds(command: ExecuteProfileCommandOptions, kinds: ProfileKind[]): void {
+  if (!kinds.some((kind) => kind.id === 'async')) return;
+  process.stderr.write(
+    'lanterna: --kind async is experimental and opt-in. Attach mode remains partial because resources and already-loaded code from before hook installation cannot be fully observed.\n',
+  );
+  if (command.options.asyncInstrumentation === 'full') {
+    process.stderr.write(
+      'lanterna: --async-instrumentation=full is experimental and adds AST-based `await` source instrumentation. Attach mode remains partial because already-loaded code cannot be rewritten. Prefer `safe` for lowest-risk captures.\n',
+    );
+  }
 }
 
 function buildMemoryKind(command: ExecuteProfileCommandOptions): ProfileKind {

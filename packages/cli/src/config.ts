@@ -36,29 +36,76 @@ const SCALAR_CONFIG_KEYS = [
 
 type ScalarConfigKey = (typeof SCALAR_CONFIG_KEYS)[number];
 
+/**
+ * One scalar `.lanterna.json` option: its raw field, the canonical
+ * {@link LanternaConfig} key it lands on, the schema that validates the raw
+ * value, and how to normalize raw → canonical. The single source of truth that
+ * drives both {@link RawConfigSchema} and {@link normalizeConfig} so a new scalar
+ * option is one row, not a schema field plus a normalize branch. Options with an
+ * irregular shape (the `detectors` / `kinds` arrays, the nested
+ * `heapSnapshotAnalysis`, the interdependent `waitForUrl` / `waitTimeout`) are
+ * handled explicitly below rather than forced into this table.
+ */
+interface ScalarConfigOption {
+  readonly raw: string;
+  readonly key: keyof LanternaConfig & string;
+  readonly schema: z.ZodTypeAny;
+  readonly normalize: (raw: unknown) => unknown;
+}
+
+function scalarOption<R>(
+  raw: string,
+  key: keyof LanternaConfig & string,
+  schema: z.ZodType<R>,
+  normalize: (value: R) => unknown = (value) => value,
+): ScalarConfigOption {
+  return { raw, key, schema, normalize: (value) => normalize(value as R) };
+}
+
+const durationLike = () => z.union([z.string(), z.number()]);
+
+const SCALAR_CONFIG_OPTIONS: readonly ScalarConfigOption[] = [
+  scalarOption('duration', 'durationMs', durationLike(), (v) => parseDurationMs(v, 'duration')),
+  scalarOption('output', 'output', z.string()),
+  scalarOption('format', 'format', z.enum(['json', 'text', 'markdown', 'agent'])),
+  scalarOption('pretty', 'pretty', z.boolean()),
+  scalarOption('sourceMaps', 'sourceMaps', z.boolean()),
+  scalarOption('sampleInterval', 'sampleIntervalMicros', durationLike(), (v) =>
+    parseSampleIntervalMicros(v, 'sampleInterval'),
+  ),
+  scalarOption('heapSampleInterval', 'heapSamplingIntervalBytes', durationLike(), (v) =>
+    parseHeapSamplingIntervalBytes(v, 'heapSampleInterval'),
+  ),
+  scalarOption('memoryUsageInterval', 'memoryUsageIntervalMs', durationLike(), (v) =>
+    parseMemoryUsageIntervalMs(v, 'memoryUsageInterval'),
+  ),
+  scalarOption('includeMemorySamples', 'includeMemoryUsageSamples', z.boolean()),
+  scalarOption('asyncMaxEvents', 'asyncMaxRecords', z.number()),
+  scalarOption('asyncStackDepth', 'asyncStackDepth', z.number()),
+  scalarOption('asyncIncludeMicrotasks', 'asyncIncludeMicrotasks', z.boolean()),
+  scalarOption('asyncConcurrencyInterval', 'asyncConcurrencyIntervalMs', durationLike(), (v) =>
+    parseDurationMs(v, 'asyncConcurrencyInterval'),
+  ),
+  scalarOption('asyncInstrumentation', 'asyncInstrumentation', z.enum(['off', 'safe', 'full'])),
+  scalarOption('captureDelay', 'captureDelayMs', durationLike(), (v) =>
+    parseDurationMs(v, 'captureDelay'),
+  ),
+  scalarOption('workload', 'workload', z.string()),
+];
+
+const scalarConfigSchemaShape: z.ZodRawShape = Object.fromEntries(
+  SCALAR_CONFIG_OPTIONS.map((option) => [option.raw, option.schema.optional()]),
+);
+
+/** Options whose shape is irregular enough to stay outside {@link SCALAR_CONFIG_OPTIONS}. */
 const RawConfigSchema = z.object({
-  duration: z.union([z.string(), z.number()]).optional(),
-  output: z.string().optional(),
-  format: z.enum(['json', 'text', 'markdown', 'agent']).optional(),
-  pretty: z.boolean().optional(),
-  sourceMaps: z.boolean().optional(),
   detectors: z.array(z.string()).optional(),
   kinds: z.array(z.string()).optional(),
-  sampleInterval: z.union([z.string(), z.number()]).optional(),
-  heapSampleInterval: z.union([z.string(), z.number()]).optional(),
-  memoryUsageInterval: z.union([z.string(), z.number()]).optional(),
-  includeMemorySamples: z.boolean().optional(),
   heapSnapshotAnalysis: z.boolean().optional(),
   heapSnapshotDir: z.string().optional(),
-  asyncMaxEvents: z.number().optional(),
-  asyncStackDepth: z.number().optional(),
-  asyncIncludeMicrotasks: z.boolean().optional(),
-  asyncConcurrencyInterval: z.union([z.string(), z.number()]).optional(),
-  asyncInstrumentation: z.enum(['off', 'safe', 'full']).optional(),
   waitForUrl: z.string().optional(),
-  waitTimeout: z.union([z.string(), z.number()]).optional(),
-  captureDelay: z.union([z.string(), z.number()]).optional(),
-  workload: z.string().optional(),
+  waitTimeout: durationLike().optional(),
+  ...scalarConfigSchemaShape,
 });
 
 export interface LanternaConfig {
@@ -204,50 +251,21 @@ class ConfigMerger<TOptions extends ConfigurableOptions> {
 
 function normalizeConfig(raw: z.infer<typeof RawConfigSchema>): LanternaConfig {
   const config: LanternaConfig = {};
-  if (raw.duration !== undefined) config.durationMs = parseDurationMs(raw.duration, 'duration');
-  if (raw.output !== undefined) config.output = raw.output;
-  if (raw.format !== undefined) config.format = raw.format;
-  if (raw.pretty !== undefined) config.pretty = raw.pretty;
-  if (raw.sourceMaps !== undefined) config.sourceMaps = raw.sourceMaps;
+  const rawValues = raw as Record<string, unknown>;
+  const target = config as Record<string, unknown>;
+
+  for (const option of SCALAR_CONFIG_OPTIONS) {
+    const value = rawValues[option.raw];
+    if (value !== undefined) target[option.key] = option.normalize(value);
+  }
+
+  // Irregular shapes the scalar table can't express: array merges, the nested
+  // heap-snapshot object, and the waitForUrl → waitTimeout default.
   if (raw.detectors !== undefined) config.detectors = raw.detectors;
   if (raw.kinds !== undefined) config.kinds = normalizeKinds(raw.kinds);
-  if (raw.sampleInterval !== undefined) {
-    config.sampleIntervalMicros = parseSampleIntervalMicros(raw.sampleInterval, 'sampleInterval');
-  }
-  if (raw.heapSampleInterval !== undefined) {
-    config.heapSamplingIntervalBytes = parseHeapSamplingIntervalBytes(
-      raw.heapSampleInterval,
-      'heapSampleInterval',
-    );
-  }
-  if (raw.memoryUsageInterval !== undefined) {
-    config.memoryUsageIntervalMs = parseMemoryUsageIntervalMs(
-      raw.memoryUsageInterval,
-      'memoryUsageInterval',
-    );
-  }
-  if (raw.includeMemorySamples !== undefined) {
-    config.includeMemoryUsageSamples = raw.includeMemorySamples;
-  }
   if (raw.heapSnapshotAnalysis !== undefined || raw.heapSnapshotDir !== undefined) {
-    config.heapSnapshotAnalysis = {
-      enabled: Boolean(raw.heapSnapshotAnalysis),
-    };
+    config.heapSnapshotAnalysis = { enabled: Boolean(raw.heapSnapshotAnalysis) };
     if (raw.heapSnapshotDir) config.heapSnapshotAnalysis.outputDir = raw.heapSnapshotDir;
-  }
-  if (raw.asyncMaxEvents !== undefined) config.asyncMaxRecords = raw.asyncMaxEvents;
-  if (raw.asyncStackDepth !== undefined) config.asyncStackDepth = raw.asyncStackDepth;
-  if (raw.asyncIncludeMicrotasks !== undefined) {
-    config.asyncIncludeMicrotasks = raw.asyncIncludeMicrotasks;
-  }
-  if (raw.asyncConcurrencyInterval !== undefined) {
-    config.asyncConcurrencyIntervalMs = parseDurationMs(
-      raw.asyncConcurrencyInterval,
-      'asyncConcurrencyInterval',
-    );
-  }
-  if (raw.asyncInstrumentation !== undefined) {
-    config.asyncInstrumentation = raw.asyncInstrumentation;
   }
   if (raw.waitForUrl !== undefined) config.waitForUrl = raw.waitForUrl;
   if (raw.waitTimeout !== undefined) {
@@ -255,10 +273,6 @@ function normalizeConfig(raw: z.infer<typeof RawConfigSchema>): LanternaConfig {
   } else if (raw.waitForUrl !== undefined) {
     config.waitTimeoutMs = DEFAULT_WAIT_TIMEOUT_MS;
   }
-  if (raw.captureDelay !== undefined) {
-    config.captureDelayMs = parseDurationMs(raw.captureDelay, 'captureDelay');
-  }
-  if (raw.workload !== undefined) config.workload = raw.workload;
   return config;
 }
 

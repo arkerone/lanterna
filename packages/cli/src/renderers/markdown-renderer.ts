@@ -2,11 +2,9 @@ import type {
   AsyncCpuAttributionEntry,
   AsyncHotFile,
   AsyncTopOperation,
-  Finding,
   Hotspot,
   LanternaReport,
   MemoryHotAllocator,
-  UserCallerAttribution,
 } from '@lanterna-profiler/core';
 import {
   formatBytes,
@@ -19,12 +17,15 @@ import {
   formatUserCaller,
 } from './formatting.js';
 import { renderValue } from './generic.js';
+import type { ReportFindingView } from './report-view.js';
+import { buildReportView } from './report-view.js';
 import type { RenderableFormat, ReportRenderer } from './types.js';
 
 export class MarkdownReportRenderer implements ReportRenderer {
   readonly format: RenderableFormat = 'markdown';
 
   render(report: LanternaReport): string {
+    const view = buildReportView(report);
     const lines: string[] = [];
     lines.push('# Lanterna Report');
     lines.push('');
@@ -32,7 +33,7 @@ export class MarkdownReportRenderer implements ReportRenderer {
     lines.push('| --- | --- |');
     lines.push(`| Duration | ${formatMs(report.meta?.durationMs)} |`);
     lines.push(`| Command | \`${escapeBackticks(formatCommand(report.meta?.command))}\` |`);
-    const sourceMaps = report.meta?.captureIntegrity?.sourceMaps;
+    const sourceMaps = view.sourceMaps;
     if (sourceMaps?.enabled) {
       const status = sourceMaps.status ? `, status ${sourceMaps.status}` : '';
       const applicable =
@@ -43,8 +44,9 @@ export class MarkdownReportRenderer implements ReportRenderer {
     }
     lines.push('');
 
-    const cpu = report.profiles?.cpu;
-    if (cpu) {
+    const cpuView = view.cpu;
+    if (cpuView) {
+      const cpu = cpuView.profile;
       lines.push('## CPU');
       lines.push('');
       lines.push(`- On CPU: ${formatRatio(cpu.summary?.onCpuRatio)}`);
@@ -52,66 +54,64 @@ export class MarkdownReportRenderer implements ReportRenderer {
       lines.push(
         `- GC: ${formatMs(cpu.gc?.totalPauseMs)} total pause, ${formatMs(cpu.gc?.longestPauseMs)} longest`,
       );
-      if (cpu.summary?.topCpuCulprit) {
+      if (cpuView.topCpuCulprit) {
         lines.push(
-          `- Top CPU culprit: ${escapePipe(cpu.summary.topCpuCulprit.function)} at \`${escapeBackticks(formatFrameLocation(cpu.summary.topCpuCulprit))}\` (${formatPct(cpu.summary.topCpuCulprit.selfPct)} self, ${formatPct(cpu.summary.topCpuCulprit.totalPct)} total)`,
+          `- Top CPU culprit: ${escapePipe(cpuView.topCpuCulprit.function)} at \`${escapeBackticks(formatFrameLocation(cpuView.topCpuCulprit))}\` (${formatPct(cpuView.topCpuCulprit.selfPct)} self, ${formatPct(cpuView.topCpuCulprit.totalPct)} total)`,
         );
       }
-      if (
-        cpu.summary?.topRequestEntry &&
-        !sameFrameLocation(cpu.summary.topRequestEntry, cpu.summary.topCpuCulprit)
-      ) {
+      if (cpuView.topRequestEntry) {
         lines.push(
-          `- Top request entry: ${escapePipe(cpu.summary.topRequestEntry.function)} at \`${escapeBackticks(formatFrameLocation(cpu.summary.topRequestEntry))}\` (${formatPct(cpu.summary.topRequestEntry.totalPct)} total)`,
+          `- Top request entry: ${escapePipe(cpuView.topRequestEntry.function)} at \`${escapeBackticks(formatFrameLocation(cpuView.topRequestEntry))}\` (${formatPct(cpuView.topRequestEntry.totalPct)} total)`,
         );
       }
       lines.push('');
       lines.push('### Top CPU Hotspots');
-      this.renderHotspots(lines, cpu.hotspots ?? []);
+      this.renderHotspots(lines, cpuView.hotspots);
       lines.push('');
     }
 
-    const memory = report.profiles?.memory;
-    if (memory) {
+    const memoryView = view.memory;
+    if (memoryView) {
+      const memory = memoryView.profile;
       lines.push('## Memory');
       lines.push('');
       lines.push(`- Quality: ${memory.quality?.confidence ?? 'unknown'}`);
       lines.push(`- Total sampled: ${formatBytes(memory.summary?.totalSampledBytes)}`);
-      if (memory.summary?.topAllocator?.userCaller) {
+      if (memoryView.topAllocatorUserCaller) {
         lines.push(
-          `- Top allocator user caller: ${formatUserCaller(memory.summary.topAllocator.userCaller)}`,
+          `- Top allocator user caller: ${formatUserCaller(memoryView.topAllocatorUserCaller)}`,
         );
       }
       lines.push('');
       lines.push('### Top Allocators');
-      this.renderAllocators(lines, memory.hotAllocators ?? []);
+      this.renderAllocators(lines, memoryView.allocators);
       lines.push('');
     }
 
-    const async_ = report.profiles?.async;
-    if (async_) {
+    const asyncView = view.async;
+    if (asyncView) {
       lines.push('## Async');
       lines.push('');
-      if (async_.summary?.topAsyncHotFile?.userCaller) {
+      if (asyncView.topHotFileUserCaller) {
         lines.push(
-          `- Top hot file user caller: ${formatUserCaller(async_.summary.topAsyncHotFile.userCaller)}`,
+          `- Top hot file user caller: ${formatUserCaller(asyncView.topHotFileUserCaller)}`,
         );
         lines.push('');
       }
       lines.push('### Top Operations');
-      this.renderAsyncTopOperations(lines, async_.topOperations ?? []);
+      this.renderAsyncTopOperations(lines, asyncView.operations);
       lines.push('');
       lines.push('### Hot Files');
-      this.renderAsyncHotFiles(lines, async_.hotFiles ?? []);
+      this.renderAsyncHotFiles(lines, asyncView.hotFiles);
       lines.push('');
       lines.push('### CPU Attribution');
-      this.renderAsyncCpuChains(lines, async_.cpuAttribution?.topChains ?? []);
+      this.renderAsyncCpuChains(lines, asyncView.cpuChains);
       lines.push('');
     }
 
     lines.push('## Findings');
     lines.push('');
-    this.renderFindings(lines, report.findings ?? []);
+    this.renderFindings(lines, view.findings);
     return `${lines.join('\n').trimEnd()}\n`;
   }
 
@@ -122,7 +122,7 @@ export class MarkdownReportRenderer implements ReportRenderer {
     }
     lines.push('| Function | Location | Self | Total | User caller |');
     lines.push('| --- | --- | ---: | ---: | --- |');
-    for (const hotspot of hotspots.slice(0, 5)) {
+    for (const hotspot of hotspots) {
       lines.push(
         `| ${escapePipe(hotspot.function)} | \`${escapeBackticks(formatFrameLocation(hotspot))}\` | ${formatPct(hotspot.selfPct)} | ${formatPct(hotspot.totalPct)} | ${hotspot.userCaller ? escapePipe(formatUserCaller(hotspot.userCaller)) : ''} |`,
       );
@@ -136,7 +136,7 @@ export class MarkdownReportRenderer implements ReportRenderer {
     }
     lines.push('| Function | Location | Self | Total | User caller |');
     lines.push('| --- | --- | ---: | ---: | --- |');
-    for (const allocator of allocators.slice(0, 5)) {
+    for (const allocator of allocators) {
       lines.push(
         `| ${escapePipe(allocator.function)} | \`${escapeBackticks(formatFrameLocation(allocator))}\` | ${formatBytes(allocator.selfBytes)} (${formatPct(allocator.selfPct)}) | ${formatBytes(allocator.totalBytes)} (${formatPct(allocator.totalPct)}) | ${allocator.userCaller ? escapePipe(formatUserCaller(allocator.userCaller)) : ''} |`,
       );
@@ -150,7 +150,7 @@ export class MarkdownReportRenderer implements ReportRenderer {
     }
     lines.push('| Async ID | Kind | Duration | Run | User caller |');
     lines.push('| ---: | --- | ---: | ---: | --- |');
-    for (const operation of operations.slice(0, 5)) {
+    for (const operation of operations) {
       lines.push(
         `| ${operation.asyncId} | ${operation.kind} | ${formatMs(operation.durationMs)} | ${formatMs(operation.runMs)} | ${operation.userCaller ? escapePipe(formatUserCaller(operation.userCaller)) : ''} |`,
       );
@@ -164,7 +164,7 @@ export class MarkdownReportRenderer implements ReportRenderer {
     }
     lines.push('| File | CPU | Ops | User caller |');
     lines.push('| --- | ---: | ---: | --- |');
-    for (const hotFile of hotFiles.slice(0, 5)) {
+    for (const hotFile of hotFiles) {
       lines.push(
         `| \`${escapeBackticks(hotFile.file)}\` | ${formatPct(hotFile.cpuPct)} | ${hotFile.operationCount} | ${hotFile.userCaller ? escapePipe(formatUserCaller(hotFile.userCaller)) : ''} |`,
       );
@@ -178,19 +178,20 @@ export class MarkdownReportRenderer implements ReportRenderer {
     }
     lines.push('| Root async ID | Kind | CPU | CPU ms | User caller |');
     lines.push('| ---: | --- | ---: | ---: | --- |');
-    for (const chain of chains.slice(0, 5)) {
+    for (const chain of chains) {
       lines.push(
         `| ${chain.rootAsyncId} | ${chain.rootKind} | ${formatPct(chain.cpuPct)} | ${formatMs(chain.cpuMs)} | ${chain.userCaller ? escapePipe(formatUserCaller(chain.userCaller)) : ''} |`,
       );
     }
   }
 
-  private renderFindings(lines: string[], findings: Finding[]): void {
+  private renderFindings(lines: string[], findings: ReportFindingView[]): void {
     if (findings.length === 0) {
       lines.push('No findings.');
       return;
     }
-    for (const finding of findings) {
+    for (const findingView of findings) {
+      const { candidateCallers, finding, userCaller } = findingView;
       lines.push(`### ${finding.title}`);
       lines.push('');
       lines.push(`- Severity: ${finding.severity}`);
@@ -198,9 +199,7 @@ export class MarkdownReportRenderer implements ReportRenderer {
       lines.push(
         `- Evidence: \`${escapeBackticks(finding.evidence.function)}\` at \`${escapeBackticks(formatFrameLocation(finding.evidence))}\``,
       );
-      const userCaller = userCallerFromEvidenceExtra(finding.evidence.extra);
       if (userCaller) lines.push(`- User caller: ${formatUserCaller(userCaller)}`);
-      const candidateCallers = candidateCallersFromEvidenceExtra(finding.evidence.extra);
       if (candidateCallers.length > 0) {
         lines.push('- Candidate callers:');
         for (const caller of candidateCallers) {
@@ -226,27 +225,4 @@ function escapePipe(value: string): string {
 
 function escapeBackticks(value: string): string {
   return value.replaceAll('`', '\\`');
-}
-
-function sameFrameLocation(
-  left: { function?: string; file: string; line: number; source?: { file: string; line: number } },
-  right:
-    | { function?: string; file: string; line: number; source?: { file: string; line: number } }
-    | undefined,
-): boolean {
-  if (!right) return false;
-  return (
-    formatFrameLocation(left) === formatFrameLocation(right) && left.function === right.function
-  );
-}
-
-function userCallerFromEvidenceExtra(extra: unknown): UserCallerAttribution | undefined {
-  if (!extra || typeof extra !== 'object') return undefined;
-  return (extra as { userCaller?: UserCallerAttribution }).userCaller;
-}
-
-function candidateCallersFromEvidenceExtra(extra: unknown): UserCallerAttribution[] {
-  if (!extra || typeof extra !== 'object') return [];
-  const candidateCallers = (extra as { candidateCallers?: unknown }).candidateCallers;
-  return Array.isArray(candidateCallers) ? (candidateCallers as UserCallerAttribution[]) : [];
 }

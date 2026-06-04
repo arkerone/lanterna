@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { renderReport } from '../src/renderers/index.js';
+import { renderReport } from '../../src/renderers/index.js';
 
 const baseMeta = {
   schemaVersion: '2',
@@ -2336,9 +2336,9 @@ describe('renderReport', () => {
 
   it('matches the full agent markdown example fixture', () => {
     const output = renderReport(agentFixtureReport(), { format: 'agent' });
-    const expected = readFileSync(new URL('./fixtures/report.agent.md', import.meta.url), 'utf8');
+    const expected = readFileSync(new URL('../fixtures/report.agent.md', import.meta.url), 'utf8');
     const docsExample = readFileSync(
-      new URL('../../../docs/examples/report.agent.md', import.meta.url),
+      new URL('../../../../docs/examples/report.agent.md', import.meta.url),
       'utf8',
     );
 
