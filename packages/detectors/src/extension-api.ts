@@ -11,4 +11,4 @@ export {
   defineFindingAnalyzer,
   defineSectionAnalyzer,
 } from '@lanterna-profiler/core';
-export type { CpuHotspotContext } from './detectors/shared.js';
+export type { CpuHotspotContext } from './detectors/shared/attribution.js';

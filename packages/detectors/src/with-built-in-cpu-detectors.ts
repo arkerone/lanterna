@@ -4,14 +4,15 @@ import {
   createCpuProfileKind,
   type ProfileKind,
 } from '@lanterna-profiler/core';
-import { createBuiltInFindingAnalyzers } from './detectors/index.js';
+import { appendBuiltInAnalyzers } from './built-in-analyzers.js';
+import { createBuiltInFindingAnalyzers } from './detectors/cpu/index.js';
 
 /**
  * Wraps an already-built CPU {@link ProfileKind} so the built-in detector
  * pack runs by default. Composable form for callers who already hold a kind.
  */
 export function withBuiltInCpuDetectors(kind: ProfileKind<CpuKindData>): ProfileKind<CpuKindData> {
-  return { ...kind, builtInAnalyzers: createBuiltInFindingAnalyzers() };
+  return appendBuiltInAnalyzers(kind, createBuiltInFindingAnalyzers());
 }
 
 /**

@@ -4,7 +4,8 @@ import {
   type MemoryKindOptions,
   type ProfileKind,
 } from '@lanterna-profiler/core';
-import { createBuiltInMemoryFindingAnalyzers } from './detectors/memory-index.js';
+import { appendBuiltInAnalyzers } from './built-in-analyzers.js';
+import { createBuiltInMemoryFindingAnalyzers } from './detectors/memory/index.js';
 
 /**
  * Wraps an already-built memory {@link ProfileKind} so the built-in memory
@@ -13,7 +14,7 @@ import { createBuiltInMemoryFindingAnalyzers } from './detectors/memory-index.js
 export function withBuiltInMemoryDetectors(
   kind: ProfileKind<MemoryKindData>,
 ): ProfileKind<MemoryKindData> {
-  return { ...kind, builtInAnalyzers: createBuiltInMemoryFindingAnalyzers() };
+  return appendBuiltInAnalyzers(kind, createBuiltInMemoryFindingAnalyzers());
 }
 
 /**

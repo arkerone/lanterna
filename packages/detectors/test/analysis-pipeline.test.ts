@@ -111,6 +111,43 @@ describe('analysis pipeline', () => {
     expect(() => serializeReport(report, { pretty: false, kinds: cpuKinds })).not.toThrow();
   });
 
+  it('runs analyzers contributed by the supplied profile kinds', () => {
+    const raw = makeRaw(loadProfile('sync-crypto'));
+    const kind = {
+      ...createCpuProfileKind({ readStderrSoFar: () => '' }),
+      builtInAnalyzers: [
+        defineFindingAnalyzer({
+          id: 'acme.kind-finding',
+          kind: 'finding',
+          run() {
+            return [
+              {
+                id: 'acme.kind-finding',
+                profileKind: 'cpu',
+                severity: 'info',
+                category: 'acme.kind-finding',
+                title: 'Kind contributed finding',
+                evidence: {
+                  file: 'kind',
+                  line: 0,
+                  function: 'kindAnalyzer',
+                  selfPct: 0,
+                },
+                why: 'The kind owns this analyzer.',
+                suggestion: 'Keep kind-specific analyzers behind the kind interface.',
+                references: [],
+              },
+            ];
+          },
+        }),
+      ],
+    };
+
+    const result = createDefaultAnalysisPipeline([kind]).run(raw, defaultOptions);
+
+    expect(result.findings).toContainEqual(expect.objectContaining({ id: 'acme.kind-finding' }));
+  });
+
   it('rejects duplicate extension namespaces', () => {
     const pipeline = createDefaultAnalysisPipeline(cpuKinds);
 

@@ -178,10 +178,16 @@ export interface OrphanAsyncResourceThresholds {
 }
 
 export interface DeepAsyncChainThresholds {
-  /** Chain depth that triggers a finding. */
-  readonly minDepth: number;
-  /** Chain depth that escalates to `critical`. */
-  readonly criticalDepth: number;
+  /**
+   * Recursion-through-promises depth that triggers a finding: the most times a
+   * single user function repeats in a resource's creation stack. Gating on this
+   * (not the structural trigger depth) is what stops sequential `while { await }`
+   * loops and `Promise.all` fan-outs — whose structural depth is high but whose
+   * recursion depth is ~1 — from firing.
+   */
+  readonly minRecursionDepth: number;
+  /** Recursion depth that escalates to `critical`. */
+  readonly criticalRecursionDepth: number;
   /** Cap on emitted findings. */
   readonly maxFindings: number;
 }
@@ -369,11 +375,15 @@ export const DETECTOR_THRESHOLDS: DetectorThresholds = {
     criticalOrphans: 500,
     minOrphanAgeMs: 1000,
   },
-  // Async chains > 30 deep usually indicate runaway recursion or callback
-  // hell; > 100 is pathological.
+  // Deep async chains are flagged by recursion depth (a user frame repeated in a
+  // resource's creation stack), not the structural trigger depth: a sequential
+  // `while { await }` loop (queue consumer, poller) or a `Promise.all` fan-out
+  // has a huge structural depth but no recursion. Recursion-through-promises
+  // repeats the recursing frame once per level, so 16+ repeats is the trigger
+  // and 32+ is pathological (the async stack depth caps how deep we can see).
   deepAsyncChain: {
-    minDepth: 30,
-    criticalDepth: 100,
+    minRecursionDepth: 16,
+    criticalRecursionDepth: 32,
     maxFindings: 3,
   },
   // Sustained backlog of pending async work — tracks closely with event-loop

@@ -6,11 +6,11 @@ import {
   createDefaultAnalysisPipeline as createCoreDefaultAnalysisPipeline,
   type ProfileKind,
 } from '@lanterna-profiler/core';
-import { createBuiltInFindingAnalyzers } from './detectors/index.js';
+import { collectBuiltInAnalyzers } from './built-in-analyzers.js';
 
 /**
  * Convenience for analyzing a {@link CaptureBundle} captured with the kinds
- * passed in. Builds a fresh pipeline (kinds + built-in CPU detectors) per
+ * passed in. Builds a fresh pipeline (kinds + their built-in detectors) per
  * call — kind options are closed over at construction, so a singleton
  * pipeline can't service different runs.
  *
@@ -27,13 +27,13 @@ export function analyzeCapture(
 }
 
 /**
- * Builds an analysis pipeline pre-registered with the given kinds and the
- * built-in CPU finding analyzers. Pass `kinds` to keep behaviour explicit —
- * core no longer assumes CPU.
+ * Builds an analysis pipeline pre-registered with the given kinds and their
+ * built-in analyzers. Kinds without an explicit `builtInAnalyzers` entry use
+ * the default detector pack for their kind id when one exists.
  */
 export function createDefaultAnalysisPipeline(kinds: ProfileKind[]): AnalysisPipeline {
   return createCoreDefaultAnalysisPipeline({
     kinds,
-    analyzers: createBuiltInFindingAnalyzers(),
+    analyzers: collectBuiltInAnalyzers(kinds),
   });
 }
