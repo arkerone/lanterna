@@ -1,6 +1,15 @@
 {
   "$schema": "https://turborepo.com/schema.json",
   "ui": "stream",
+  "globalDependencies": [
+    "package.json",
+    "scripts/**",
+    "README.md",
+    "CONTEXT.md",
+    "docs/**",
+    "skills/**",
+    "bench/**"
+  ],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
