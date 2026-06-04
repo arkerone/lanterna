@@ -29,13 +29,13 @@ The current frontmatter source of truth is `packages/cli/src/renderers/agent/fro
 | `sourcemap_status` | `sourceMaps.status` when source maps are enabled and status is defined | Failed/degraded status lowers confidence in mapped locations. This key is conditional. |
 | `sourcemap_maps_loaded` | `sourceMaps.mapsLoaded` when source maps are enabled | Zero or unexpectedly low map count explains weak mapping. This key is conditional. |
 | `blocking_caveats` | `blockingIntegrityCaveats(report)` | Non-empty list is a hard stop. Current examples include missing capture integrity and unavailable expected control channel. |
-| `degrading_caveats` | `degradingSignalCaveats(report)` | Continue only for unaffected conclusions when `rerun_required: false`; otherwise rerun. |
+| `degrading_caveats` | `degradingSignalCaveats(report)` | Continue only for unaffected conclusions when `rerun_required: false`; otherwise rerun. `best-effort detector evidence present` lowers confidence for specific detector findings but is not a rerun gate by itself. |
 
 Decision precedence:
 
 1. Non-empty `blocking_caveats`: hard stop; request corrected capture.
 2. `rerun_required: true`: do not claim root cause or propose a patch; cite the caveat or `decision = rerun` finding.
-3. Non-empty `degrading_caveats` with `rerun_required: false`: continue only for unaffected conclusions and lower confidence for degraded subsystems. Event-loop or GC timing unavailability degrades those causal claims without necessarily forcing CPU rerun.
+3. Non-empty `degrading_caveats` with `rerun_required: false`: continue only for unaffected conclusions and lower confidence for degraded subsystems. Event-loop or GC timing unavailability degrades those causal claims without necessarily forcing CPU rerun. `best-effort detector evidence present` means `deopt-loop:*`, `deep-async-chain:*`, or `hot-async-context:*` evidence is probabilistic; do not force a rerun solely for that caveat.
 4. Missing required `kind`: request a rerun with the specific `--kind` needed for the symptom.
 
 ## Top-Level Shape
