@@ -4,7 +4,7 @@ import {
   markCaptureStart,
   readRuntimeClockNow,
 } from '../inspector/runtime.js';
-import type { ProbeLifecycleContext, ProfileKind } from '../kinds/core/types.js';
+import type { ProfileKind } from '../kinds/core/types.js';
 import { composeAttachScript, composePreloadScript } from '../runtime-signals/hooks/framework.js';
 import { runtimeSignalsInstaller } from '../runtime-signals/hooks/installers/runtime-signals.js';
 import {
@@ -14,7 +14,8 @@ import {
 import { readGcEvents } from '../runtime-signals/readers/gc.js';
 import { readRuntimeIntegrity } from '../runtime-signals/readers/integrity.js';
 import { HEARTBEAT_RESOLUTION_MS } from '../shared/config.js';
-import { logger } from '../shared/logger.js';
+import { withTimeout } from '../shared/timeout.js';
+import { ProbeOrchestrator } from './coordinator/probes.js';
 import { emitCaptureProgress } from './coordinator/progress.js';
 import { dedupeTimedEvents, resolveEventLoopHistogram } from './coordinator/runtime-signals.js';
 import { CaptureSession } from './coordinator/session-cleanup.js';
@@ -38,16 +39,6 @@ import type {
 export { createManualStopSignal } from './coordinator/stop-handling.js';
 
 import { waitForStop } from './coordinator/stop-handling.js';
-import { withTimeout, withTimeoutResult } from './coordinator/timeouts.js';
-
-const PROBE_STOP_TIMEOUT_MS = 5000;
-
-type ProbeInstance = {
-  kind: ProfileKind;
-  probe: ReturnType<ProfileKind['createProbe']>;
-};
-
-type StopReason = 'exit' | 'timeout' | 'signal';
 
 interface RuntimeSignalCollectionInput {
   cdp: RunCaptureConnectedSession['cdp'];
@@ -104,8 +95,15 @@ export async function runCapture<TSourceOptions>(
     });
 
     const mode = connected.releaseRuntime ? 'spawn' : 'attach';
-    const probeInstances = await installProbes(options.kinds, cdp, mode, captureIntegrity);
-    await startProbes(probeInstances, cdp, mode, options, captureIntegrity);
+    const probes = new ProbeOrchestrator({
+      cdp,
+      mode,
+      captureIntegrity,
+      sourceOptions: options.sourceOptions,
+      ...(options.abortSignal ? { abortSignal: options.abortSignal } : {}),
+    });
+    await probes.install(options.kinds);
+    await probes.start();
     await connected.releaseRuntime?.();
 
     await options.beforeCaptureStart?.();
@@ -123,15 +121,7 @@ export async function runCapture<TSourceOptions>(
       message: 'Stopping the profiler and collecting the final samples...',
     });
 
-    const kindsData = await stopProbes(
-      probeInstances,
-      connected,
-      cdp,
-      mode,
-      options,
-      captureIntegrity,
-      stopReason,
-    );
+    const kindsData = await probes.stop(connected, stopReason);
     const durationMs = performance.now() - startedAtHr;
 
     const runtimeSignals = await collectRuntimeSignals({
@@ -179,231 +169,6 @@ function composeCapturePreload(kinds: readonly ProfileKind[]): PreloadContributi
     nodeOptions: installers.flatMap((installer) => installer.nodeOptions ?? []),
     controlFd: 3,
   };
-}
-
-async function installProbes(
-  kinds: readonly ProfileKind[],
-  cdp: RunCaptureConnectedSession['cdp'],
-  mode: ProbeLifecycleContext['mode'],
-  captureIntegrity: CaptureIntegrity,
-): Promise<ProbeInstance[]> {
-  const probeInstances: ProbeInstance[] = [];
-  for (const kind of kinds) {
-    const probe = kind.createProbe();
-    try {
-      const ctx = createProbeLifecycleContext(cdp, mode, kind.id);
-      await probe.install?.(ctx);
-      probeInstances.push({ kind, probe });
-    } catch (error) {
-      logger.warn({ kindId: kind.id, err: error }, 'kind probe install failed');
-      recordCaptureDiagnostic(captureIntegrity, {
-        stage: 'probe-install',
-        kindId: kind.id,
-        message: captureDiagnosticMessage(error),
-      });
-    }
-  }
-  return probeInstances;
-}
-
-async function startProbes<TSourceOptions>(
-  probeInstances: readonly ProbeInstance[],
-  cdp: RunCaptureConnectedSession['cdp'],
-  mode: ProbeLifecycleContext['mode'],
-  options: RunCaptureOptions<TSourceOptions>,
-  captureIntegrity: CaptureIntegrity,
-): Promise<void> {
-  for (const { kind, probe } of probeInstances) {
-    try {
-      emitProbeStartProgress(options.sourceOptions, probe);
-      const ctx = createProbeLifecycleContext(cdp, mode, kind.id, {
-        abortSignal: options.abortSignal,
-      });
-      await probe.start(ctx);
-    } catch (error) {
-      logger.warn({ kindId: kind.id, err: error }, 'kind probe failed to start');
-      recordCaptureDiagnostic(captureIntegrity, {
-        stage: 'probe-start',
-        kindId: kind.id,
-        message: captureDiagnosticMessage(error),
-      });
-    }
-  }
-}
-
-function emitProbeStartProgress<TSourceOptions>(
-  sourceOptions: TSourceOptions,
-  probe: ProbeInstance['probe'],
-): void {
-  if (!probe.progressMessages?.start) return;
-  emitCaptureProgress(sourceOptions, {
-    stage: 'start-capture',
-    message: probe.progressMessages.start,
-  });
-}
-
-async function stopProbes<TSourceOptions>(
-  probeInstances: readonly ProbeInstance[],
-  connected: RunCaptureConnectedSession,
-  cdp: RunCaptureConnectedSession['cdp'],
-  mode: ProbeLifecycleContext['mode'],
-  options: RunCaptureOptions<TSourceOptions>,
-  captureIntegrity: CaptureIntegrity,
-  stopReason: StopReason,
-): Promise<Record<string, unknown>> {
-  const kindsData: Record<string, unknown> = {};
-  for (const probeInstance of probeInstances) {
-    const stoppedProbe = await stopProbe(
-      probeInstance,
-      connected,
-      cdp,
-      mode,
-      options,
-      captureIntegrity,
-      stopReason,
-    );
-    if (!stoppedProbe.ok) continue;
-    kindsData[probeInstance.kind.id] = stoppedProbe.value;
-  }
-  return kindsData;
-}
-
-async function stopProbe<TSourceOptions>(
-  { kind, probe }: ProbeInstance,
-  connected: RunCaptureConnectedSession,
-  cdp: RunCaptureConnectedSession['cdp'],
-  mode: ProbeLifecycleContext['mode'],
-  options: RunCaptureOptions<TSourceOptions>,
-  captureIntegrity: CaptureIntegrity,
-  stopReason: StopReason,
-): Promise<{ ok: true; value: unknown } | { ok: false }> {
-  let stopSucceeded = false;
-  try {
-    const stopTimeoutMs = probe.stopTimeoutMs ?? PROBE_STOP_TIMEOUT_MS;
-    emitProbeStopProgress(options.sourceOptions, probe, stopReason);
-    const ctx = createProbeLifecycleContext(cdp, mode, kind.id, {
-      abortSignal: options.abortSignal,
-      stopReason,
-      ...(connected.drainLiveSignals
-        ? { liveSourceSignals: connected.drainLiveSignals.bind(connected) }
-        : {}),
-    });
-    const stopResult =
-      stopTimeoutMs === false
-        ? {
-            ok: true as const,
-            value: await probe.stop(ctx),
-          }
-        : await withTimeoutResult(probe.stop(ctx), stopTimeoutMs);
-
-    if (stopResult.ok) {
-      stopSucceeded = true;
-      return stopResult;
-    }
-
-    recordCaptureDiagnostic(captureIntegrity, {
-      stage: 'probe-stop',
-      kindId: kind.id,
-      message: `timed out stopping ${kind.id} probe after ${stopTimeoutMs}ms`,
-    });
-  } catch (error) {
-    logger.warn({ kindId: kind.id, err: error }, 'kind probe failed to stop');
-    recordCaptureDiagnostic(captureIntegrity, {
-      stage: 'probe-stop',
-      kindId: kind.id,
-      message: captureDiagnosticMessage(error),
-    });
-    return { ok: false };
-  } finally {
-    await disposeProbe(
-      { kind, probe },
-      cdp,
-      mode,
-      options,
-      captureIntegrity,
-      stopReason,
-      stopSucceeded,
-    );
-  }
-  return { ok: false };
-}
-
-function emitProbeStopProgress<TSourceOptions>(
-  sourceOptions: TSourceOptions,
-  probe: ProbeInstance['probe'],
-  stopReason: StopReason,
-): void {
-  if (!probe.progressMessages?.stop || stopReason === 'signal') return;
-  emitCaptureProgress(sourceOptions, {
-    stage: 'finalize-capture',
-    message: probe.progressMessages.stop,
-  });
-}
-
-async function disposeProbe<TSourceOptions>(
-  { kind, probe }: ProbeInstance,
-  cdp: RunCaptureConnectedSession['cdp'],
-  mode: ProbeLifecycleContext['mode'],
-  options: RunCaptureOptions<TSourceOptions>,
-  captureIntegrity: CaptureIntegrity,
-  stopReason: StopReason,
-  stopSucceeded: boolean,
-): Promise<void> {
-  if (!probe.dispose) return;
-  try {
-    emitProbeDisposeProgress(options.sourceOptions, probe);
-    const disposeTimeoutMs = probe.disposeTimeoutMs ?? PROBE_STOP_TIMEOUT_MS;
-    const ctx = createProbeLifecycleContext(cdp, mode, kind.id, {
-      abortSignal: options.abortSignal,
-      stopReason,
-      stopSucceeded,
-    });
-    const disposeResult =
-      disposeTimeoutMs === false
-        ? { ok: true as const, value: await probe.dispose(ctx) }
-        : await withTimeoutResult(probe.dispose(ctx), disposeTimeoutMs);
-    if (disposeResult.ok) return;
-    recordCaptureDiagnostic(captureIntegrity, {
-      stage: 'probe-dispose',
-      kindId: kind.id,
-      message: `timed out disposing ${kind.id} probe after ${disposeTimeoutMs}ms`,
-    });
-  } catch (error) {
-    logger.warn({ kindId: kind.id, err: error }, 'kind probe failed to dispose');
-    recordCaptureDiagnostic(captureIntegrity, {
-      stage: 'probe-dispose',
-      kindId: kind.id,
-      message: captureDiagnosticMessage(error),
-    });
-  }
-}
-
-function emitProbeDisposeProgress<TSourceOptions>(
-  sourceOptions: TSourceOptions,
-  probe: ProbeInstance['probe'],
-): void {
-  if (!probe.progressMessages?.dispose) return;
-  emitCaptureProgress(sourceOptions, {
-    stage: 'finalize-capture',
-    message: probe.progressMessages.dispose,
-  });
-}
-
-function createProbeLifecycleContext<
-  TExtra extends Record<string, unknown> = Record<string, never>,
->(
-  cdp: RunCaptureConnectedSession['cdp'],
-  mode: ProbeLifecycleContext['mode'],
-  kindId: string,
-  extra = {} as TExtra,
-): ProbeLifecycleContext & TExtra {
-  const ctx = {
-    cdp,
-    mode,
-    kindId,
-    ...extra,
-  };
-  return ctx;
 }
 
 async function disposeRuntimeBestEffort(

@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { sleep } from '../shared/sleep.js';
+import { withTimeoutOrThrow } from '../shared/timeout.js';
 import { connectCdp } from './client.js';
 import { fetchTargetInfo } from './runtime.js';
 
@@ -150,7 +151,10 @@ async function readPidForInspectorUrl(webSocketDebuggerUrl: string): Promise<num
   let cdp: Awaited<ReturnType<typeof connectCdp>> | undefined;
   try {
     cdp = await connectCdpWithTimeout(webSocketDebuggerUrl, INSPECTOR_DISCOVERY_CDP_TIMEOUT_MS);
-    const targetInfo = await withTimeout(fetchTargetInfo(cdp), INSPECTOR_DISCOVERY_CDP_TIMEOUT_MS);
+    const targetInfo = await withTimeoutOrThrow(
+      fetchTargetInfo(cdp),
+      INSPECTOR_DISCOVERY_CDP_TIMEOUT_MS,
+    );
     return targetInfo.pid;
   } catch {
     return undefined;
@@ -165,7 +169,7 @@ async function connectCdpWithTimeout(
 ): ReturnType<typeof connectCdp> {
   const connectPromise = connectCdp(webSocketDebuggerUrl);
   try {
-    return await withTimeout(connectPromise, timeoutMs);
+    return await withTimeoutOrThrow(connectPromise, timeoutMs);
   } catch (error) {
     connectPromise.then(
       (lateCdp) => {
@@ -186,21 +190,5 @@ async function fetchWithTimeout(url: string, timeoutMs: number): Promise<Respons
     return await fetch(url, { signal: controller.signal });
   } finally {
     clearTimeout(timeout);
-  }
-}
-
-async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
-  let timeout: NodeJS.Timeout | undefined;
-  try {
-    return await Promise.race([
-      promise,
-      new Promise<T>((_, reject) => {
-        timeout = setTimeout(() => {
-          reject(new Error(`operation timed out after ${timeoutMs}ms`));
-        }, timeoutMs);
-      }),
-    ]);
-  } finally {
-    if (timeout) clearTimeout(timeout);
   }
 }

@@ -1,6 +1,6 @@
+import { withTimeoutResult } from '../../shared/timeout.js';
 import { captureDiagnosticMessage, recordCaptureDiagnostic } from '../core/session.js';
 import type { ConnectedSource } from '../core/types.js';
-import { withTimeoutResult } from './timeouts.js';
 
 const CDP_CLOSE_TIMEOUT_MS = 2000;
 
