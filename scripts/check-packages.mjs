@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { dirname, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 
@@ -16,29 +16,41 @@ const workspaces = [
 ];
 
 let failed = false;
+const packedTarballs = [];
+const packDir = await mkdtemp(resolve(tmpdir(), 'lanterna-pack-tarballs-'));
 
-for (const workspace of workspaces) {
-  const files = await dryRunPackFiles(workspace);
-  const paths = files.map((file) => file.path);
-  const errors = [];
+try {
+  for (const workspace of workspaces) {
+    const files = await dryRunPackFiles(workspace);
+    const paths = files.map((file) => file.path);
+    const errors = [];
 
-  if (!paths.includes('LICENSE')) {
-    errors.push('missing LICENSE in package tarball');
-  }
-  for (const path of paths) {
-    if (path.endsWith('.tsbuildinfo')) {
-      errors.push(`includes TypeScript build metadata: ${path}`);
+    if (!paths.includes('LICENSE')) {
+      errors.push('missing LICENSE in package tarball');
     }
+    for (const path of paths) {
+      if (path.endsWith('.tsbuildinfo')) {
+        errors.push(`includes TypeScript build metadata: ${path}`);
+      }
+    }
+
+    if (errors.length > 0) {
+      failed = true;
+      console.error(`${workspace}:`);
+      for (const error of errors) console.error(`  - ${error}`);
+    }
+
+    packedTarballs.push(await packWorkspace(workspace, packDir));
   }
 
-  if (errors.length > 0) {
-    failed = true;
-    console.error(`${workspace}:`);
-    for (const error of errors) console.error(`  - ${error}`);
+  if (!failed) {
+    await smokePackedPackages(packedTarballs);
   }
+
+  if (failed) process.exitCode = 1;
+} finally {
+  await rm(packDir, { recursive: true, force: true });
 }
-
-if (failed) process.exitCode = 1;
 
 async function dryRunPackFiles(workspace) {
   const tempDir = await mkdtemp(resolve(tmpdir(), 'lanterna-pack-check-'));
@@ -75,5 +87,82 @@ async function dryRunPackFiles(workspace) {
     );
   } finally {
     await rm(tempDir, { recursive: true, force: true });
+  }
+}
+
+async function packWorkspace(workspace, destination) {
+  try {
+    const { stdout } = await execFileAsync(
+      'npm',
+      ['pack', '--json', '--pack-destination', destination, '-w', workspace],
+      {
+        cwd: repoRoot,
+        encoding: 'utf8',
+        env: { ...process.env, npm_config_cache: npmCache },
+        maxBuffer: 16 * 1024 * 1024,
+      },
+    );
+    const pack = JSON.parse(stdout);
+    const entry = pack[0];
+    if (!entry?.filename) throw new Error('npm pack did not return a filename');
+    return resolve(destination, entry.filename);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`failed to create npm pack tarball for ${workspace}: ${message}`);
+  }
+}
+
+async function smokePackedPackages(tarballs) {
+  const installDir = await mkdtemp(resolve(tmpdir(), 'lanterna-pack-smoke-'));
+  try {
+    await execFileAsync('npm', ['init', '-y'], {
+      cwd: installDir,
+      encoding: 'utf8',
+      env: { ...process.env, npm_config_cache: npmCache },
+    });
+    await execFileAsync(
+      'npm',
+      [
+        'install',
+        '--ignore-scripts',
+        '--no-audit',
+        '--no-fund',
+        '--package-lock=false',
+        ...tarballs,
+      ],
+      {
+        cwd: installDir,
+        encoding: 'utf8',
+        env: { ...process.env, npm_config_cache: npmCache },
+        maxBuffer: 16 * 1024 * 1024,
+      },
+    );
+
+    await execFileAsync(
+      process.execPath,
+      [
+        '-e',
+        "const m = await import('@lanterna-profiler/core'); if (!m.runProfile) process.exit(1);",
+      ],
+      { cwd: installDir, encoding: 'utf8' },
+    );
+    await execFileAsync(
+      process.execPath,
+      [
+        '-e',
+        "const m = await import('@lanterna-profiler/detectors'); if (!m.defaultDetectors?.length) process.exit(1);",
+      ],
+      { cwd: installDir, encoding: 'utf8' },
+    );
+    await execFileAsync(
+      process.execPath,
+      [join(installDir, 'node_modules/@lanterna-profiler/cli/bin/lanterna.js'), '--help'],
+      { cwd: installDir, encoding: 'utf8', maxBuffer: 1024 * 1024 },
+    );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`packed package smoke test failed: ${message}`);
+  } finally {
+    await rm(installDir, { recursive: true, force: true });
   }
 }
