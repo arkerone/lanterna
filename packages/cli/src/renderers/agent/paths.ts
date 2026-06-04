@@ -1,0 +1,90 @@
+const NON_EDITABLE_RUNTIME_FUNCTIONS = new Set(['init', 'runMicrotasks', 'writeBuffer']);
+
+export function isEditableUserFile(value: string | undefined): value is string {
+  if (!isNonEmpty(value)) return false;
+  return (
+    looksLikeFilePath(value) &&
+    !isPseudoFile(value) &&
+    !isDependencyOrRuntimePath(value) &&
+    !isVirtualSourcePath(value)
+  );
+}
+
+export function isGeneratedOutputPath(file: string): boolean {
+  const normalized = file.replaceAll('\\', '/');
+  return /(^|\/)(dist|build|out|coverage|\.next|\.nuxt|\.svelte-kit|\.vite)(\/|$)/.test(normalized);
+}
+
+export function isPseudoFile(file: string): boolean {
+  const trimmed = normalizeFrameLabel(file);
+  return (
+    isMissingFrameLabel(trimmed) ||
+    isParenthesizedRuntimeLabel(trimmed) ||
+    isAngleBracketRuntimeLabel(trimmed)
+  );
+}
+
+export function isPseudoFrameFunction(value: string | undefined): boolean {
+  const label = normalizeFrameLabel(value);
+  if (isMissingFrameLabel(label)) return false;
+  return isParenthesizedRuntimeLabel(label) || NON_EDITABLE_RUNTIME_FUNCTIONS.has(label);
+}
+
+export function isDependencyOrRuntimePath(file: string): boolean {
+  return (
+    isDependencyPath(file) ||
+    file.startsWith('node:') ||
+    file.startsWith('native ') ||
+    file === 'native'
+  );
+}
+
+export function isDependencyPath(file: string): boolean {
+  return (
+    file.includes('/node_modules/') ||
+    file.includes('/pnpm-store/') ||
+    file.includes('/.pnpm/') ||
+    file.includes('/caches/pnpm-store/')
+  );
+}
+
+export function isVirtualSourcePath(file: string): boolean {
+  return (
+    file.startsWith('webpack://') ||
+    file.startsWith('vite:/') ||
+    file.startsWith('vite://') ||
+    file.startsWith('rollup://') ||
+    file.startsWith('parcel://')
+  );
+}
+
+function isNonEmpty(value: string | undefined): value is string {
+  return typeof value === 'string' && value.length > 0;
+}
+
+function looksLikeFilePath(value: string): boolean {
+  return (
+    value.startsWith('/') ||
+    value.startsWith('./') ||
+    value.startsWith('../') ||
+    value.includes('/') ||
+    value.includes('\\') ||
+    /\.[A-Za-z0-9]+$/.test(value)
+  );
+}
+
+function normalizeFrameLabel(value: string | undefined): string {
+  return value?.trim() ?? '';
+}
+
+function isMissingFrameLabel(value: string): boolean {
+  return value.length === 0;
+}
+
+function isParenthesizedRuntimeLabel(value: string): boolean {
+  return value.startsWith('(') && value.endsWith(')');
+}
+
+function isAngleBracketRuntimeLabel(value: string): boolean {
+  return value.startsWith('<') && value.endsWith('>');
+}
