@@ -13,10 +13,11 @@
 // seconds each), so it is heavy (~5-6 min) and opt-in — it only runs when
 // LANTERNA_E2E is set:
 //
-//   npm run test:e2e            # from the repo root (builds first, then runs)
+//   npm run test:e2e            # full suite from the repo root
+//   npm run test:e2e:smoke      # CPU + memory + async smoke, attach, agent
 
 import { spawn } from 'node:child_process';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { setTimeout as sleep } from 'node:timers/promises';
@@ -53,11 +54,45 @@ interface Finding {
   confidence: string;
 }
 
-const positives = EXAMPLES as ExampleSpec[];
-const negatives = FIXED_EXAMPLES as FixedSpec[];
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
 const LANTERNA_BIN = resolve(REPO_ROOT, 'packages/cli/bin/lanterna.js');
 const E2E_ENABLED = process.env.LANTERNA_E2E === '1' || process.env.LANTERNA_E2E === 'true';
+const E2E_SCOPE = process.env.LANTERNA_E2E_SCOPE ?? 'full';
+const E2E_PROGRESS = process.env.LANTERNA_E2E_PROGRESS === '1';
+const E2E_ARTIFACT_DIR = process.env.LANTERNA_E2E_ARTIFACT_DIR
+  ? resolve(REPO_ROOT, process.env.LANTERNA_E2E_ARTIFACT_DIR)
+  : undefined;
+const SMOKE_EXAMPLES = new Set(['cpu-hotspot', 'memory-leak', 'long-await']);
+
+const positives = selectPositiveExamples(EXAMPLES as ExampleSpec[]);
+const negatives = selectFixedExamples(FIXED_EXAMPLES as FixedSpec[]);
+
+function selectPositiveExamples(specs: ExampleSpec[]): ExampleSpec[] {
+  if (E2E_SCOPE !== 'smoke') return specs;
+  return specs.filter((spec) => SMOKE_EXAMPLES.has(spec.dir));
+}
+
+function selectFixedExamples(specs: FixedSpec[]): FixedSpec[] {
+  if (E2E_SCOPE !== 'smoke') return specs;
+  return specs.filter((spec) => SMOKE_EXAMPLES.has(spec.dir));
+}
+
+function progress(message: string): void {
+  if (E2E_PROGRESS) console.error(`[lanterna:e2e] ${message}`);
+}
+
+function safeArtifactName(label: string): string {
+  return label.replace(/[^a-zA-Z0-9._-]+/g, '-').replace(/^-+|-+$/g, '') || 'case';
+}
+
+async function createOutputDir(label: string): Promise<{ dir: string; cleanup: boolean }> {
+  if (E2E_ARTIFACT_DIR) {
+    const dir = resolve(E2E_ARTIFACT_DIR, safeArtifactName(label));
+    await mkdir(dir, { recursive: true });
+    return { dir, cleanup: false };
+  }
+  return { dir: await mkdtemp(join(tmpdir(), 'lanterna-e2e-')), cleanup: true };
+}
 
 function runLanterna(args: string[]): Promise<{ code: number | null; stderr: string }> {
   return new Promise((resolvePromise) => {
@@ -75,6 +110,7 @@ function runLanterna(args: string[]): Promise<{ code: number | null; stderr: str
 }
 
 interface CaptureOptions {
+  label: string;
   app: string;
   kinds: string[];
   durationMs: number;
@@ -84,9 +120,10 @@ interface CaptureOptions {
 }
 
 async function capture(options: CaptureOptions): Promise<{ findings: Finding[]; kinds: string[] }> {
-  const dir = await mkdtemp(join(tmpdir(), 'lanterna-e2e-'));
+  const { dir, cleanup } = await createOutputDir(options.label);
   const reportPath = join(dir, 'report.json');
   try {
+    progress(`start ${options.label}`);
     const args = [
       LANTERNA_BIN,
       'run',
@@ -103,15 +140,17 @@ async function capture(options: CaptureOptions): Promise<{ findings: Finding[]; 
     args.push('--', process.execPath, resolve(REPO_ROOT, 'examples', options.app));
 
     const { code, stderr } = await runLanterna(args);
+    if (!cleanup) await writeFile(join(dir, 'stderr.txt'), stderr);
     let report: { findings?: Finding[]; meta?: { profileKinds?: string[] } };
     try {
       report = JSON.parse(await readFile(reportPath, 'utf8'));
     } catch {
       throw new Error(`lanterna produced no report (exit ${code}). stderr:\n${stderr.slice(-600)}`);
     }
+    progress(`done ${options.label}`);
     return { findings: report.findings ?? [], kinds: report.meta?.profileKinds ?? [] };
   } finally {
-    await rm(dir, { recursive: true, force: true });
+    if (cleanup) await rm(dir, { recursive: true, force: true });
   }
 }
 
@@ -125,6 +164,7 @@ describe.skipIf(!E2E_ENABLED)('examples — positives (the finding fires)', () =
       label,
       async () => {
         const { findings, kinds } = await capture({
+          label: `positive-${spec.dir}`,
           app: `${spec.dir}/app.js`,
           kinds: spec.kinds,
           durationMs: spec.durationMs,
@@ -174,6 +214,7 @@ describe.skipIf(!E2E_ENABLED)('examples — negatives (the fix clears the findin
       `${spec.dir}/${spec.app} ⇏ ${spec.forbid.join(', ')}`,
       async () => {
         const { findings, kinds } = await capture({
+          label: `negative-${spec.dir}-${spec.app}`,
           app: `${spec.dir}/${spec.app}`,
           kinds: spec.kinds,
           durationMs: spec.durationMs,
@@ -195,7 +236,7 @@ describe.skipIf(!E2E_ENABLED)('examples — negatives (the fix clears the findin
 
 describe.skipIf(!E2E_ENABLED)('capture paths', () => {
   it('attach surfaces findings on a running process', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'lanterna-attach-'));
+    const { dir, cleanup } = await createOutputDir('capture-attach');
     const reportPath = join(dir, 'report.json');
     // Start the target with its own inspector on a free port and attach to its
     // ws:// URL. (This avoids the SIGUSR1 / 9229-9238 port-scan path, which flakes
@@ -206,6 +247,7 @@ describe.skipIf(!E2E_ENABLED)('capture paths', () => {
       { cwd: REPO_ROOT, stdio: ['ignore', 'ignore', 'pipe'] },
     );
     try {
+      progress('start capture-attach');
       const inspectUrl = await new Promise<string>((resolveUrl, reject) => {
         const timer = setTimeout(
           () => reject(new Error('target did not open an inspector in time')),
@@ -239,6 +281,7 @@ describe.skipIf(!E2E_ENABLED)('capture paths', () => {
         '--output',
         reportPath,
       ]);
+      if (!cleanup) await writeFile(join(dir, 'stderr.txt'), stderr);
       let report: { findings?: Finding[]; meta?: { mode?: string } };
       try {
         report = JSON.parse(await readFile(reportPath, 'utf8'));
@@ -250,16 +293,18 @@ describe.skipIf(!E2E_ENABLED)('capture paths', () => {
         ids.some((id) => id.startsWith('sync-crypto-on-hot-path')),
         ids.join(', '),
       ).toBe(true);
+      progress('done capture-attach');
     } finally {
       target.kill('SIGKILL');
-      await rm(dir, { recursive: true, force: true });
+      if (cleanup) await rm(dir, { recursive: true, force: true });
     }
   }, 40_000);
 
   it('--format agent emits the agent contract', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'lanterna-agent-'));
+    const { dir, cleanup } = await createOutputDir('agent-contract');
     const reportPath = join(dir, 'report.agent.md');
     try {
+      progress('start agent-contract');
       const { code, stderr } = await runLanterna([
         LANTERNA_BIN,
         'run',
@@ -275,6 +320,7 @@ describe.skipIf(!E2E_ENABLED)('capture paths', () => {
         process.execPath,
         resolve(REPO_ROOT, 'examples/cpu-hotspot/app.js'),
       ]);
+      if (!cleanup) await writeFile(join(dir, 'stderr.txt'), stderr);
       let md: string;
       try {
         md = await readFile(reportPath, 'utf8');
@@ -286,8 +332,9 @@ describe.skipIf(!E2E_ENABLED)('capture paths', () => {
       expect(md).toContain('rerun_required:');
       expect(md).toContain('## Findings');
       expect(md).toContain('sync-crypto-on-hot-path');
+      progress('done agent-contract');
     } finally {
-      await rm(dir, { recursive: true, force: true });
+      if (cleanup) await rm(dir, { recursive: true, force: true });
     }
   }, 40_000);
 });
