@@ -3,6 +3,8 @@ import { formatPct } from '../formatting.js';
 import { decisionForFinding } from './findings.js';
 
 const MOSTLY_IDLE_CPU_RATIO = 0.9;
+const BEST_EFFORT_DETECTOR_PREFIXES = ['deopt-loop:', 'deep-async-chain:', 'hot-async-context:'];
+const BEST_EFFORT_DETECTOR_CAVEAT = 'best-effort detector evidence present';
 
 export function blockingIntegrityCaveats(report: LanternaReport): string[] {
   const integrity = report.meta?.captureIntegrity;
@@ -47,6 +49,9 @@ export function degradingSignalCaveats(report: LanternaReport): string[] {
   if (sourceMaps?.enabled && (sourceMaps.applicable ?? true) && sourceMaps.coverage < 0.7) {
     caveats.push('source-map coverage below 70%');
   }
+  if ((report.findings ?? []).some(isBestEffortDetectorFinding)) {
+    caveats.push(BEST_EFFORT_DETECTOR_CAVEAT);
+  }
   if (integrity?.eventLoopTimed === false) caveats.push('event-loop timing unavailable');
   if (integrity?.gcTimed === false) caveats.push('GC timing unavailable');
   if ((integrity?.heartbeatDropped ?? 0) > 0) {
@@ -65,6 +70,13 @@ export function hasInsufficientSignal(report: LanternaReport): boolean {
 
 function rerunRequiredSignalCaveats(report: LanternaReport): string[] {
   return degradingSignalCaveats(report).filter(
-    (caveat) => caveat !== 'event-loop timing unavailable' && caveat !== 'GC timing unavailable',
+    (caveat) =>
+      caveat !== 'event-loop timing unavailable' &&
+      caveat !== 'GC timing unavailable' &&
+      caveat !== BEST_EFFORT_DETECTOR_CAVEAT,
   );
+}
+
+function isBestEffortDetectorFinding(finding: Finding): boolean {
+  return BEST_EFFORT_DETECTOR_PREFIXES.some((prefix) => finding.id.startsWith(prefix));
 }
