@@ -6,8 +6,10 @@ describe('core public profile API', () => {
     expect(core).toEqual(
       expect.objectContaining({
         attachProfile: expect.any(Function),
+        asyncProfileReportSchema: expect.any(Object),
         createDefaultAnalysisPipeline: expect.any(Function),
         createKindRegistry: expect.any(Function),
+        parseAsyncProfileReport: expect.any(Function),
         runProfile: expect.any(Function),
       }),
     );

@@ -1,9 +1,9 @@
-import { asyncProfileReportSchema } from '../../report/schema/async-profile.js';
 import { createAsyncOperationsInstaller } from '../../runtime-signals/hooks/installers/async-operations.js';
 import type { CaptureProbe, ProfileKind } from '../core/types.js';
 import { defineProfileKind } from '../core/types.js';
 import { createAsyncAnalysisContributor } from './analysis.js';
 import { createAsyncProbe } from './probe.js';
+import { asyncProfileReportSchema } from './report-contract.js';
 import type { AsyncKindData } from './types.js';
 
 declare module '../core/types.js' {
