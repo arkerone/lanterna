@@ -18,7 +18,8 @@
     "build": "tsc -b",
     "dev": "tsc -b --watch",
     "test": "vitest run",
-    "test:e2e": "npm run build && LANTERNA_E2E=1 vitest run examples.e2e",
+    "test:e2e": "npm run build && LANTERNA_E2E=1 LANTERNA_E2E_PROGRESS=1 vitest run examples.e2e",
+    "test:e2e:smoke": "npm run build && LANTERNA_E2E=1 LANTERNA_E2E_SCOPE=smoke LANTERNA_E2E_PROGRESS=1 vitest run examples.e2e --reporter verbose",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "clean": "rm -rf dist .turbo .tsbuildinfo"
   },

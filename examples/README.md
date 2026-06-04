@@ -10,30 +10,28 @@ verification suite: see [Verifying the whole detector suite](#verifying-the-whol
 
 ## Coverage
 
-| Example | Pathology | `--kind` | Findings produced |
-| --- | --- | --- | --- |
-| [cpu-hotspot](./cpu-hotspot) | Sync `pbkdf2Sync` in an auth verify loop | `cpu` | `sync-crypto-on-hot-path` |
-| [cpu-user-hotspot](./cpu-user-hotspot) | Expensive pure user-code function | `cpu` | `cpu-hotspot` |
-| [json-on-hot-path](./json-on-hot-path) | Per-request `JSON.stringify` + `parse` | `cpu` | `json-on-hot-path` |
-| [node-modules-hotspot](./node-modules-hotspot) | A dependency dominates CPU | `cpu` | `node-modules-hotspot` |
-| [require-in-hot-path](./require-in-hot-path) | `require()` inside the request loop | `cpu` | `require-in-hot-path` |
-| [excessive-gc](./excessive-gc) | Per-request short-lived object churn | `cpu` | `excessive-gc` |
-| [deopt-loop](./deopt-loop) | Repeated V8 deopt of a hot function | `cpu` `--deep` | `deopt-loop` |
-| [event-loop-stall](./event-loop-stall) | Sync read + parse of a large file per tick | `cpu` | `blocking-io`, `event-loop-stall` |
-| [memory-leak](./memory-leak) | Unbounded response cache | `memory` | `memory-growth`, `large-allocator` |
-| [external-buffer](./external-buffer) | Off-heap `Buffer` cache dwarfs the heap | `memory` | `external-buffer-pressure` |
-| [long-await](./long-await) | Downstream call without a timeout | `cpu,async` | `long-await` |
-| [orphan-async](./orphan-async) | Async resources never cleaned up | `async` | `orphan-async-resource` |
-| [microtask-flood](./microtask-flood) | Unbounded async fan-out | `async` | `microtask-flood` |
-| [deep-async-chain](./deep-async-chain) | Recursion through awaited promises | `cpu,async` | `deep-async-chain` |
-| [async-latency](./async-latency) | Five distinct async latency causes | `cpu,async` | `event-loop-blocked-async` (+ cause classification) |
-| [hot-async-context](./hot-async-context) | CPU concentrated under one async root | `cpu,async` | `hot-async-context` |
-| [alloc-in-hot-path](./alloc-in-hot-path) | One frame is CPU-hot AND a top allocator | `cpu,memory` | `alloc-in-hot-path` |
-| [realistic-server](./realistic-server) | HTTP API with layered issues, under load | `cpu,memory` | `json-on-hot-path` (+ more) |
+| Example | Pathology | `--kind` | Findings produced | E2E tier |
+| --- | --- | --- | --- | --- |
+| [cpu-hotspot](./cpu-hotspot) | Sync `pbkdf2Sync` in an auth verify loop | `cpu` | `sync-crypto-on-hot-path` | stable |
+| [cpu-user-hotspot](./cpu-user-hotspot) | Expensive pure user-code function | `cpu` | `cpu-hotspot` | stable |
+| [json-on-hot-path](./json-on-hot-path) | Per-request `JSON.stringify` + `parse` | `cpu` | `json-on-hot-path` | stable |
+| [node-modules-hotspot](./node-modules-hotspot) | A dependency dominates CPU | `cpu` | `node-modules-hotspot` | stable |
+| [require-in-hot-path](./require-in-hot-path) | `require()` inside the request loop | `cpu` | `require-in-hot-path` | stable |
+| [excessive-gc](./excessive-gc) | Per-request short-lived object churn | `cpu` | `excessive-gc` | stable |
+| [deopt-loop](./deopt-loop) | Repeated V8 deopt of a hot function | `cpu` `--deep` | `deopt-loop` | best-effort |
+| [event-loop-stall](./event-loop-stall) | Sync read + parse of a large file per tick | `cpu` | `blocking-io`, `event-loop-stall` | stable |
+| [memory-leak](./memory-leak) | Unbounded response cache | `memory` | `memory-growth`, `large-allocator` | stable |
+| [external-buffer](./external-buffer) | Off-heap `Buffer` cache dwarfs the heap | `memory` | `external-buffer-pressure` | stable |
+| [long-await](./long-await) | Downstream call without a timeout | `cpu,async` | `long-await` | stable |
+| [orphan-async](./orphan-async) | Async resources never cleaned up | `async` | `orphan-async-resource` | stable |
+| [microtask-flood](./microtask-flood) | Unbounded async fan-out | `async` | `microtask-flood` | stable |
+| [deep-async-chain](./deep-async-chain) | Recursion through awaited promises | `cpu,async` | `deep-async-chain` | best-effort |
+| [async-latency](./async-latency) | Five distinct async latency causes | `cpu,async` | `event-loop-blocked-async` (+ cause classification) | stable |
+| [hot-async-context](./hot-async-context) | CPU concentrated under one async root | `cpu,async` | `hot-async-context` | best-effort |
+| [alloc-in-hot-path](./alloc-in-hot-path) | One frame is CPU-hot AND a top allocator | `cpu,memory` | `alloc-in-hot-path` | stable |
+| [realistic-server](./realistic-server) | HTTP API with layered issues, under load | `cpu,memory` | `json-on-hot-path` (+ more) | stable |
 
-`deopt-loop`, `deep-async-chain` and `hot-async-context` depend on V8 internals or
-async/CPU correlation and are therefore the least deterministic (the verification
-suite treats them as best-effort).
+`best-effort` means the detector depends on V8 trace timing or async/CPU correlation enough that the E2E suite warns instead of failing when the finding is missed on a particular machine. Agent reports surface these findings as caveated evidence; treat them as strong inspection leads, then corroborate with source and a rerun.
 
 ## Quick start
 
@@ -59,7 +57,8 @@ The examples are wired into an end-to-end test that runs each one through the
 behaves:
 
 ```bash
-npm run test:e2e        # from the repo root — builds first, then runs
+npm run test:e2e        # full suite from the repo root — builds first, then runs
+npm run test:e2e:smoke  # CPU + memory + async smoke, attach, and agent contract
 ```
 
 It checks four things:
