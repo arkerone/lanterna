@@ -10,34 +10,34 @@ export type {
   GcThresholds,
 } from './config.js';
 export { DETECTOR_THRESHOLDS } from './config.js';
-export { allocInHotPathDetector } from './detectors/alloc-in-hot-path.js';
+export { deepAsyncChainDetector } from './detectors/async/deep-async-chain.js';
+export { hotAsyncContextDetector } from './detectors/async/hot-async-context.js';
 export {
   ASYNC_DETECTORS as defaultAsyncDetectors,
   createBuiltInAsyncFindingAnalyzers,
-} from './detectors/async-index.js';
-export { cpuHotspotDetector } from './detectors/cpu-hotspot.js';
-export { deepAsyncChainDetector } from './detectors/deep-async-chain.js';
-export { externalBufferPressureDetector } from './detectors/external-buffer-pressure.js';
-export { hotAsyncContextDetector } from './detectors/hot-async-context.js';
+} from './detectors/async/index.js';
+export { longAwaitDetector } from './detectors/async/long-await.js';
+export { microtaskFloodDetector } from './detectors/async/microtask-flood.js';
+export { orphanAsyncResourceDetector } from './detectors/async/orphan-async-resource.js';
+export { cpuHotspotDetector } from './detectors/cpu/cpu-hotspot.js';
 export {
   createBuiltInFindingAnalyzers,
   DETECTORS as defaultDetectors,
-} from './detectors/index.js';
-export { largeAllocatorDetector } from './detectors/large-allocator.js';
-export { longAwaitDetector } from './detectors/long-await.js';
-export { memoryGrowthDetector } from './detectors/memory-growth.js';
+} from './detectors/cpu/index.js';
+export { allocInHotPathDetector } from './detectors/memory/alloc-in-hot-path.js';
+export { externalBufferPressureDetector } from './detectors/memory/external-buffer-pressure.js';
 export {
   createBuiltInMemoryFindingAnalyzers,
   MEMORY_DETECTORS as defaultMemoryDetectors,
-} from './detectors/memory-index.js';
-export { microtaskFloodDetector } from './detectors/microtask-flood.js';
-export { orphanAsyncResourceDetector } from './detectors/orphan-async-resource.js';
+} from './detectors/memory/index.js';
+export { largeAllocatorDetector } from './detectors/memory/large-allocator.js';
+export { memoryGrowthDetector } from './detectors/memory/memory-growth.js';
 export {
   buildAttributedFinding,
   buildAttributionEvidence,
   type CpuHotspotContext,
   resolveAttribution,
-} from './detectors/shared.js';
+} from './detectors/shared/attribution.js';
 export * as extensionApi from './extension-api.js';
 export {
   createAsyncProfileKindWithBuiltInDetectors,

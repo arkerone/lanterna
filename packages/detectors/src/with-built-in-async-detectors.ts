@@ -4,7 +4,8 @@ import {
   createAsyncProfileKind,
   type ProfileKind,
 } from '@lanterna-profiler/core';
-import { createBuiltInAsyncFindingAnalyzers } from './detectors/async-index.js';
+import { appendBuiltInAnalyzers } from './built-in-analyzers.js';
+import { createBuiltInAsyncFindingAnalyzers } from './detectors/async/index.js';
 
 /**
  * Wraps an already-built async {@link ProfileKind} so the built-in async
@@ -13,7 +14,7 @@ import { createBuiltInAsyncFindingAnalyzers } from './detectors/async-index.js';
 export function withBuiltInAsyncDetectors(
   kind: ProfileKind<AsyncKindData>,
 ): ProfileKind<AsyncKindData> {
-  return { ...kind, builtInAnalyzers: createBuiltInAsyncFindingAnalyzers() };
+  return appendBuiltInAnalyzers(kind, createBuiltInAsyncFindingAnalyzers());
 }
 
 /**
