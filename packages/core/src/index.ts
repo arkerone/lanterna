@@ -93,6 +93,10 @@ export {
   DEFAULT_ASYNC_STACK_DEPTH,
   MAX_ASYNC_STACK_DEPTH,
 } from './kinds/async/index.js';
+export {
+  asyncProfileReportSchema,
+  parseAsyncProfileReport,
+} from './kinds/async/report-contract.js';
 // Kinds
 export {
   createKindRegistry,

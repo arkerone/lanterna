@@ -742,7 +742,16 @@ export interface AsyncTopOperation {
 export interface AsyncChainSummary {
   rootAsyncId: number;
   rootKind: AsyncOperationKindReport;
+  /** Structural depth of the trigger tree (a long sequential `await` loop inflates this). */
   depth: number;
+  /**
+   * Recursion-through-promises depth: the most times a single user function
+   * repeats in a resource's creation stack within the chain. This is the real
+   * "deep async chain" signal — a sequential `while { await }` loop or a
+   * `Promise.all` fan-out inflates `depth` but has `recursionDepth` ~1. Drives
+   * `deep-async-chain`.
+   */
+  recursionDepth: number;
   totalOperations: number;
   totalDurationMs: number;
   deepestPath: AsyncOperationKindReport[];

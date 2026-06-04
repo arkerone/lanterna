@@ -118,22 +118,10 @@ export function normalizeHeapSnapshotAnalysisOptions(
   const maxGroups = options?.maxGroups ?? DEFAULT_MAX_GROUPS;
   const maxPathsPerGroup = options?.maxPathsPerGroup ?? DEFAULT_MAX_PATHS_PER_GROUP;
   const maxSnapshotBytes = options?.maxSnapshotBytes ?? DEFAULT_MAX_SNAPSHOT_BYTES;
-  if (!Number.isInteger(maxRetainerDepth) || maxRetainerDepth < 1) {
-    throw new Error(
-      `invalid heap snapshot max retainer depth: ${maxRetainerDepth} (expected integer >= 1)`,
-    );
-  }
-  if (!Number.isInteger(maxGroups) || maxGroups < 1) {
-    throw new Error(`invalid heap snapshot max groups: ${maxGroups} (expected integer >= 1)`);
-  }
-  if (!Number.isInteger(maxPathsPerGroup) || maxPathsPerGroup < 1) {
-    throw new Error(
-      `invalid heap snapshot max paths per group: ${maxPathsPerGroup} (expected integer >= 1)`,
-    );
-  }
-  if (!Number.isInteger(maxSnapshotBytes) || maxSnapshotBytes < 1) {
-    throw new Error(`invalid heap snapshot max bytes: ${maxSnapshotBytes} (expected integer >= 1)`);
-  }
+  assertPositiveHeapSnapshotInteger('max retainer depth', maxRetainerDepth);
+  assertPositiveHeapSnapshotInteger('max groups', maxGroups);
+  assertPositiveHeapSnapshotInteger('max paths per group', maxPathsPerGroup);
+  assertPositiveHeapSnapshotInteger('max bytes', maxSnapshotBytes);
   return {
     enabled,
     ...(options?.outputDir ? { outputDir: options.outputDir } : {}),
@@ -142,6 +130,11 @@ export function normalizeHeapSnapshotAnalysisOptions(
     maxPathsPerGroup,
     maxSnapshotBytes,
   };
+}
+
+function assertPositiveHeapSnapshotInteger(optionName: string, value: number): void {
+  if (Number.isInteger(value) && value >= 1) return;
+  throw new Error(`invalid heap snapshot ${optionName}: ${value} (expected integer >= 1)`);
 }
 
 export function parseHeapSnapshot(input: unknown): ParsedHeapSnapshot {

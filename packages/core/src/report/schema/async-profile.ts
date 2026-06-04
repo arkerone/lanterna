@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { AsyncProfileReport } from '../types.js';
 import { sourceLocationSchema, userCallerAttributionSchema } from './primitives.js';
 
 const asyncOperationKindSchema = z.enum([
@@ -152,6 +153,8 @@ const asyncChainSchema = z.object({
   rootAsyncId: z.number().int(),
   rootKind: asyncOperationKindSchema,
   depth: z.number().int().nonnegative(),
+  /** Recursion-through-promises depth: max repeats of one user frame in a creation stack. */
+  recursionDepth: z.number().int().nonnegative(),
   totalOperations: z.number().int().nonnegative(),
   totalDurationMs: z.number().nonnegative(),
   /** Path of types from root to deepest leaf (for human-readable inspection). */
@@ -238,7 +241,7 @@ const asyncConcurrencySampleSchema = z.object({
   inflight: z.number().int().nonnegative(),
 });
 
-export const asyncProfileReportSchema = z.object({
+export const asyncProfileReportSchema: z.ZodType<AsyncProfileReport> = z.object({
   summary: asyncSummarySchema,
   quality: asyncQualitySchema,
   hotFiles: z.array(asyncHotFileSchema),
