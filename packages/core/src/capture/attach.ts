@@ -1,5 +1,6 @@
 import { connectCdp } from '../inspector/client.js';
 import { openInspectorForPid } from '../inspector/discovery.js';
+import { withTimeoutOrThrow } from '../shared/timeout.js';
 import { createCaptureIntegrity } from './core/session.js';
 import type {
   AttachStartOptions,
@@ -109,7 +110,7 @@ async function installAttachRuntimeHook(
   cdp: import('../inspector/client.js').CdpClient,
   attachScript: string,
 ): Promise<InstallAttachRuntimeResult> {
-  const value = await withTimeout(
+  const value = await withTimeoutOrThrow(
     cdp.evaluate(attachScript),
     ATTACH_RUNTIME_HOOK_TIMEOUT_MS,
     () =>
@@ -124,24 +125,6 @@ async function installAttachRuntimeHook(
       ? `failed to install attach runtime hook: ${result.reason}`
       : 'failed to install attach runtime hook',
   );
-}
-
-async function withTimeout<T>(
-  promise: Promise<T>,
-  timeoutMs: number,
-  createTimeoutError: () => Error,
-): Promise<T> {
-  let timeout: NodeJS.Timeout | undefined;
-  try {
-    return await Promise.race([
-      promise,
-      new Promise<T>((_, reject) => {
-        timeout = setTimeout(() => reject(createTimeoutError()), timeoutMs);
-      }),
-    ]);
-  } finally {
-    if (timeout) clearTimeout(timeout);
-  }
 }
 
 export async function createAttachSource(): Promise<AttachSource> {
