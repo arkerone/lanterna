@@ -22,6 +22,8 @@ npm run bench
 
 Each scenario runs 3 times in baseline (no Lanterna) and 3 times under Lanterna. Wall time is measured around `child_process.spawn()` and includes child startup. Overhead is reported as `(lanterna_median − baseline_median) / baseline_median`. The harness writes the report to a temp directory and discards it — only wall-time impact is measured.
 
+The bench harness also includes an HTTP service scenario that starts `examples/realistic-server`, waits for readiness, drives POST traffic, and reports throughput plus p50/p95/p99 latency across `cpu`, `memory`, `cpu,memory`, `cpu,async` safe, and `cpu,async` full modes. Use this table when evaluating request-path impact rather than CPU-only wall time.
+
 See [`bench/README.md`](../bench/README.md) for scenario details and tunable knobs.
 
 ## Latest numbers
@@ -86,6 +88,6 @@ lanterna attach --pid <pid> --duration 30s
 
 ## Scope and known gaps
 
-- HTTP / async scenarios are not yet covered. The numbers above don't capture request-path tail latency under load — that needs a server bench with an external load generator (e.g. `autocannon`). On the TODO list.
+- HTTP / async scenarios are covered by the bench harness, but this page only includes the latest checked-in microbenchmark table. Run `npm run bench` on the target machine and paste the HTTP table when request-path tail latency is the decision point.
 - Numbers are single-machine; absolute times will vary, but **overhead percentages** are the meaningful comparison.
 - The startup cost mostly comes from inspector negotiation and CDP handshake. It is not optimized further today; if it becomes a constraint for short workloads, attach mode is the answer.
