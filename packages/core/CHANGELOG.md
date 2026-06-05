@@ -1,5 +1,13 @@
 # @lanterna-profiler/core
 
+## 2.6.0
+
+### Minor Changes
+
+- 1a5ab77: Add `profileInProcess()` — in-process self-profiling. A long-running service (or an embedded agent) can now profile its **own** process via an in-process `node:inspector` session, with no child spawn and no remote attach. It reuses the entire enrichment pipeline, sets `meta.mode = 'in-process'`, and is driven by `durationMs` or an `AbortSignal` since the host does not exit during capture. New exports: `profileInProcess`, `InProcessProfileOptions`, `InProcessProgressEvent`, and the `ProfileMode` type.
+- 493d6fd: Add opt-in remote source-map fetching. When a generated file's `//# sourceMappingURL` points at an `http(s)://` URL, Lanterna can now resolve it — enable with `--source-map-remote` (CLI), `"sourceMapRemote": true` (`.lanterna.json`), or `sourceMapRemote: true` on the programmatic profile APIs. It is off by default because it is network egress. To keep frame resolution synchronous, remote maps are pre-fetched once up front (3 s timeout, 50 MiB cap) into a cache the sync resolver reads; failed/oversized fetches fall back to `unsupported-mapping-url`. The exported `SourceMapResolver` gains a `prefetchRemote` method and `createSourceMapResolver` an `allowRemote` option.
+- af6c2d1: `attach --pid` now finds an already-open inspector on Windows. The cross-platform HTTP scan for an existing inspector endpoint runs before the POSIX-only `SIGUSR1` fallback, so on Windows `lanterna attach --pid <pid>` works when the target was started with `--inspect`. When no inspector is open, it now fails with a Windows-specific message pointing at `--inspect`/`--inspect-url` instead of an unconditional "not supported".
+
 ## 2.5.0
 
 ### Minor Changes
@@ -12,7 +20,7 @@
   though nothing is nested. `deep-async-chain` gated on that structural depth and
   reported a bogus `critical` for an extremely common production pattern.
 
-  async_hooks cannot encode await-_nesting_ as a live trigger chain (it stays ~3
+  async*hooks cannot encode await-\_nesting* as a live trigger chain (it stays ~3
   for a sequential loop, a deep recursion, and a wide `Promise.all` alike), so the
   structural `depth` is meaningless as a nesting signal. The real signal is
   recursion in the **creation stack**: async chains now carry **`recursionDepth`**,

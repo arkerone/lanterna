@@ -1,5 +1,18 @@
 # @lanterna-profiler/detectors
 
+## 2.6.0
+
+### Minor Changes
+
+- 98ba2c5: Add a centralized detector reliability tier. `@lanterna-profiler/detectors` now exports `BEST_EFFORT_DETECTOR_IDS`, `detectorReliabilityTier(findingId)`, `isBestEffortFinding(findingId)`, `findingBaseId(findingId)`, and the `DetectorReliabilityTier` type — the single source of truth for which built-in detectors are probabilistic (best-effort) versus standard. The CLI agent renderer now consumes this instead of a hardcoded list, so the classification no longer drifts between the renderer, the docs, and the example manifest.
+
+### Patch Changes
+
+- Updated dependencies [1a5ab77]
+- Updated dependencies [493d6fd]
+- Updated dependencies [af6c2d1]
+  - @lanterna-profiler/core@2.6.0
+
 ## 2.5.0
 
 ### Minor Changes
@@ -12,7 +25,7 @@
   though nothing is nested. `deep-async-chain` gated on that structural depth and
   reported a bogus `critical` for an extremely common production pattern.
 
-  async_hooks cannot encode await-_nesting_ as a live trigger chain (it stays ~3
+  async*hooks cannot encode await-\_nesting* as a live trigger chain (it stays ~3
   for a sequential loop, a deep recursion, and a wide `Promise.all` alike), so the
   structural `depth` is meaningless as a nesting signal. The real signal is
   recursion in the **creation stack**: async chains now carry **`recursionDepth`**,

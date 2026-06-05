@@ -1,5 +1,21 @@
 # @lanterna-profiler/cli
 
+## 1.15.0
+
+### Minor Changes
+
+- 493d6fd: Add opt-in remote source-map fetching. When a generated file's `//# sourceMappingURL` points at an `http(s)://` URL, Lanterna can now resolve it — enable with `--source-map-remote` (CLI), `"sourceMapRemote": true` (`.lanterna.json`), or `sourceMapRemote: true` on the programmatic profile APIs. It is off by default because it is network egress. To keep frame resolution synchronous, remote maps are pre-fetched once up front (3 s timeout, 50 MiB cap) into a cache the sync resolver reads; failed/oversized fetches fall back to `unsupported-mapping-url`. The exported `SourceMapResolver` gains a `prefetchRemote` method and `createSourceMapResolver` an `allowRemote` option.
+- e77d643: Add `lanterna diff <baseline.json> <current.json>` to compare two reports. It diffs findings by id (added / removed / changed / unchanged) plus headline CPU and memory metric deltas, and exposes a `regressed` headline (true when the current report introduces or worsens a non-info finding) for agents and CI gates. Supports `--format text|markdown|agent|json`. See `docs/diffing-reports.md`.
+
+### Patch Changes
+
+- Updated dependencies [98ba2c5]
+- Updated dependencies [1a5ab77]
+- Updated dependencies [493d6fd]
+- Updated dependencies [af6c2d1]
+  - @lanterna-profiler/detectors@2.6.0
+  - @lanterna-profiler/core@2.6.0
+
 ## 1.14.2
 
 ### Patch Changes
