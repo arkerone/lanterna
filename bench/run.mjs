@@ -297,21 +297,47 @@ async function stopProcess(child) {
   }
 }
 
-async function main() {
-  const rows = [];
-  for (const scenario of SCENARIOS) {
-    const baseline = await runMode(scenario, 'baseline');
-    rows.push({ scenario: scenario.id, mode: 'baseline', ...baseline, overheadPct: 0 });
-    for (const mode of scenario.modes.filter((m) => m !== 'baseline')) {
-      const result = await runMode(scenario, mode);
-      const overheadPct = ((result.medianMs - baseline.medianMs) / baseline.medianMs) * 100;
-      rows.push({ scenario: scenario.id, mode, ...result, overheadPct });
-    }
-  }
+const JSON_OUTPUT = process.argv.includes('--json') || process.env.BENCH_JSON === '1';
 
+function buildMeta() {
+  return {
+    node: process.version,
+    platform: process.platform,
+    arch: process.arch,
+    runsPerMode: RUNS,
+    http: INCLUDE_HTTP
+      ? { durationMs: HTTP_DURATION_MS, concurrency: HTTP_CONCURRENCY, basePort: HTTP_BASE_PORT }
+      : null,
+    generatedAt: new Date().toISOString(),
+  };
+}
+
+// Drop the per-run `samples` arrays so the JSON result is a compact, diffable summary
+// suitable for committing as a baseline.
+function toJsonResult(result) {
+  return {
+    meta: result.meta,
+    micro: result.micro.map(({ samples: _samples, ...row }) => ({
+      ...row,
+      medianMs: Math.round(row.medianMs),
+      overheadPct: Number(row.overheadPct.toFixed(1)),
+    })),
+    http: result.http.map(({ samples: _samples, ...row }) => ({
+      ...row,
+      medianMs: Math.round(row.medianMs),
+      requestsPerSec: Number(row.requestsPerSec.toFixed(1)),
+      p50Ms: Number(row.p50Ms.toFixed(1)),
+      p95Ms: Number(row.p95Ms.toFixed(1)),
+      p99Ms: Number(row.p99Ms.toFixed(1)),
+      throughputDeltaPct: Number(row.throughputDeltaPct.toFixed(1)),
+    })),
+  };
+}
+
+function renderMarkdown(result) {
   const header = '| Scenario | Mode | Median (ms) | Samples (ms) | Overhead |';
   const sep = '| --- | --- | ---: | --- | ---: |';
-  const body = rows.map((r) => {
+  const body = result.micro.map((r) => {
     const samples = r.samples.map((s) => Math.round(s)).join(', ');
     const median = Math.round(r.medianMs);
     const overhead = r.mode === 'baseline' ? '—' : `${r.overheadPct.toFixed(1)}%`;
@@ -320,18 +346,17 @@ async function main() {
   console.log([header, sep, ...body].join('\n'));
 
   if (INCLUDE_HTTP) {
-    const httpRows = await runHttpScenario();
     const httpHeader =
       '| Scenario | Mode | Median wall (ms) | RPS | RPS delta | p50 (ms) | p95 (ms) | p99 (ms) | Errors |';
     const httpSep = '| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |';
-    const httpBody = httpRows.map((row) => {
+    const httpBody = result.http.map((row) => {
       const delta = row.mode === 'baseline' ? '—' : `${row.throughputDeltaPct.toFixed(1)}%`;
       return `| ${row.scenario} | ${row.mode} | ${Math.round(row.medianMs)} | ${row.requestsPerSec.toFixed(1)} | ${delta} | ${row.p50Ms.toFixed(1)} | ${row.p95Ms.toFixed(1)} | ${row.p99Ms.toFixed(1)} | ${row.errors} |`;
     });
     console.log(`\n${[httpHeader, httpSep, ...httpBody].join('\n')}`);
   }
   console.log(
-    `\nNode: ${process.version} | platform: ${process.platform} ${process.arch} | runs/mode: ${RUNS}`,
+    `\nNode: ${result.meta.node} | platform: ${result.meta.platform} ${result.meta.arch} | runs/mode: ${result.meta.runsPerMode}`,
   );
   if (INCLUDE_HTTP) {
     console.log(
@@ -342,7 +367,36 @@ async function main() {
   }
 }
 
-main().catch((error) => {
-  console.error('bench failed:', error);
-  process.exit(1);
-});
+async function runBench() {
+  const microRows = [];
+  for (const scenario of SCENARIOS) {
+    const baseline = await runMode(scenario, 'baseline');
+    microRows.push({ scenario: scenario.id, mode: 'baseline', ...baseline, overheadPct: 0 });
+    for (const mode of scenario.modes.filter((m) => m !== 'baseline')) {
+      const result = await runMode(scenario, mode);
+      const overheadPct = ((result.medianMs - baseline.medianMs) / baseline.medianMs) * 100;
+      microRows.push({ scenario: scenario.id, mode, ...result, overheadPct });
+    }
+  }
+  const httpRows = INCLUDE_HTTP ? await runHttpScenario() : [];
+  return { meta: buildMeta(), micro: microRows, http: httpRows };
+}
+
+async function main() {
+  const result = await runBench();
+  if (JSON_OUTPUT) {
+    process.stdout.write(`${JSON.stringify(toJsonResult(result), null, 2)}\n`);
+    return;
+  }
+  renderMarkdown(result);
+}
+
+// Exported for `scripts/check-bench.mjs`.
+export { runBench, toJsonResult };
+
+if (import.meta.url === `file://${process.argv[1]}`) {
+  main().catch((error) => {
+    console.error('bench failed:', error);
+    process.exit(1);
+  });
+}
