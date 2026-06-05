@@ -81,6 +81,10 @@ export const deepAsyncChainDetector: KindScopedDetector<'async'> = {
             minRecursionDepth: thresholds.minRecursionDepth,
             criticalRecursionDepth: thresholds.criticalRecursionDepth,
           },
+          priorityBasis: {
+            observed: chain.recursionDepth,
+            threshold: thresholds.minRecursionDepth,
+          },
         },
         why: `An async chain rooted in a \`${chain.rootKind}\` resource recurses through promises ${chain.recursionDepth} levels deep — the same user function appears ${chain.recursionDepth}× in a resource's creation stack (structural trigger depth ${chain.depth}, spanning ${chain.totalOperations} resources). Recursion through awaited promises accumulates latency and makes exception traces hard to read. (A long *sequential* await loop or a \`Promise.all\` fan-out would show a high trigger depth but a recursion depth of ~1 and is not flagged.)`,
         suggestion: `Find the recursive \`await\` in \`${frame?.function ?? chain.dominantFile ?? 'the dominant file'}\` and convert the recursion-through-promises into an iterative loop, or batch independent steps with \`Promise.all\` instead of awaiting each level in series.`,

@@ -114,6 +114,10 @@ export const longAwaitDetector: KindScopedDetector<'async'> = {
               minDurationMs: thresholds.minDurationMs,
               criticalDurationMs: thresholds.criticalDurationMs,
             },
+            priorityBasis: {
+              observed: op.durationMs,
+              threshold: thresholds.minDurationMs,
+            },
           },
           why: buildWhy(op, frame, dropped),
           suggestion: buildSuggestion(op, frame),

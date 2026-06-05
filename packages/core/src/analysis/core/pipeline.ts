@@ -232,6 +232,10 @@ function computeFindingPriority(finding: Finding, durationMs?: number): FindingP
 function computeMeasurementRatio(finding: Finding): number {
   const measurements = finding.measurements;
   if (!measurements) return Math.max(1, finding.evidence.selfPct);
+  const priorityBasis = measurements.priorityBasis;
+  if (priorityBasis && priorityBasis.threshold > 0) {
+    return priorityBasis.observed / priorityBasis.threshold;
+  }
 
   const pairs: Array<[string, string]> = [
     ['categoryTotalPct', 'categoryTotalPct'],
