@@ -5,7 +5,9 @@ import {
   getRegisteredNoiseFilters,
   isNoiseCategory,
   isNoiseRetainerPath,
+  isNoiseUrl,
   type NoiseFilter,
+  normalizeNoiseUrl,
   registerNoiseFilter,
   shouldKeepNoiseFrames,
 } from '../src/analysis/noise-filters.js';
@@ -34,6 +36,20 @@ describe('noise-filters: bundled lanterna filter', () => {
   it('does not match user code that happens to live in a similarly-named directory', () => {
     expect(classifyNoiseUrl('/app/src/services/runtime/hooks.ts')).toBeUndefined();
     expect(classifyNoiseUrl('/app/src/auth.ts')).toBeUndefined();
+  });
+
+  it('classifies regardless of url form (file:// scheme, Windows separators)', () => {
+    // Robustness: callers (cpu/memory/async kinds, cli renderer) hand raw V8
+    // urls; classifyNoiseUrl normalizes the form so every kind agrees.
+    expect(classifyNoiseUrl('file:///tmp/lanterna-preload-1-2-3.cjs')?.category).toBe('lanterna');
+    expect(classifyNoiseUrl('C:\\tmp\\lanterna-preload-1-2-3.cjs')?.category).toBe('lanterna');
+    expect(isNoiseUrl('file:///tmp/lanterna-preload-1-2-3.cjs')).toBe(true);
+    expect(isNoiseUrl('/app/server.js')).toBe(false);
+  });
+
+  it('normalizeNoiseUrl strips the file:// scheme and is idempotent', () => {
+    expect(normalizeNoiseUrl('file:///tmp/x.cjs')).toBe('/tmp/x.cjs');
+    expect(normalizeNoiseUrl('/tmp/x.cjs')).toBe('/tmp/x.cjs');
   });
 
   it.each([

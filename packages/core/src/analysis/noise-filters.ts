@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url';
 import type { FrameCategory } from '../report/types.js';
 
 /**
@@ -66,12 +67,41 @@ export function shouldKeepNoiseFrames(): boolean {
   return process.env.LANTERNA_DEBUG_SELF === '1';
 }
 
-export function classifyNoiseUrl(normalizedPath: string): NoiseUrlMatch | undefined {
+/**
+ * Normalize a frame URL / path to the POSIX, `file://`-free form the filters
+ * match against. Idempotent, so callers that already hold a clean path pay
+ * nothing, and callers holding a raw V8 url (`file://…`, Windows separators)
+ * get the same classification. Centralizing this keeps every kind's noise check
+ * in sync instead of each re-deriving the path shape.
+ */
+export function normalizeNoiseUrl(url: string): string {
+  const withoutScheme = url.startsWith('file://') ? fromFileUrl(url) : url;
+  // Convert Windows separators unconditionally: a report analyzed on POSIX can
+  // still carry backslash paths from a Windows-captured target (and vice-versa),
+  // so the filters always see forward slashes regardless of the host platform.
+  return withoutScheme.replaceAll('\\', '/');
+}
+
+function fromFileUrl(fileUrl: string): string {
+  try {
+    return fileURLToPath(fileUrl);
+  } catch {
+    return fileUrl;
+  }
+}
+
+export function classifyNoiseUrl(url: string): NoiseUrlMatch | undefined {
+  const normalizedPath = normalizeNoiseUrl(url);
   for (const filter of filters) {
     const label = filter.matchUrl?.(normalizedPath);
     if (label) return { category: filter.category, label, filter: filter.name };
   }
   return undefined;
+}
+
+/** Convenience predicate: does this frame URL / path belong to known self-noise? */
+export function isNoiseUrl(url: string): boolean {
+  return classifyNoiseUrl(url) !== undefined;
 }
 
 export function classifyNoisePackage(packageName: string): NoiseUrlMatch | undefined {

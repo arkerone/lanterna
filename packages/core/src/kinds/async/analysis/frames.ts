@@ -1,5 +1,5 @@
 import { fileURLToPath } from 'node:url';
-import { classifyNoiseUrl } from '../../../analysis/noise-filters.js';
+import { isNoiseUrl } from '../../../analysis/noise-filters.js';
 import type { SourceMapResolver } from '../../../analysis/sourcemap/resolver.js';
 import type {
   AsyncProfileReport,
@@ -17,12 +17,12 @@ export interface AsyncFrameReporter {
     options: Pick<UserCallerAttribution, 'profilePct' | 'supportPct' | 'confidence' | 'basis'>,
   ): UserCallerAttribution | undefined;
   /**
-   * First stack frame that is not Lanterna's own injected instrumentation, so a
-   * representative "where this came from" frame never points at the profiler.
-   * Falls back to the first frame when every frame is instrumentation, so a
-   * required origin is always produced.
+   * First stack frame that is not Lanterna's own injected instrumentation — the
+   * representative "where this came from" frame. Returns `undefined` when every
+   * frame is instrumentation, so callers never surface the profiler as the
+   * origin (they omit the frame or skip the record instead).
    */
-  firstNonNoiseFrame(frames: AsyncStackFrame[] | undefined): AsyncStackFrame | undefined;
+  firstUserFrame(frames: AsyncStackFrame[] | undefined): AsyncStackFrame | undefined;
   /** True when the frame belongs to Lanterna's own injected instrumentation. */
   isInstrumentationFrame(frame: AsyncStackFrame): boolean;
 }
@@ -86,41 +86,23 @@ export function createAsyncFrameReporter(resolver?: SourceMapResolver): AsyncFra
     return caller;
   };
 
-  const isInstrumentationFrame = (frame: AsyncStackFrame): boolean =>
-    isLanternaNoiseUrl(frame.file);
+  const isInstrumentationFrame = (frame: AsyncStackFrame): boolean => isNoiseUrl(frame.file);
 
-  const firstNonNoiseFrame = (
-    frames: AsyncStackFrame[] | undefined,
-  ): AsyncStackFrame | undefined => {
-    if (!frames) return undefined;
-    return frames.find((frame) => !isInstrumentationFrame(frame)) ?? frames[0];
-  };
+  const firstUserFrame = (frames: AsyncStackFrame[] | undefined): AsyncStackFrame | undefined =>
+    frames?.find((frame) => !isInstrumentationFrame(frame));
 
   return {
     normalizeFrameFile,
     toReportCdpContext,
     toReportFrame,
     userCallerFromAsyncFrame,
-    firstNonNoiseFrame,
+    firstUserFrame,
     isInstrumentationFrame,
   };
 }
 
 function isLanternaNoiseFrame(frame: AsyncStackFrameReport): boolean {
-  return isLanternaNoiseUrl(frame.file);
-}
-
-function isLanternaNoiseUrl(file: string): boolean {
-  const path = file.startsWith('file://') ? safeFileURLToPath(file) : file;
-  return classifyNoiseUrl(path.replaceAll('\\', '/')) !== undefined;
-}
-
-function safeFileURLToPath(url: string): string {
-  try {
-    return fileURLToPath(url);
-  } catch {
-    return url;
-  }
+  return isNoiseUrl(frame.file);
 }
 
 export function collectAsyncFrameUrls(data: AsyncKindData): Set<string> {

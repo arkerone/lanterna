@@ -40,7 +40,7 @@ export function classifyFrame(functionName: string, url: string, cwd: string): C
   }
 
   const fileSystemPath = url.startsWith('file://') ? fromFileUrl(url) : url;
-  const noiseUrl = classifyNoiseUrl(toPosix(fileSystemPath));
+  const noiseUrl = classifyNoiseUrl(fileSystemPath);
   if (noiseUrl) {
     return { category: noiseUrl.category, file: noiseUrl.label };
   }

@@ -53,7 +53,9 @@ export function buildHotFiles(args: {
   }
 
   for (const rec of records) {
-    const frame = rec.initStack[0];
+    // Aggregate by the first non-instrumentation creation frame so a hot file is
+    // never Lanterna's own preload — skip the record if it has no user frame.
+    const frame = frameReporter.firstUserFrame(rec.initStack);
     if (!frame) continue;
     const file = frameReporter.normalizeFrameFile(frame.file);
     const durationMs = effectiveDuration(rec, captureDurationMs);
@@ -99,9 +101,10 @@ export function buildHotFiles(args: {
     byFile.set(file, aggregate);
 
     const rootId = rootByAsyncId.get(rec.asyncId);
-    const rootFrame = rootId
-      ? records.find((candidate) => candidate.asyncId === rootId)?.initStack[0]
+    const rootRecord = rootId
+      ? records.find((candidate) => candidate.asyncId === rootId)
       : undefined;
+    const rootFrame = frameReporter.firstUserFrame(rootRecord?.initStack);
     if (rootFrame && frameReporter.normalizeFrameFile(rootFrame.file) !== file) {
       cpuPctByFile.set(file, cpuPctByFile.get(file) ?? 0);
     }

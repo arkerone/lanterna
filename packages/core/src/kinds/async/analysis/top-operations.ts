@@ -69,7 +69,13 @@ export function buildTopOperations(args: BuildTopOperationsArgs): AsyncTopOperat
       orphan: rec.orphan,
       initStack,
     };
-    const creationFrame = initStack[0];
+    // The representative creation frame skips Lanterna's own instrumentation so
+    // it never anchors the operation to the profiler; the raw initStack above is
+    // still emitted untouched for full-trace inspection.
+    const creationUserFrame = frameReporter.firstUserFrame(rec.initStack);
+    const creationFrame = creationUserFrame
+      ? frameReporter.toReportFrame(creationUserFrame)
+      : undefined;
     const promiseRegistrationFrame = rec.promiseRegistrationStack?.[0]
       ? frameReporter.toReportFrame(rec.promiseRegistrationStack[0])
       : undefined;

@@ -172,7 +172,7 @@ export function buildCpuAttribution(args: BuildAttributionArgs): AsyncCpuAttribu
       cpuMs: bucket.cpuMs,
       contributingOperations: bucket.contributingAsyncIds.size,
     };
-    const rootOriginFrame = frameReporter.firstNonNoiseFrame(root.initStack);
+    const rootOriginFrame = frameReporter.firstUserFrame(root.initStack);
     if (rootOriginFrame) entry.rootFrame = frameReporter.toReportFrame(rootOriginFrame);
     const executionFrame = bestCpuFrame(bucket.frameCounts, frameReporter);
     if (executionFrame) {
@@ -232,11 +232,11 @@ function bestCpuFrame(
   // hooks themselves burn CPU and can out-sample the user code they wrap, but
   // reporting the preload as the execution frame points at the profiler. When
   // every sampled frame is instrumentation there is no real user execution
-  // frame — return undefined so the chain falls back to its root frame.
-  return [...counts.values()]
+  // frame — firstUserFrame returns undefined so the chain falls back to its root.
+  const byCount = [...counts.values()]
     .sort((a, b) => b.count - a.count || a.frame.file.localeCompare(b.frame.file))
-    .map((entry) => entry.frame)
-    .find((frame) => !frameReporter.isInstrumentationFrame(frame));
+    .map((entry) => entry.frame);
+  return frameReporter.firstUserFrame(byCount);
 }
 
 function findLatestStartedWindow<Window extends { startMs: number; order: number }>(

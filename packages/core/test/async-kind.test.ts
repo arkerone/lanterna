@@ -1635,11 +1635,25 @@ describe('async user-caller attribution', () => {
 
   it('skips leading Lanterna instrumentation when picking a representative frame', () => {
     const reporter = createAsyncFrameReporter();
-    const origin = reporter.firstNonNoiseFrame([
+    const origin = reporter.firstUserFrame([
       { function: 'tickInit', file: '/tmp/lanterna-preload-1-2-3.cjs', line: 468, column: 7 },
       { function: 'handle', file: '/app/server.js', line: 31, column: 2 },
     ]);
     expect(origin).toMatchObject({ function: 'handle', file: '/app/server.js', line: 31 });
+  });
+
+  it('returns no representative frame when every frame is instrumentation', () => {
+    const reporter = createAsyncFrameReporter();
+    const origin = reporter.firstUserFrame([
+      { function: 'tickInit', file: '/tmp/lanterna-preload-1-2-3.cjs', line: 468, column: 7 },
+      {
+        function: 'emitHook',
+        file: 'file:///app/dist/runtime-signals/hooks/x.cjs',
+        line: 1,
+        column: 1,
+      },
+    ]);
+    expect(origin).toBeUndefined();
   });
 
   it('identifies Lanterna instrumentation frames', () => {
