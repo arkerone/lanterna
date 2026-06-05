@@ -6,6 +6,8 @@ import {
   type ProfileKind,
   serializeReport,
 } from '@lanterna-profiler/core';
+import { diffReports } from './diff/diff-report.js';
+import { renderDiff } from './diff/render-diff.js';
 import type { OutputFormat } from './parse.js';
 import { renderReport } from './renderers/index.js';
 
@@ -29,6 +31,19 @@ export async function writeExistingReportOutput(
   const raw = await readFile(resolve(reportPath), 'utf8');
   const parsed = JSON.parse(raw) as LanternaReport;
   const rendered = renderExistingReport(parsed, pretty, format);
+  await writeRenderedOutput(rendered, outputPath);
+}
+
+export async function writeReportDiffOutput(
+  baselinePath: string,
+  currentPath: string,
+  outputPath: string | undefined,
+  pretty: boolean,
+  format: OutputFormat,
+): Promise<void> {
+  const baseline = JSON.parse(await readFile(resolve(baselinePath), 'utf8')) as LanternaReport;
+  const current = JSON.parse(await readFile(resolve(currentPath), 'utf8')) as LanternaReport;
+  const rendered = renderDiff(diffReports(baseline, current), format, pretty);
   await writeRenderedOutput(rendered, outputPath);
 }
 

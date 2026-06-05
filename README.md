@@ -154,6 +154,7 @@ Start here, then dive into whichever topic you need:
 - **[docs/programmatic-api.md](docs/programmatic-api.md)** — `runProfile`, `attachProfile`, low-level capture and analysis APIs.
 - **[docs/report-schema.md](docs/report-schema.md)** — `LanternaReport` shape (schema v2).
 - **[docs/reading-a-report.md](docs/reading-a-report.md)** — interpretation playbook and common mistakes.
+- **[docs/diffing-reports.md](docs/diffing-reports.md)** — `lanterna diff` for regression diffs between two reports.
 - **[docs/signal-quality.md](docs/signal-quality.md)** — confidence, integrity flags, degradation modes.
 - **[docs/security-and-privacy.md](docs/security-and-privacy.md)** — inspector, plugin, report, and heap-snapshot trust model.
 - **[docs/architecture.md](docs/architecture.md)** — capture flow and enrichment pipeline.

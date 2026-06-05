@@ -10,6 +10,7 @@ Complete reference for the `lanterna` binary shipped by [`@lanterna-profiler/cli
 | [`lanterna attach`](#lanterna-attach) | Connect to an already-running Node process. |
 | [`lanterna ps`](#lanterna-ps) | List live `node`/`nodejs` runtimes Lanterna can attach to. |
 | [`lanterna report`](#lanterna-report) | Render an existing JSON report as text, markdown, agent markdown or reformatted JSON. |
+| [`lanterna diff`](#lanterna-diff) | Compare two JSON reports (regression diff with a `regressed` flag). |
 
 The `--` separator is required before the target command in `run`. `attach` never takes `-- <command>`; it takes `--pid` or `--inspect-url` instead.
 
@@ -149,6 +150,22 @@ lanterna report report.json --format json --pretty
 ```
 
 `--format agent` is a deterministic Markdown contract for automated analysis. It contains a signal gate with `rerun_required`, an evidence pack, files to read first, and decision rules. When `rerun_required` is true, use the rendered caveats and any `decision = rerun` findings to choose the next capture command.
+
+## `lanterna diff`
+
+```bash
+lanterna diff <baseline.json> <current.json> [options]
+```
+
+Compares two existing JSON reports and renders a regression diff: findings added / removed / changed / unchanged (matched by `id`), headline CPU and memory metric deltas, and a `regressed` flag (true when the current report introduces or worsens a non-info finding). Supports `--format text|markdown|agent|json` and `--output`.
+
+```bash
+lanterna diff before.json after.json
+lanterna diff before.json after.json --format agent --output diff.agent.md
+lanterna diff before.json after.json --format json --pretty
+```
+
+See [diffing-reports.md](./diffing-reports.md) for the full contract and CI-gate usage.
 
 ## Options
 
