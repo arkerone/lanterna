@@ -592,7 +592,7 @@ describe('async kind round-trip', () => {
       cdpAsyncStackCoverageRatio: 1,
     });
     expect(result.profiles.async?.quality.reasons).toContain(
-      'attach mode can only observe async resources created after hooks were installed',
+      'runtime hooks installed after startup can only observe async resources created after installation',
     );
   });
 
@@ -835,6 +835,45 @@ describe('async probe lifecycle', () => {
 
     expect(evaluated.some((e) => e.includes('.disable?.()'))).toBe(true);
     expect(sent).toContain('Debugger.disable');
+  });
+
+  it.each([
+    ['spawn', false],
+    ['attach', true],
+    ['in-process', true],
+  ] as const)('marks %s async probe partial capture as %s', async (mode, partial) => {
+    const cdp: CdpClient = {
+      closed: false,
+      send: async () => ({}),
+      evaluate: async (expression: string) => {
+        if (expression.includes('.read?.()')) {
+          return {
+            available: true,
+            maxRecords: 10,
+            records: [],
+            concurrency: [],
+            integrity: {
+              recordsDropped: 0,
+              initCount: 0,
+              destroyCount: 0,
+              resolveCount: 0,
+              orphanCount: 0,
+            },
+            filteredCounts: {},
+            attachPartialCapture: false,
+          };
+        }
+        return null;
+      },
+      on: () => () => {},
+      onClose: () => () => {},
+      close: async () => {},
+    };
+
+    const probe = createAsyncProbe({ asyncStackDepth: 32 });
+    const data = await probe.stop({ cdp, mode, kindId: 'async' });
+
+    expect(data.attachPartialCapture).toBe(partial);
   });
 
   it('does not call disable over CDP during dispose when the client is already closed', async () => {

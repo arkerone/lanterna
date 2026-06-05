@@ -39,7 +39,7 @@ export interface KindViews {
 
 export interface ProbeLifecycleContext {
   cdp: CdpClient;
-  mode: 'spawn' | 'attach';
+  mode: 'spawn' | 'attach' | 'in-process';
   kindId: string;
   liveSourceSignals?: () => LiveSourceSignals;
 }

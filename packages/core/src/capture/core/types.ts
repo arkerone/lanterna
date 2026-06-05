@@ -179,6 +179,7 @@ export interface LiveSourceSignals {
  */
 export interface ConnectedSource {
   cdp: import('../../inspector/client.js').CdpClient;
+  mode: 'spawn' | 'attach' | 'in-process';
   target: TargetInfo;
   startedAtEpoch: number;
   /**

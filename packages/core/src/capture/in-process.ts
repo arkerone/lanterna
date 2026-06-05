@@ -12,7 +12,7 @@ import type {
  * Captures the **current** process by driving an in-process `node:inspector`
  * session — no child spawn, no remote attach. Shares the entire enrichment
  * pipeline with spawn/attach; like attach it installs runtime hooks via CDP
- * `evaluate` (no FD-3 control channel) and behaves as `attach`-mode for probes.
+ * `evaluate` (no FD-3 control channel), while probes see `mode: 'in-process'`.
  *
  * `waitForExit` never resolves: the host process is the target and does not exit
  * during the capture, so the coordinator must be driven by `durationMs` or a
@@ -53,6 +53,7 @@ export class InProcessSource implements ProfileSource<InProcessStartOptions> {
 
     return {
       cdp,
+      mode: 'in-process',
       target: {
         pid: process.pid,
         nodeVersion: process.version,

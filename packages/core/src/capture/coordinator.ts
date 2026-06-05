@@ -94,10 +94,9 @@ export async function runCapture<TSourceOptions>(
       message: 'Runtime capture clock started. Starting profile probes...',
     });
 
-    const mode = connected.releaseRuntime ? 'spawn' : 'attach';
     const probes = new ProbeOrchestrator({
       cdp,
-      mode,
+      mode: connected.mode,
       captureIntegrity,
       sourceOptions: options.sourceOptions,
       ...(options.abortSignal ? { abortSignal: options.abortSignal } : {}),
