@@ -210,7 +210,6 @@ class ConfigMerger<TOptions extends ConfigurableOptions> {
     this.applyScalarConfigValues();
     this.mergeDetectors();
     this.mergeKinds();
-    this.assertHeapSnapshotKind();
     return this.merged as TOptions;
   }
 
@@ -237,13 +236,6 @@ class ConfigMerger<TOptions extends ConfigurableOptions> {
       return;
     }
     this.merged.kinds = dedupe(this.config.kinds ?? this.options.kinds ?? []);
-  }
-
-  private assertHeapSnapshotKind(): void {
-    const heapSnapshot = this.merged.heapSnapshotAnalysis;
-    if (!heapSnapshot?.enabled && !heapSnapshot?.outputDir) return;
-    if (this.merged.kinds?.includes('memory')) return;
-    throw new Error('heap snapshot analysis in Lanterna config requires kind "memory"');
   }
 
   private assign(key: ScalarConfigKey, value: LanternaConfig[ScalarConfigKey]): void {
