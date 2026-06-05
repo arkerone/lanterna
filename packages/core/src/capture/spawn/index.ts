@@ -203,6 +203,7 @@ export class SpawnSource implements ProfileSource<SpawnStartOptions> {
 
       return {
         cdp,
+        mode: 'spawn',
         target: {
           pid: child.pid ?? -1,
           nodeVersion: '',

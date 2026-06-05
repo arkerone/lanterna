@@ -58,10 +58,16 @@ class FakeSource implements ProfileSource<FakeSourceOptions | undefined> {
   readonly cdp: FakeCdp;
   private readonly waitForExitImpl: () => Promise<void>;
   finalizeCalls = 0;
+  mode: ConnectedSource['mode'];
 
-  constructor(cdp = new FakeCdp(), waitForExitImpl: () => Promise<void> = async () => {}) {
+  constructor(
+    cdp = new FakeCdp(),
+    waitForExitImpl: () => Promise<void> = async () => {},
+    mode: ConnectedSource['mode'] = 'attach',
+  ) {
     this.cdp = cdp;
     this.waitForExitImpl = waitForExitImpl;
+    this.mode = mode;
   }
 
   async connect(
@@ -70,6 +76,7 @@ class FakeSource implements ProfileSource<FakeSourceOptions | undefined> {
   ): Promise<ConnectedSource> {
     return {
       cdp: this.cdp,
+      mode: this.mode,
       target: makeTarget(),
       startedAtEpoch: Date.parse('2024-01-01T00:00:00.000Z'),
       initialIntegrity: createCaptureIntegrity(),
@@ -216,6 +223,36 @@ function stopReasonKind(id: string, seen: Array<string | undefined>): ProfileKin
         stop: async (ctx) => {
           seen.push(ctx.stopReason);
           return { ok: true };
+        },
+      };
+    },
+    createAnalysisContributor() {
+      return {
+        analyze() {},
+      };
+    },
+  });
+}
+
+function modeRecordingKind(id: string, seen: string[]): ProfileKind {
+  return defineProfileKind({
+    id,
+    reportSectionKey: id,
+    reportSchema: z.unknown(),
+    createProbe() {
+      return {
+        install: async (ctx) => {
+          seen.push(`install:${ctx.mode}`);
+        },
+        start: async (ctx) => {
+          seen.push(`start:${ctx.mode}`);
+        },
+        stop: async (ctx) => {
+          seen.push(`stop:${ctx.mode}`);
+          return { ok: true };
+        },
+        dispose: async (ctx) => {
+          seen.push(`dispose:${ctx.mode}`);
         },
       };
     },
@@ -517,6 +554,23 @@ describe('runCapture lifecycle', () => {
     await capturePromise;
 
     expect(seen).toEqual(['signal']);
+  });
+
+  it.each([
+    'spawn',
+    'attach',
+    'in-process',
+  ] as const)('passes explicit %s source mode to every probe lifecycle step', async (mode) => {
+    const source = new FakeSource(new FakeCdp(), async () => {}, mode);
+    const seen: string[] = [];
+
+    await runCapture({
+      source,
+      sourceOptions: undefined,
+      kinds: [modeRecordingKind('mode-recorder', seen)],
+    });
+
+    expect(seen).toEqual([`install:${mode}`, `start:${mode}`, `stop:${mode}`, `dispose:${mode}`]);
   });
 
   it('disposes a probe after a successful stop', async () => {

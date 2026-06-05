@@ -60,7 +60,9 @@ export function buildQuality(args: BuildQualityArgs): AsyncProfileQuality {
     recommendations.add('Use spawn mode or ensure the Lanterna preload can install async_hooks.');
   }
   if (attachPartialCapture) {
-    reasons.push('attach mode can only observe async resources created after hooks were installed');
+    reasons.push(
+      'runtime hooks installed after startup can only observe async resources created after installation',
+    );
     recommendations.add('Use run mode for complete startup async lifecycle coverage.');
   }
   if (operationCount > 0 && !eventLoopSignalAvailable) {

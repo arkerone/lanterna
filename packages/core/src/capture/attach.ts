@@ -84,6 +84,7 @@ export class AttachSource implements ProfileSource<AttachStartOptions> {
 
     return {
       cdp,
+      mode: 'attach',
       target: {
         pid: options.pid ?? -1,
         nodeVersion: '',

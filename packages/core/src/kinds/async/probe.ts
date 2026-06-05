@@ -47,6 +47,7 @@ export function createAsyncProbe(options: AsyncProbeOptions): CaptureProbe<Async
     async stop(ctx: ProbeLifecycleContext): Promise<AsyncKindData> {
       const { cdp } = ctx;
       const read = cdp.closed ? null : await readAsyncOperations(cdp);
+      const attachPartialCapture = isPartialHookInstallMode(ctx.mode);
       if (!read?.available) {
         return {
           available: false,
@@ -63,7 +64,7 @@ export function createAsyncProbe(options: AsyncProbeOptions): CaptureProbe<Async
           },
           filteredCounts: {},
           instrumentationMode: read?.instrumentationMode ?? 'safe',
-          attachPartialCapture: true,
+          attachPartialCapture,
           clockResolutionMs: read?.clockResolutionMs,
           cdpAsyncStackSupport: asyncStackSupport,
           cdpAsyncStackDepthRequested: options.asyncStackDepth,
@@ -79,7 +80,7 @@ export function createAsyncProbe(options: AsyncProbeOptions): CaptureProbe<Async
         integrity: read.integrity,
         filteredCounts: read.filteredCounts,
         instrumentationMode: read.instrumentationMode ?? 'safe',
-        attachPartialCapture: Boolean(read.attachPartialCapture),
+        attachPartialCapture: attachPartialCapture || Boolean(read.attachPartialCapture),
         clockResolutionMs: read.clockResolutionMs,
         cdpAsyncStackSupport: asyncStackSupport,
         cdpAsyncStackDepthRequested: options.asyncStackDepth,
@@ -98,6 +99,10 @@ export function createAsyncProbe(options: AsyncProbeOptions): CaptureProbe<Async
       }
     },
   };
+}
+
+function isPartialHookInstallMode(mode: ProbeLifecycleContext['mode']): boolean {
+  return mode === 'attach' || mode === 'in-process';
 }
 
 function installCdpStackListeners(
