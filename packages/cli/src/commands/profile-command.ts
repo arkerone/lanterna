@@ -14,6 +14,7 @@ import {
 } from '@lanterna-profiler/detectors';
 import { startActivityIndicator } from '../activity-indicator.js';
 import { applyLanternaConfig, loadLanternaConfig } from '../config.js';
+import { validateKindScopedOptions } from '../options-policy.js';
 import { writeReportOutput } from '../output.js';
 import { getProvidedFlags, type OutputFormat } from '../parse.js';
 import { loadPlugins } from '../plugins.js';
@@ -68,7 +69,9 @@ export async function executeProfileCommand(command: ExecuteProfileCommandOption
 
   try {
     const config = await loadLanternaConfig(process.cwd());
-    const options = applyLanternaConfig(config, command.options, getProvidedFlags(command.options));
+    const providedFlags = getProvidedFlags(command.options);
+    const options = applyLanternaConfig(config, command.options, providedFlags);
+    validateKindScopedOptions(options, { config, providedFlags });
     const resolvedCommand = { ...command, options } as ExecuteProfileCommandOptions;
     const { kinds: pluginKinds, setupPipeline } = await resolvePluginContributions(
       options.detectors,

@@ -216,9 +216,10 @@ describe('parseRunArgs', () => {
         .asyncInstrumentation,
     ).toBe('full');
 
-    expect(() => parseRunArgs(['--async-instrumentation', 'safe', '--', 'node', 'app.js'])).toThrow(
-      '--async-* options require --kind async',
-    );
+    expect(
+      parseRunArgs(['--async-instrumentation', 'safe', '--', 'node', 'app.js'])
+        .asyncInstrumentation,
+    ).toBe('safe');
     expect(() =>
       parseRunArgs([
         '--kind',
@@ -273,13 +274,17 @@ describe('parseRunArgs', () => {
     });
   });
 
-  it('rejects heap snapshot analysis without the memory kind', () => {
-    expect(() => parseRunArgs(['--heap-snapshot-analysis', '--', 'node', 'app.js'])).toThrow(
-      /--heap-snapshot-analysis requires --kind memory/,
-    );
-    expect(() =>
+  it('parses heap snapshot options before config/kind policy validation', () => {
+    expect(parseRunArgs(['--heap-snapshot-analysis', '--', 'node', 'app.js'])).toMatchObject({
+      heapSnapshotAnalysis: { enabled: true },
+      kinds: ['cpu'],
+    });
+    expect(
       parseAttachArgs(['--pid', '42', '--heap-snapshot-dir', '/tmp/lanterna-heaps']),
-    ).toThrow(/--heap-snapshot-dir requires --kind memory/);
+    ).toMatchObject({
+      heapSnapshotAnalysis: { enabled: false, outputDir: '/tmp/lanterna-heaps' },
+      kinds: ['cpu'],
+    });
   });
 });
 
