@@ -6,8 +6,16 @@ export function isEditableUserFile(value: string | undefined): value is string {
     looksLikeFilePath(value) &&
     !isPseudoFile(value) &&
     !isDependencyOrRuntimePath(value) &&
+    !isLanternaInstrumentationPath(value) &&
     !isVirtualSourcePath(value)
   );
+}
+
+// Lanterna's own injected preload (`/tmp/lanterna-preload-*.cjs`) is real code
+// on disk during a capture, so it slips past the dependency/runtime checks. It
+// is never a patch target — exclude it so it cannot surface as a read-first file.
+export function isLanternaInstrumentationPath(file: string): boolean {
+  return /(^|\/)lanterna-preload-[^/]+\.cjs$/.test(file.replaceAll('\\', '/'));
 }
 
 export function isGeneratedOutputPath(file: string): boolean {

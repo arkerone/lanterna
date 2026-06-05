@@ -172,7 +172,8 @@ export function buildCpuAttribution(args: BuildAttributionArgs): AsyncCpuAttribu
       cpuMs: bucket.cpuMs,
       contributingOperations: bucket.contributingAsyncIds.size,
     };
-    if (root.initStack[0]) entry.rootFrame = frameReporter.toReportFrame(root.initStack[0]);
+    const rootOriginFrame = frameReporter.firstNonNoiseFrame(root.initStack);
+    if (rootOriginFrame) entry.rootFrame = frameReporter.toReportFrame(rootOriginFrame);
     const executionFrame = bestCpuFrame(bucket.frameCounts);
     if (executionFrame) {
       const reportFrame = frameReporter.toReportFrame(executionFrame);
