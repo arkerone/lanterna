@@ -1,4 +1,4 @@
-import { readFile, writeFile } from 'node:fs/promises';
+import { writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import {
   type LanternaReport,
@@ -10,6 +10,7 @@ import { diffReports } from './diff/diff-report.js';
 import { renderDiff } from './diff/render-diff.js';
 import type { OutputFormat } from './parse.js';
 import { renderReport } from './renderers/index.js';
+import { readLanternaReport } from './report-intake.js';
 
 export async function writeReportOutput(
   report: LanternaReport,
@@ -28,8 +29,7 @@ export async function writeExistingReportOutput(
   pretty: boolean,
   format: OutputFormat,
 ): Promise<void> {
-  const raw = await readFile(resolve(reportPath), 'utf8');
-  const parsed = JSON.parse(raw) as LanternaReport;
+  const parsed = await readLanternaReport(reportPath);
   const rendered = renderExistingReport(parsed, pretty, format);
   await writeRenderedOutput(rendered, outputPath);
 }
@@ -41,8 +41,8 @@ export async function writeReportDiffOutput(
   pretty: boolean,
   format: OutputFormat,
 ): Promise<void> {
-  const baseline = JSON.parse(await readFile(resolve(baselinePath), 'utf8')) as LanternaReport;
-  const current = JSON.parse(await readFile(resolve(currentPath), 'utf8')) as LanternaReport;
+  const baseline = await readLanternaReport(baselinePath, 'baseline report');
+  const current = await readLanternaReport(currentPath, 'current report');
   const rendered = renderDiff(diffReports(baseline, current), format, pretty);
   await writeRenderedOutput(rendered, outputPath);
 }
