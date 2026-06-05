@@ -105,6 +105,14 @@ export interface ReportOptions {
   pretty: boolean;
 }
 
+export interface DiffOptions {
+  baseline: string;
+  current: string;
+  output?: string;
+  format: OutputFormat;
+  pretty: boolean;
+}
+
 export type PsFormat = 'text' | 'json';
 
 export interface PsOptions {
@@ -166,6 +174,26 @@ export function parseReportArgs(args: string[]): ReportOptions {
   }
   const options: ReportOptions = {
     file,
+    format: parsed.format ?? 'text',
+    pretty: Boolean(parsed.pretty),
+  };
+  if (parsed.output) options.output = parsed.output;
+  return withProvidedFlags(options, collectProvidedFlags(args));
+}
+
+export function parseDiffArgs(args: string[]): DiffOptions {
+  const command = createDiffParser();
+  parseCommand(command, args);
+  const parsed = command.opts<Pick<ParsedCommonOptions, 'output' | 'format' | 'pretty'>>();
+  const [baseline, current] = command.args;
+  if (!baseline || !current) {
+    throw new Error(
+      'lanterna diff needs two report files. Use: lanterna diff <baseline.json> <current.json> [options]',
+    );
+  }
+  const options: DiffOptions = {
+    baseline,
+    current,
     format: parsed.format ?? 'text',
     pretty: Boolean(parsed.pretty),
   };
@@ -308,6 +336,15 @@ function createReportParser(): Command {
   return createBaseParser('report')
     .argument('[file]')
     .option(OPTION_FLAGS.output, 'Write rendered report to path')
+    .option(OPTION_FLAGS.format, 'Output format: json, text, markdown, or agent', parseOutputFormat)
+    .option(OPTION_FLAGS.pretty, 'Pretty-print JSON output');
+}
+
+function createDiffParser(): Command {
+  return createBaseParser('diff')
+    .argument('[baseline]')
+    .argument('[current]')
+    .option(OPTION_FLAGS.output, 'Write rendered diff to path')
     .option(OPTION_FLAGS.format, 'Output format: json, text, markdown, or agent', parseOutputFormat)
     .option(OPTION_FLAGS.pretty, 'Pretty-print JSON output');
 }

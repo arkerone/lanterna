@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import chalk from 'chalk';
 import { AttachSelectionCancelledError } from './attach-target.js';
 import { attachCommand } from './commands/attach.js';
+import { diffCommand } from './commands/diff.js';
 import { psCommand } from './commands/ps.js';
 import { reportCommand } from './commands/report.js';
 import { runCommand } from './commands/run.js';
@@ -28,7 +29,13 @@ import {
   RUN_CAPTURE_OPTIONS,
   SOURCE_MAP_OPTIONS,
 } from './option-descriptors.js';
-import { parseAttachArgs, parsePsArgs, parseReportArgs, parseRunArgs } from './parse.js';
+import {
+  parseAttachArgs,
+  parseDiffArgs,
+  parsePsArgs,
+  parseReportArgs,
+  parseRunArgs,
+} from './parse.js';
 import { renderBrandHeader, renderCommandHeader } from './terminal-style.js';
 
 function readPackageVersion(): string {
@@ -71,6 +78,7 @@ ${formatSection('Usage', [
   `  ${chalk.cyan('lanterna attach')} ${chalk.gray('[options]')}`,
   `  ${chalk.cyan('lanterna ps')} ${chalk.gray('[options]')}`,
   `  ${chalk.cyan('lanterna report')} ${chalk.gray('<file> [options]')}`,
+  `  ${chalk.cyan('lanterna diff')} ${chalk.gray('<baseline.json> <current.json> [options]')}`,
 ])}
 
 ${formatSection('Commands', [
@@ -78,6 +86,7 @@ ${formatSection('Commands', [
   formatOptionRow('attach', 'Attach to a running Node.js process by PID, URL, or picker'),
   formatOptionRow('ps', 'List live node/nodejs runtimes (as a table or JSON)'),
   formatOptionRow('report', 'Render an existing Lanterna JSON report'),
+  formatOptionRow('diff', 'Compare two Lanterna JSON reports (regression diff)'),
 ])}
 
 ${formatSection('Common options', [
@@ -301,6 +310,38 @@ ${formatExamples('Examples', [
 ])}
 `;
 
+const DIFF_HELP = `${renderCommandHeader({
+  command: 'diff',
+  subtitle: 'Compare two reports',
+})}
+
+${formatSection('Usage', [
+  `  ${chalk.cyan('lanterna diff')} ${chalk.gray('<baseline.json> <current.json> [options]')}`,
+])}
+
+${formatSection('Output', outputRows)}
+
+${formatSection('General', generalRows)}
+
+${formatExamples('Examples', [
+  { comment: 'Diff two reports in the terminal', cmd: 'lanterna diff before.json after.json' },
+  {
+    comment: 'Agent-friendly diff with a regression flag',
+    cmd: 'lanterna diff before.json after.json --format agent --output diff.agent.md',
+  },
+  {
+    comment: 'Machine-readable diff for a CI gate',
+    cmd: 'lanterna diff before.json after.json --format json --pretty',
+  },
+])}
+
+${formatNotes('Notes', [
+  `Compares ${chalk.cyan('findings')} by id (added / removed / changed) plus headline CPU and memory metric deltas`,
+  `${chalk.cyan('regressed')} is true when the current report introduces or worsens a non-info finding`,
+  `Both arguments are existing ${chalk.cyan('lanterna')} JSON reports (from ${chalk.cyan('run')} or ${chalk.cyan('attach')} with ${chalk.cyan('--format json')})`,
+])}
+`;
+
 export async function main(argv: string[]): Promise<void> {
   if (argv.length === 0 || argv[0] === '-h' || argv[0] === '--help') {
     process.stdout.write(GLOBAL_HELP);
@@ -355,9 +396,17 @@ export async function main(argv: string[]): Promise<void> {
     await reportCommand(parseReportArgs(rest));
     return;
   }
+  if (subcommand === 'diff') {
+    if (rest.length === 0 || rest[0] === '-h' || rest[0] === '--help') {
+      process.stdout.write(DIFF_HELP);
+      return;
+    }
+    await diffCommand(parseDiffArgs(rest));
+    return;
+  }
 
   process.stderr.write(formatUnknownCommandError(subcommand ?? ''));
   process.exitCode = 2;
 }
 
-export { ATTACH_HELP, GLOBAL_HELP, PS_HELP, REPORT_HELP, RUN_HELP, VERSION };
+export { ATTACH_HELP, DIFF_HELP, GLOBAL_HELP, PS_HELP, REPORT_HELP, RUN_HELP, VERSION };
