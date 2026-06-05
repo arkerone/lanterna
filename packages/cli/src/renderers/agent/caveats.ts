@@ -1,9 +1,9 @@
 import type { Finding, LanternaReport } from '@lanterna-profiler/core';
+import { isBestEffortFinding } from '@lanterna-profiler/detectors';
 import { formatPct } from '../formatting.js';
 import { decisionForFinding } from './findings.js';
 
 const MOSTLY_IDLE_CPU_RATIO = 0.9;
-const BEST_EFFORT_DETECTOR_PREFIXES = ['deopt-loop:', 'deep-async-chain:', 'hot-async-context:'];
 const BEST_EFFORT_DETECTOR_CAVEAT = 'best-effort detector evidence present';
 
 export function blockingIntegrityCaveats(report: LanternaReport): string[] {
@@ -78,5 +78,5 @@ function rerunRequiredSignalCaveats(report: LanternaReport): string[] {
 }
 
 function isBestEffortDetectorFinding(finding: Finding): boolean {
-  return BEST_EFFORT_DETECTOR_PREFIXES.some((prefix) => finding.id.startsWith(prefix));
+  return isBestEffortFinding(finding.id);
 }

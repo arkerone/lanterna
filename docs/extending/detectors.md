@@ -136,6 +136,23 @@ pipeline.register(defineFindingAnalyzer({
 
 The default pack lives in `@lanterna-profiler/detectors` and pre-wires detectors per kind via `withBuiltIn{Cpu,Memory,Async}Detectors`. Use the table below as inspiration for your own rules. Findings marked best-effort depend on V8 trace timing or async/CPU correlation enough that the example E2E suite treats misses as warnings instead of hard failures.
 
+### Reliability tier
+
+`severity` / `confidence` / `proofLevel` describe an individual finding. The **reliability tier** describes the *detector* — how deterministically it fires at all. It is centralized (single source of truth) in `@lanterna-profiler/detectors`:
+
+```ts
+import {
+  BEST_EFFORT_DETECTOR_IDS,   // ['deopt-loop', 'deep-async-chain', 'hot-async-context']
+  detectorReliabilityTier,    // (findingId) => 'standard' | 'best-effort'
+  isBestEffortFinding,        // (findingId) => boolean
+} from '@lanterna-profiler/detectors';
+
+isBestEffortFinding('deep-async-chain:42'); // true
+detectorReliabilityTier('cpu-hotspot:foo'); // 'standard'
+```
+
+`standard` detectors fire on direct or correlated evidence and are deterministic enough that a missing example is a bug. `best-effort` detectors are probabilistic; the agent renderer reads this registry to add a `best-effort detector evidence present` caveat, and the example E2E suite warns rather than fails when one is missing. Graduating a best-effort detector to `standard` (see the [async graduation gate](../kinds/async.md#graduation-criteria)) means removing it from `BEST_EFFORT_DETECTOR_IDS` and dropping its `bestEffort` flag in `examples/manifest.mjs` so a miss fails E2E.
+
 ### CPU detectors
 
 | Finding id | Trigger |

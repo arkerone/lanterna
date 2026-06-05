@@ -1,4 +1,43 @@
 // ---------------------------------------------------------------------------
+// Detector reliability tiers
+// `severity`/`confidence`/`proofLevel` describe an individual finding. The tier
+// describes the *detector*: how deterministically it fires at all. Most built-in
+// detectors fire on direct or correlated evidence and are deterministic enough
+// that a missing example is a bug. `best-effort` detectors depend on V8 trace
+// timing or async/CPU correlation, so a true positive can legitimately not fire
+// run-to-run — their findings should be presented as caveated, and their example
+// verification warns rather than fails. This is the single source of truth for
+// that classification (the CLI agent renderer and the docs consume it).
+// ---------------------------------------------------------------------------
+
+export type DetectorReliabilityTier = 'standard' | 'best-effort';
+
+/** Base finding ids (the part before any `:` suffix) of best-effort detectors. */
+export const BEST_EFFORT_DETECTOR_IDS = [
+  'deopt-loop',
+  'deep-async-chain',
+  'hot-async-context',
+] as const;
+
+/** The base id of a finding (`cpu-hotspot:foo` → `cpu-hotspot`). */
+export function findingBaseId(findingId: string): string {
+  const colon = findingId.indexOf(':');
+  return colon === -1 ? findingId : findingId.slice(0, colon);
+}
+
+/** Reliability tier for a finding, derived from its detector's base id. */
+export function detectorReliabilityTier(findingId: string): DetectorReliabilityTier {
+  return (BEST_EFFORT_DETECTOR_IDS as readonly string[]).includes(findingBaseId(findingId))
+    ? 'best-effort'
+    : 'standard';
+}
+
+/** True when a finding came from a best-effort (probabilistic) detector. */
+export function isBestEffortFinding(findingId: string): boolean {
+  return detectorReliabilityTier(findingId) === 'best-effort';
+}
+
+// ---------------------------------------------------------------------------
 // Shared pattern constants
 // Each detector defines its own match set below so that related detectors
 // can reuse these to stay in sync.
