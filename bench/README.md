@@ -19,6 +19,18 @@ npm run bench         # runs all scenarios x 3 runs each
 
 The output is Markdown: one table of median wall times and overhead percentages for micro scenarios, plus one HTTP throughput/latency table when HTTP benchmarking is enabled.
 
+## Baseline and regression check
+
+```bash
+npm run bench:json       # same run, emitted as a compact JSON summary on stdout
+npm run bench:baseline   # write that JSON to bench/baseline.json (the committed snapshot)
+npm run bench:check      # run the bench and compare against bench/baseline.json
+```
+
+`bench/baseline.json` is the committed reference. `bench:check` compares the *relative* numbers a baseline is meant to protect — `overheadPct` for micro scenarios and `throughputDeltaPct` for HTTP — and prints a per-row comparison.
+
+It is **non-gating by default** because machine variance makes hard gating flaky: it exits 0 and prints any drift. Pass `--strict` (or set `BENCH_CHECK_STRICT=1`) to exit non-zero when a number drifts past tolerance. Tolerances default to `BENCH_MICRO_TOLERANCE_PP=15` and `BENCH_HTTP_TOLERANCE_PP=10` (percentage points). Refresh the baseline on the same machine with `npm run bench:baseline` whenever the numbers legitimately move.
+
 ## Methodology
 
 - Each micro scenario runs in baseline (no Lanterna) and its configured Lanterna mode, `BENCH_RUNS` (default 3) times. The current modes are `lanterna-cpu` for `cpu-fib` and `lanterna-memory` for `alloc-heavy`.

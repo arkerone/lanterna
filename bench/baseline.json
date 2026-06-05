@@ -1,0 +1,108 @@
+{
+  "meta": {
+    "node": "v24.2.0",
+    "platform": "linux",
+    "arch": "x64",
+    "runsPerMode": 3,
+    "http": {
+      "durationMs": 8000,
+      "concurrency": 32,
+      "basePort": 7070
+    },
+    "generatedAt": "2026-06-05T10:55:33.711Z"
+  },
+  "micro": [
+    {
+      "scenario": "cpu-fib",
+      "mode": "baseline",
+      "medianMs": 3951,
+      "overheadPct": 0
+    },
+    {
+      "scenario": "cpu-fib",
+      "mode": "lanterna-cpu",
+      "medianMs": 4544,
+      "overheadPct": 15
+    },
+    {
+      "scenario": "alloc-heavy",
+      "mode": "baseline",
+      "medianMs": 3306,
+      "overheadPct": 0
+    },
+    {
+      "scenario": "alloc-heavy",
+      "mode": "lanterna-memory",
+      "medianMs": 4164,
+      "overheadPct": 26
+    }
+  ],
+  "http": [
+    {
+      "scenario": "http-realistic-server",
+      "mode": "baseline",
+      "medianMs": 8071,
+      "requestsPerSec": 5456.1,
+      "p50Ms": 5.1,
+      "p95Ms": 10.4,
+      "p99Ms": 13.5,
+      "errors": 0,
+      "throughputDeltaPct": 0
+    },
+    {
+      "scenario": "http-realistic-server",
+      "mode": "lanterna-http-cpu",
+      "medianMs": 10374,
+      "requestsPerSec": 5492.5,
+      "p50Ms": 5.1,
+      "p95Ms": 10.2,
+      "p99Ms": 13.8,
+      "errors": 0,
+      "throughputDeltaPct": 0.7
+    },
+    {
+      "scenario": "http-realistic-server",
+      "mode": "lanterna-http-memory",
+      "medianMs": 10327,
+      "requestsPerSec": 5565.4,
+      "p50Ms": 5,
+      "p95Ms": 10.3,
+      "p99Ms": 13.8,
+      "errors": 0,
+      "throughputDeltaPct": 2
+    },
+    {
+      "scenario": "http-realistic-server",
+      "mode": "lanterna-http-cpu-memory",
+      "medianMs": 10398,
+      "requestsPerSec": 5460.5,
+      "p50Ms": 5.1,
+      "p95Ms": 10.4,
+      "p99Ms": 13.8,
+      "errors": 0,
+      "throughputDeltaPct": 0.1
+    },
+    {
+      "scenario": "http-realistic-server",
+      "mode": "lanterna-http-async-safe",
+      "medianMs": 10697,
+      "requestsPerSec": 5281.1,
+      "p50Ms": 5.3,
+      "p95Ms": 11.1,
+      "p99Ms": 14.3,
+      "errors": 0,
+      "throughputDeltaPct": -3.2
+    },
+    {
+      "scenario": "http-realistic-server",
+      "mode": "lanterna-http-async-full",
+      "medianMs": 10751,
+      "requestsPerSec": 5272.9,
+      "p50Ms": 5.4,
+      "p95Ms": 11.3,
+      "p99Ms": 14.5,
+      "errors": 0,
+      "throughputDeltaPct": -3.4
+    }
+  ]
+}

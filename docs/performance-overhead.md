@@ -46,6 +46,27 @@ The reported overhead bundles a fixed-cost startup with a per-millisecond steady
 
 Captures longer than ~5 s should see the steady-state numbers; shorter captures will see a worse overall percentage because of the fixed startup.
 
+### HTTP / async numbers
+
+The microbenchmarks above are CPU/allocation bound. The adoption-critical question is different: *what does profiling cost a Node HTTP service under load?* The bench harness drives `examples/realistic-server` with concurrent POST traffic (8 s, concurrency 32, 3 runs) and reports throughput and latency percentiles per mode.
+
+| Mode | RPS | RPS Δ | p50 (ms) | p95 (ms) | p99 (ms) |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| baseline | 5456 | — | 5.1 | 10.4 | 13.5 |
+| `--kind cpu` | 5493 | +0.7 % | 5.1 | 10.2 | 13.8 |
+| `--kind memory` | 5565 | +2.0 % | 5.0 | 10.3 | 13.8 |
+| `--kind cpu,memory` | 5461 | +0.1 % | 5.1 | 10.4 | 13.8 |
+| `--kind cpu,async` (safe) | 5281 | −3.2 % | 5.3 | 11.1 | 14.3 |
+| `--kind cpu,async` (full) | 5273 | −3.4 % | 5.4 | 11.3 | 14.5 |
+
+Hardware: Linux x64, Node v24.2.0, 3 runs per mode. Reproduce with `npm run bench`; the committed snapshot lives in [`bench/baseline.json`](../bench/baseline.json).
+
+Reading it:
+
+- **CPU and memory profiling are effectively free on an I/O-bound request path.** The cpu/memory/cpu+memory deltas (+0.1 % … +2.0 %) are inside run-to-run noise — they are not real speedups, they mean "no measurable throughput cost". Tail latency is unchanged (p99 within ~0.3 ms).
+- **Async profiling costs ~3 % throughput** and adds roughly 1 ms to p95/p99. `safe` and `full` are close on this workload; prefer `safe` unless you need `full`'s await-site rewriting.
+- These are throughput/latency numbers for a request path, not the wall-time overhead of a CPU-bound batch job — use the microbenchmark table for the latter.
+
 ## Overhead drivers
 
 - **`--sample-interval` (default 1000 µs).** Lower values (e.g. 250 µs) capture rarer hot paths but quadruple the sampler's wake-ups. Increase to 2000 µs or 4000 µs for very hot CPU loops where you want minimal perturbation.
@@ -88,6 +109,5 @@ lanterna attach --pid <pid> --duration 30s
 
 ## Scope and known gaps
 
-- HTTP / async scenarios are covered by the bench harness, but this page only includes the latest checked-in microbenchmark table. Run `npm run bench` on the target machine and paste the HTTP table when request-path tail latency is the decision point.
-- Numbers are single-machine; absolute times will vary, but **overhead percentages** are the meaningful comparison.
+- Numbers are single-machine; absolute times and RPS will vary, but **overhead percentages** are the meaningful comparison. Refresh the committed snapshot with `npm run bench:baseline` and guard against regressions with `npm run bench:check`.
 - The startup cost mostly comes from inspector negotiation and CDP handshake. It is not optimized further today; if it becomes a constraint for short workloads, attach mode is the answer.
