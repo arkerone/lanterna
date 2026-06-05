@@ -18,6 +18,7 @@ const SCALAR_CONFIG_KEYS = [
   'format',
   'pretty',
   'sourceMaps',
+  'sourceMapRemote',
   'sampleIntervalMicros',
   'heapSamplingIntervalBytes',
   'memoryUsageIntervalMs',
@@ -70,6 +71,7 @@ const SCALAR_CONFIG_OPTIONS: readonly ScalarConfigOption[] = [
   scalarOption('format', 'format', z.enum(['json', 'text', 'markdown', 'agent'])),
   scalarOption('pretty', 'pretty', z.boolean()),
   scalarOption('sourceMaps', 'sourceMaps', z.boolean()),
+  scalarOption('sourceMapRemote', 'sourceMapRemote', z.boolean()),
   scalarOption('sampleInterval', 'sampleIntervalMicros', durationLike(), (v) =>
     parseSampleIntervalMicros(v, 'sampleInterval'),
   ),
@@ -114,6 +116,7 @@ export interface LanternaConfig {
   format?: OutputFormat;
   pretty?: boolean;
   sourceMaps?: boolean;
+  sourceMapRemote?: boolean;
   detectors?: string[];
   kinds?: string[];
   sampleIntervalMicros?: number;

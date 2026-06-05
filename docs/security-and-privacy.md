@@ -35,6 +35,12 @@ Lanterna injects runtime hooks to observe GC, event-loop timing, memory usage, a
 
 The hooks are designed to clean up after capture, and capture-integrity fields record degraded channels. Still, they run inside the target process. Use representative staging when you cannot tolerate any in-process instrumentation risk.
 
+The programmatic `profileInProcess()` API runs the same hooks in the **current** process via an in-process inspector session (no child, no socket). It carries the same in-process instrumentation considerations as attach.
+
+## Network egress: remote source maps
+
+Source-map resolution reads from the local filesystem by default and performs **no network requests**. The opt-in `--source-map-remote` / `sourceMapRemote: true` is the one exception: it fetches `http(s)://` `sourceMappingURL` targets from the machine running Lanterna. Only enable it for map hosts you trust; the fetched map paths and names can end up in `evidence.file` and the report. Leave it off in locked-down or air-gapped environments.
+
 ## Plugins
 
 Detector and kind plugins are trusted code.

@@ -31,6 +31,7 @@ export interface ParsedProfileOptionInput {
   detectors?: string[];
   kind?: string[];
   sourceMaps?: boolean;
+  sourceMapRemote?: boolean;
 }
 
 export interface NormalizedProfileOptions {
@@ -54,6 +55,7 @@ export interface NormalizedProfileOptions {
   detectors: string[];
   kinds: string[];
   sourceMaps: boolean;
+  sourceMapRemote: boolean;
 }
 
 export function normalizeProfileOptions(
@@ -66,6 +68,7 @@ export function normalizeProfileOptions(
     format: parsed.format ?? 'json',
     pretty: Boolean(parsed.pretty),
     sourceMaps: parsed.sourceMaps !== false,
+    sourceMapRemote: Boolean(parsed.sourceMapRemote),
     sampleIntervalMicros: parsed.sampleInterval ?? DEFAULT_SAMPLE_INTERVAL_MICROS,
     heapSamplingIntervalBytes: parsed.heapSampleInterval ?? DEFAULT_MEMORY_SAMPLING_INTERVAL_BYTES,
     memoryUsageIntervalMs: parsed.memoryUsageInterval ?? DEFAULT_MEMORY_USAGE_INTERVAL_MS,

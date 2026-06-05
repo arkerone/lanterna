@@ -2,7 +2,11 @@ import { isAbsolute, posix, relative, resolve as resolvePath, sep } from 'node:p
 import { fileURLToPath } from 'node:url';
 import { originalPositionFor, TraceMap } from '@jridgewell/trace-mapping';
 import type { SourceLocation, SourceMapsIntegrity } from '../../report/types.js';
-import { type DiscoveryFailureReason, discoverSourceMap } from './discovery.js';
+import {
+  type DiscoveryFailureReason,
+  discoverSourceMap,
+  prefetchRemoteSourceMaps,
+} from './discovery.js';
 
 const FAILURES_CAP = 20;
 
@@ -12,6 +16,14 @@ export interface SourceMapResolver {
    * later. Sync I/O — call once per analysis pass.
    */
   prepare(urls: Iterable<string>): void;
+
+  /**
+   * Fetch remote (`http(s)://`) source maps for the given generated URLs into
+   * the discovery cache so the synchronous {@link prepare}/{@link resolve} can
+   * use them. No-op unless the resolver was created with `allowRemote`. Async,
+   * best-effort — call once before {@link prepare}.
+   */
+  prefetchRemote(urls: Iterable<string>): Promise<void>;
 
   /**
    * Look up the original source position for a generated `(url, line, column)`.
@@ -27,6 +39,7 @@ export interface SourceMapResolver {
 
 interface ResolverState {
   enabled: boolean;
+  allowRemote: boolean;
   cwd: string;
   prepared: Set<string>;
   applicableUrls: Set<string>;
@@ -39,11 +52,14 @@ interface ResolverState {
 export interface CreateSourceMapResolverOptions {
   cwd: string;
   enabled?: boolean;
+  /** Allow fetching remote (`http(s)://`) source maps. Network egress; opt-in. */
+  allowRemote?: boolean;
 }
 
 export function createSourceMapResolver(opts: CreateSourceMapResolverOptions): SourceMapResolver {
   const state: ResolverState = {
     enabled: opts.enabled ?? true,
+    allowRemote: opts.allowRemote ?? false,
     cwd: opts.cwd,
     prepared: new Set(),
     applicableUrls: new Set(),
@@ -54,6 +70,11 @@ export function createSourceMapResolver(opts: CreateSourceMapResolverOptions): S
   };
 
   return {
+    async prefetchRemote(urls) {
+      if (!state.enabled || !state.allowRemote) return;
+      await prefetchRemoteSourceMaps(urls);
+    },
+
     prepare(urls) {
       if (!state.enabled) return;
       for (const url of urls) {
@@ -229,6 +250,7 @@ function sourceMapStatus(
 /** Resolver that does nothing — useful when source-map support is disabled. */
 export function createNoopSourceMapResolver(): SourceMapResolver {
   return {
+    async prefetchRemote() {},
     prepare() {},
     resolve() {
       return undefined;

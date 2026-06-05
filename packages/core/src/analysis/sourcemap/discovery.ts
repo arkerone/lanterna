@@ -77,7 +77,21 @@ export function discoverSourceMap(url: string): DiscoveryResult {
   }
 
   if (mappingUrl.includes('://')) {
-    // http(s):// or other remote schemes — not supported for now.
+    // Remote http(s) maps are supported only when pre-fetched into the cache
+    // (opt-in) — `discoverSourceMap` itself stays synchronous. Other schemes
+    // (e.g. `file://` mapping URLs) remain unsupported.
+    if (isRemoteMappingUrl(mappingUrl)) {
+      const cached = remoteMapCache.get(mappingUrl);
+      if (cached !== undefined) {
+        try {
+          return {
+            map: { generatedPath, mapDir: dirname(generatedPath), raw: JSON.parse(cached) },
+          };
+        } catch (error) {
+          return { failure: { url, reason: 'map-parse-failed', detail: errorMessage(error) } };
+        }
+      }
+    }
     return { failure: { url, reason: 'unsupported-mapping-url', detail: mappingUrl } };
   }
 
@@ -101,6 +115,96 @@ export function discoverSourceMap(url: string): DiscoveryResult {
     return { map: { generatedPath, mapDir: dirname(mapPath), raw } };
   } catch (error) {
     return { failure: { url, reason: 'map-parse-failed', detail: errorMessage(error) } };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Remote source maps (opt-in)
+//
+// `discoverSourceMap` is synchronous by design. To support `//# sourceMappingURL`
+// pointing at an `http(s)://` URL without making the whole analysis pipeline
+// async, remote maps are fetched up-front by `prefetchRemoteSourceMaps` into this
+// module-level cache, which the sync discovery then reads. The cache is keyed by
+// the literal mapping URL.
+// ---------------------------------------------------------------------------
+
+const remoteMapCache = new Map<string, string>();
+const REMOTE_FETCH_TIMEOUT_MS = 3_000;
+
+function isRemoteMappingUrl(mappingUrl: string): boolean {
+  return /^https?:\/\//i.test(mappingUrl);
+}
+
+/** Reads the `//# sourceMappingURL=` value for a generated script URL, if any. */
+export function readMappingUrl(generatedUrl: string): string | undefined {
+  const generatedPath = filesystemPathFromUrl(generatedUrl);
+  if (!generatedPath) return undefined;
+  let tail: string;
+  try {
+    tail = readFileTail(generatedPath, SOURCE_MAPPING_TAIL_BYTES);
+  } catch {
+    return undefined;
+  }
+  return SOURCE_MAPPING_URL_RE.exec(tail)?.[1];
+}
+
+export interface PrefetchRemoteOptions {
+  timeoutMs?: number;
+  maxBytes?: number;
+}
+
+/**
+ * Fetches the remote (`http(s)://`) source maps referenced by the given generated
+ * script URLs into the module cache, so the synchronous {@link discoverSourceMap}
+ * can resolve them. Best-effort: failed or oversized fetches are skipped silently
+ * (they fall back to `unsupported-mapping-url`). Opt-in — only call when the user
+ * has allowed remote source-map fetching (network egress).
+ */
+export async function prefetchRemoteSourceMaps(
+  urls: Iterable<string>,
+  options: PrefetchRemoteOptions = {},
+): Promise<void> {
+  const timeoutMs = options.timeoutMs ?? REMOTE_FETCH_TIMEOUT_MS;
+  const maxBytes = options.maxBytes ?? MAX_MAP_BYTES;
+  const pending = new Set<string>();
+  for (const url of urls) {
+    const mappingUrl = readMappingUrl(url);
+    if (mappingUrl && isRemoteMappingUrl(mappingUrl) && !remoteMapCache.has(mappingUrl)) {
+      pending.add(mappingUrl);
+    }
+  }
+  await Promise.all(
+    [...pending].map(async (mappingUrl) => {
+      const text = await fetchRemoteMap(mappingUrl, timeoutMs, maxBytes);
+      if (text !== undefined) remoteMapCache.set(mappingUrl, text);
+    }),
+  );
+}
+
+/** Clears the remote source-map cache (test seam). */
+export function clearRemoteSourceMapCache(): void {
+  remoteMapCache.clear();
+}
+
+async function fetchRemoteMap(
+  mappingUrl: string,
+  timeoutMs: number,
+  maxBytes: number,
+): Promise<string | undefined> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(mappingUrl, { signal: controller.signal });
+    if (!response.ok) return undefined;
+    const declaredLength = Number(response.headers.get('content-length') ?? '0');
+    if (Number.isFinite(declaredLength) && declaredLength > maxBytes) return undefined;
+    const text = await response.text();
+    if (text.length > maxBytes) return undefined;
+    return text;
+  } catch {
+    return undefined;
+  } finally {
+    clearTimeout(timeout);
   }
 }
 
