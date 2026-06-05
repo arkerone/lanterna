@@ -29,10 +29,11 @@ The following areas are critical to capture reliability and need explicit attent
 
 | Area | Why coverage is low | Required evidence when changed |
 | --- | --- | --- |
-| `core/src/inspector/client.ts` | Real CDP behavior is mostly exercised through live tests rather than isolated unit tests. | Add a focused fake-CDP unit test or extend a live attach/spawn test. |
+| `core/src/inspector/client.ts` | Real CDP behavior is also exercised through live tests. | Covered by fake-CDP unit tests in `test/inspector-client.test.ts` (send proxy, send-after-close, evaluate, event subscribe/unsubscribe + error swallowing, onClose fire-once, idempotent close, graceful-close timeout → terminate). Extend those when changing the client. |
+| `core/src/capture/core/{cpu,heap}.ts` | Thin CDP measure wrappers. | Covered by `test/capture-measures.test.ts` (command order + interval params + returned profile). |
 | `core/src/runtime-signals/hooks/**` | Hook source is serialized and evaluated inside the target process; V8 coverage for the host test runner does not see most executed target code. | Add live tests asserting emitted integrity, cleanup, and degradation fields, or document a deliberate exclusion. |
 | `core/src/kinds/*/probe.ts` | Probe lifecycles depend on CDP domains and target timing. | Add lifecycle tests with a fake CDP client for failure paths, plus live checks for successful captures. |
-| `core/src/capture/**` | Shutdown, timeout, signal, and process-management paths are hard to hit deterministically. | Add targeted timeout/signal tests or E2E coverage with retained failure artifacts. |
+| `core/src/capture/**` (shutdown) | Shutdown, timeout, signal, and process-management paths are hard to hit deterministically. | Add targeted timeout/signal tests or E2E coverage with retained failure artifacts. |
 
 ## Rules For Future Changes
 
