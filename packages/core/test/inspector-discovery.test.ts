@@ -14,9 +14,17 @@ vi.mock('../src/inspector/runtime.js', () => ({
   fetchTargetInfo: mocks.fetchTargetInfo,
 }));
 
-const { readInspectableTargetsByPid, readInspectorTargets } = await import(
+const { openInspectorForPid, readInspectableTargetsByPid, readInspectorTargets } = await import(
   '../src/inspector/discovery.js'
 );
+
+function withPlatform(platform: NodeJS.Platform, fn: () => Promise<void>): Promise<void> {
+  const original = process.platform;
+  Object.defineProperty(process, 'platform', { value: platform, configurable: true });
+  return fn().finally(() => {
+    Object.defineProperty(process, 'platform', { value: original, configurable: true });
+  });
+}
 
 describe('inspector discovery', () => {
   afterEach(() => {
@@ -65,5 +73,28 @@ describe('inspector discovery', () => {
     expect(targetsByPid.size).toBe(0);
     expect(cdp.close).toHaveBeenCalledTimes(1);
     expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('returns an already-open inspector endpoint for a pid on Windows', async () => {
+    await withPlatform('win32', async () => {
+      vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+        new Response(JSON.stringify([{ webSocketDebuggerUrl: 'ws://127.0.0.1:9229/win' }]), {
+          status: 200,
+        }),
+      );
+      mocks.connectCdp.mockResolvedValue({ close: vi.fn(async () => {}) } as unknown as CdpClient);
+      mocks.fetchTargetInfo.mockResolvedValue({ pid: 4242 });
+
+      await expect(openInspectorForPid(4242)).resolves.toBe('ws://127.0.0.1:9229/win');
+    });
+  });
+
+  it('fails with a Windows-specific message when no inspector is already open', async () => {
+    await withPlatform('win32', async () => {
+      vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('ECONNREFUSED'));
+
+      await expect(openInspectorForPid(4242)).rejects.toThrow(/Windows/);
+      await expect(openInspectorForPid(4242)).rejects.toThrow(/--inspect-url/);
+    });
   });
 });

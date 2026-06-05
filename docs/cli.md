@@ -87,7 +87,7 @@ lanterna attach --pid 4242 --duration 15s --format agent --output report.agent.m
 
 Constraints:
 
-- `attach --pid` relies on `SIGUSR1` and is **POSIX-only**. On Windows, use `--inspect-url`.
+- `attach --pid` finds an already-open inspector by scanning `127.0.0.1:9229..9238` on every platform. *Opening* an inspector for a process that does not have one relies on `SIGUSR1` and is **POSIX-only** — so on Windows `attach --pid` works if the target was started with `--inspect`, and otherwise reports a Windows-specific error pointing you at `--inspect`/`--inspect-url`.
 - Attach mode does **not** support `--deep` — V8 deopt tracing cannot be enabled on a process that has already started.
 - `--kind async` works in attach mode but capture is partial: resources and code loaded before hook installation cannot be observed. See [kinds/async.md](./kinds/async.md).
 - Attach mode uses the V8 inspector and installs runtime hooks in the target process. Read [security-and-privacy.md](./security-and-privacy.md) before using it against sensitive or production-like services.
