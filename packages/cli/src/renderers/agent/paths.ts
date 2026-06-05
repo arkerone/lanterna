@@ -1,3 +1,5 @@
+import { isNoiseUrl } from '@lanterna-profiler/core';
+
 const NON_EDITABLE_RUNTIME_FUNCTIONS = new Set(['init', 'runMicrotasks', 'writeBuffer']);
 
 export function isEditableUserFile(value: string | undefined): value is string {
@@ -11,11 +13,13 @@ export function isEditableUserFile(value: string | undefined): value is string {
   );
 }
 
-// Lanterna's own injected preload (`/tmp/lanterna-preload-*.cjs`) is real code
-// on disk during a capture, so it slips past the dependency/runtime checks. It
-// is never a patch target — exclude it so it cannot surface as a read-first file.
+// Lanterna's own injected code (the `/tmp/lanterna-preload-*.cjs` preload and the
+// runtime-signals hooks) is real code on disk during a capture, so it slips past
+// the dependency/runtime checks. It is never a patch target — defer to core's
+// shared self-noise registry so this stays in sync with the capture-side
+// classification instead of re-encoding the path patterns here.
 export function isLanternaInstrumentationPath(file: string): boolean {
-  return /(^|\/)lanterna-preload-[^/]+\.cjs$/.test(file.replaceAll('\\', '/'));
+  return isNoiseUrl(file);
 }
 
 export function isGeneratedOutputPath(file: string): boolean {

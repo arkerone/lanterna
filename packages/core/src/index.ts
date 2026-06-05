@@ -29,6 +29,8 @@ export {
   getRegisteredNoiseFilters,
   isNoiseCategory,
   isNoiseRetainerPath,
+  isNoiseUrl,
+  normalizeNoiseUrl,
   registerNoiseFilter,
   shouldKeepNoiseFrames,
 } from './analysis/noise-filters.js';

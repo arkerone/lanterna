@@ -15,9 +15,14 @@ describe('isEditableUserFile', () => {
     expect(isEditableUserFile('node:internal/crypto/pbkdf2')).toBe(false);
   });
 
-  it("rejects Lanterna's own injected preload so it never becomes a read target", () => {
+  it("rejects Lanterna's own injected instrumentation so it never becomes a read target", () => {
+    // Delegates to core's shared self-noise registry, so it covers the preload
+    // and the runtime-signals hooks, not just one hard-coded pattern.
     expect(isEditableUserFile('/tmp/lanterna-preload-123-456-abc.cjs')).toBe(false);
     expect(isLanternaInstrumentationPath('/tmp/lanterna-preload-123-456-abc.cjs')).toBe(true);
+    expect(
+      isLanternaInstrumentationPath('/app/dist/runtime-signals/hooks/installers/event-loop.cjs'),
+    ).toBe(true);
     expect(isLanternaInstrumentationPath('/app/server.js')).toBe(false);
   });
 });
