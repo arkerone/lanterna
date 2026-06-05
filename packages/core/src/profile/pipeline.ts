@@ -1,7 +1,7 @@
 import { type AnalysisPipeline, createAnalysisPipeline } from '../analysis/core/pipeline.js';
 import type { FindingAnalyzer, SectionAnalyzer } from '../analysis/core/types.js';
 import type { ProfileKind } from '../kinds/core/types.js';
-import type { ProfilePipelinePlugin } from './types.js';
+import type { ProfileMode, ProfilePipelinePlugin } from './types.js';
 
 export interface DefaultAnalysisPipelineOptions {
   kinds: ProfileKind[];
@@ -29,7 +29,7 @@ export async function configureProfilePipeline(
     analyzers?: (FindingAnalyzer | SectionAnalyzer)[];
     setupPipeline?: ProfilePipelinePlugin;
   },
-  mode: 'spawn' | 'attach',
+  mode: ProfileMode,
 ): Promise<AnalysisPipeline> {
   const pipeline = createDefaultAnalysisPipeline({
     kinds: options.kinds,

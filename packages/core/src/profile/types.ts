@@ -2,9 +2,11 @@ import type { AnalysisPipeline } from '../analysis/core/pipeline.js';
 import type { FindingAnalyzer, SectionAnalyzer } from '../analysis/core/types.js';
 import type { ProfileKind } from '../kinds/core/types.js';
 
+export type ProfileMode = 'spawn' | 'attach' | 'in-process';
+
 export interface ProfilePluginContext {
   readonly cwd: string;
-  readonly mode: 'spawn' | 'attach';
+  readonly mode: ProfileMode;
 }
 
 export type ProfilePipelinePlugin = (
@@ -48,6 +50,26 @@ export interface AttachProfileOptions {
   /** See {@link RunProfileOptions.sourceMaps}. */
   sourceMaps?: boolean;
 }
+
+export interface InProcessProfileOptions {
+  /** Capture duration (ms). Required unless you provide {@link signal}. */
+  durationMs?: number;
+  /** External stop signal — capture stops when it aborts. */
+  signal?: AbortSignal;
+  sampleIntervalMicros?: number;
+  kinds?: ProfileKind[];
+  extraAnalyzers?: (FindingAnalyzer | SectionAnalyzer)[];
+  setupPipeline?: ProfilePipelinePlugin;
+  /** See {@link RunProfileOptions.sourceMaps}. */
+  sourceMaps?: boolean;
+}
+
+export type InProcessProgressEvent =
+  | { stage: 'connect-cdp'; message: string }
+  | { stage: 'install-hooks'; message: string }
+  | { stage: 'start-capture'; message: string }
+  | { stage: 'capture-running'; message: string }
+  | { stage: 'finalize-capture'; message: string };
 
 export type AttachProgressEvent =
   | { stage: 'resolve-target'; message: string }

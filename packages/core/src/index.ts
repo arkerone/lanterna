@@ -152,11 +152,15 @@ export {
 } from './profile/pipeline.js';
 export {
   attachProfile,
+  profileInProcess,
   runProfile,
 } from './profile/profile.js';
 export type {
   AttachProfileOptions,
   AttachProgressEvent,
+  InProcessProfileOptions,
+  InProcessProgressEvent,
+  ProfileMode,
   ProfilePipelinePlugin,
   ProfilePluginContext,
   RunProfileOptions,

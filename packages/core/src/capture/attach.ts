@@ -9,7 +9,7 @@ import type {
   ProfileSource,
 } from './core/types.js';
 
-interface InstallAttachRuntimeResult {
+export interface InstallAttachRuntimeResult {
   installed?: boolean;
   reason?: string;
   capabilities?: {
@@ -106,7 +106,7 @@ export class AttachSource implements ProfileSource<AttachStartOptions> {
   }
 }
 
-async function installAttachRuntimeHook(
+export async function installAttachRuntimeHook(
   cdp: import('../inspector/client.js').CdpClient,
   attachScript: string,
 ): Promise<InstallAttachRuntimeResult> {

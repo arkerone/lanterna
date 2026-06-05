@@ -56,6 +56,37 @@ const report = await attachProfile({
 });
 ```
 
+### Self-profiling: `profileInProcess`
+
+`profileInProcess(...)` profiles the **current** process via an in-process `node:inspector` session — no child spawn, no remote attach. It is the agent-first path for a long-running service (or an embedded agent) that wants to diagnose itself. The report has `meta.mode = 'in-process'` and, like attach, has no FD-3 control channel and no deopt tracing.
+
+```ts
+import { profileInProcess } from '@lanterna-profiler/core';
+import { createCpuProfileKindWithBuiltInDetectors } from '@lanterna-profiler/detectors';
+
+const report = await profileInProcess({
+  durationMs: 10_000,
+  kinds: [
+    createCpuProfileKindWithBuiltInDetectors({
+      readStderrSoFar: () => '',
+      sampleIntervalMicros: 1000,
+    }),
+  ],
+});
+```
+
+Because the host process does not exit during capture, you must provide a stop condition — either `durationMs` or an `AbortSignal`:
+
+```ts
+const controller = new AbortController();
+const pending = profileInProcess({ signal: controller.signal });
+// ...later, when you want to stop:
+controller.abort();
+const report = await pending;
+```
+
+Calling `profileInProcess({})` with neither `durationMs` nor `signal` throws.
+
 ### Combining kinds
 
 Pass several kinds to capture them in a single run:
@@ -212,7 +243,7 @@ const report = buildLanternaReport(bundle, analysis, [cpuKind], options);
 
 From `@lanterna-profiler/core`:
 
-- **Orchestration** — `runProfile`, `attachProfile`, `runCapture`.
+- **Orchestration** — `runProfile`, `attachProfile`, `profileInProcess`, `runCapture`.
 - **Sources** — `SpawnSource`, `AttachSource`, `ProfileSource`.
 - **Kind authoring** — `ProfileKind`, `CaptureProbe`, `KindAnalysisContributor`, `createKindRegistry`, `createCpuProfileKind`, `createMemoryProfileKind`, `createAsyncProfileKind`.
 - **Detectors seam** — `KindScopedDetector<K>`, `createFindingAnalyzerFromKindScopedDetector`, `defineFindingAnalyzer`, `defineSectionAnalyzer`, `createAnalysisPipeline`.
