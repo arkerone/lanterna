@@ -242,6 +242,7 @@ Common fields:
 | `evidence.extra.userCaller` | Optional nearest user-code caller attribution for external or indirect evidence |
 | `evidence.extra.candidateCallers` | Optional ranked user-code caller candidates; use `stackDistance: 1` as the closest patch lead, and outer callers as context |
 | `measurements.observed`, `measurements.thresholds` | Numeric trigger data |
+| `measurements.priorityBasis` | Optional `{ observed, threshold }` the detector ranked on; its ratio drives `priority.score`. Prefer it over recomputing a ratio from the `observed`/`thresholds` maps |
 | `confidence` | Finding-level confidence: `"low"`, `"medium"`, or `"high"` when supplied |
 | `proofLevel` | Evidence class: `"direct-sample"`, `"correlated-window"`, `"trace-only"`, or `"heuristic"` when supplied |
 | `priority.score`, `priority.actionConfidence` | Action ordering and confidence |

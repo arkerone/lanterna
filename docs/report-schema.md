@@ -162,7 +162,7 @@ Each finding has the same shape regardless of which kind produced it:
 | `suggestion` | Concrete remediation hint. |
 | `references` | Links to docs or related findings. |
 
-Findings are sorted by `priority.score`, then severity, then attributed weight.
+Findings are sorted by `priority.score`, then severity, then attributed weight. When a finding carries `measurements.priorityBasis` (`{ observed, threshold }`), `priority.score` is driven by that `observed / threshold` ratio — the metric the detector actually triggered on — rather than inferred from the generic `measurements` map.
 
 Common `evidence.extra` anchors:
 
