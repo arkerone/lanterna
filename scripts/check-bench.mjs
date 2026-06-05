@@ -80,6 +80,16 @@ async function main() {
     MICRO_TOLERANCE_PP,
     false,
   );
+  if ((baseline.inProcess?.length ?? 0) > 0 && (current.inProcess?.length ?? 0) > 0) {
+    compare(
+      'In-process overhead',
+      baseline.inProcess,
+      current.inProcess,
+      'overheadPct',
+      MICRO_TOLERANCE_PP,
+      false,
+    );
+  }
   if ((baseline.http?.length ?? 0) > 0 && current.http.length > 0) {
     compare(
       'HTTP throughput',
