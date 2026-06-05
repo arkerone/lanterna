@@ -32,7 +32,7 @@ For built-in kinds, populated `profiles.<kind>` entries match `meta.profileKinds
 | --- | --- |
 | `durationMs` | Wall-clock duration of the capture. |
 | `command` | Executed command, or `[]` in attach mode. |
-| `mode` | `"spawn"`, `"attach"`, or reserved `"in-process"`. Lanterna produces `spawn` and `attach` today; `in-process` is kept in the schema for forward compatibility and has no current producer. |
+| `mode` | `"spawn"` (`lanterna run`), `"attach"` (`lanterna attach`), or `"in-process"` (the programmatic `profileInProcess()` self-profiling API). |
 | `cwd` | Working directory used to classify `user` frames. |
 | `profileKinds` | Kinds that produced capture data, in declared order. |
 | `kinds` | Per-kind metadata contributions. CPU lives under `meta.kinds.cpu`, memory under `meta.kinds.memory`, async under `meta.kinds.async`. |

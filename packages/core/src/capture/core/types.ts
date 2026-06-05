@@ -40,6 +40,18 @@ export interface AttachStartOptions {
   }) => void;
 }
 
+export interface InProcessStartOptions {
+  onProgress?: (event: {
+    stage:
+      | 'connect-cdp'
+      | 'install-hooks'
+      | 'start-capture'
+      | 'capture-running'
+      | 'finalize-capture';
+    message: string;
+  }) => void;
+}
+
 export type TargetInfo = ParsedTargetInfo & { pid: number };
 
 export interface RawCpuProfile {

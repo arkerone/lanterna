@@ -19,19 +19,22 @@ flowchart LR
 
 **Profile kinds** are the extensibility seam. The built-in kinds are `cpu`, `memory`, and `async` (`async` is experimental and opt-in). Domain profilers plug in through the same interface — see [extending/profile-kinds.md](./extending/profile-kinds.md). The CLI selects active kinds with `--kind <id>` (repeatable, default `cpu`); the JSON report lists successfully captured kind ids in `meta.profileKinds` and puts their sections under each kind's `reportSectionKey`.
 
-### Spawn vs attach
+### Spawn vs attach vs in-process
 
 The enrichment pipeline is identical between modes. Only capture differs:
 
-| | `spawn` | `attach` |
-| --- | --- | --- |
-| Entry point | `lanterna run -- <cmd>` | `lanterna attach` |
-| Starts the process | Yes | No |
-| Startup pause (`--inspect-brk`) | Yes | No |
-| Control channel (FD 3) | Yes | No |
-| Preload hook | `--require=<tmp.cjs>` | Injected over CDP |
-| `--deep` / `--trace-deopt` | Supported | Not supported |
-| `meta.command` | Populated | `[]` |
+| | `spawn` | `attach` | `in-process` |
+| --- | --- | --- | --- |
+| Entry point | `lanterna run -- <cmd>` | `lanterna attach` | `profileInProcess()` (programmatic) |
+| Target | child process | another running process | the current process |
+| Starts the process | Yes | No | — |
+| Startup pause (`--inspect-brk`) | Yes | No | No |
+| Control channel (FD 3) | Yes | No | No |
+| Preload hook | `--require=<tmp.cjs>` | Injected over CDP | Evaluated over an in-process `node:inspector` session |
+| `--deep` / `--trace-deopt` | Supported | Not supported | Not supported |
+| `meta.command` | Populated | `[]` | `[]` |
+
+In-process mode is a programmatic-only API (`profileInProcess` from `@lanterna-profiler/core`): a long-running service profiles itself with no child spawn and no remote attach. It behaves like attach for analysis (no control channel, no deopts) and is driven by `durationMs` or an `AbortSignal` since the host does not exit during capture.
 
 > **Lanterna fails fast.** If the inspector never becomes available, the run fails — it never silently falls back to a weaker profiling mode.
 
@@ -217,9 +220,7 @@ These fields are intentionally separate from `severity`: severity estimates impa
 
 - Generate flamegraphs as its primary output.
 - Infer source-level fixes by itself. It emits evidence and suggestions; remediation belongs to the user or to an agent consuming the report.
-- Provide an in-process programmatic API for inline self-profiling (only spawn and attach are supported today).
 - Stream heap snapshots — large snapshots return `heapSnapshotAnalysis.available: false` with a warning instead of being parsed unbounded.
-- Support differential CPU profiling between two captures (consumers can diff JSON reports themselves).
 
 ---
 

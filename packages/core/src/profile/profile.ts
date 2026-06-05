@@ -6,6 +6,7 @@ import {
 import { AttachSource } from '../capture/attach.js';
 import { createManualStopSignal, runCapture } from '../capture/coordinator.js';
 import type { CaptureBundle } from '../capture/core/types.js';
+import { InProcessSource } from '../capture/in-process.js';
 import { SpawnSource } from '../capture/spawn.js';
 import type { ProfileKind } from '../kinds/core/types.js';
 import { createCpuProfileKind } from '../kinds/cpu/index.js';
@@ -15,6 +16,9 @@ import { configureProfilePipeline } from './pipeline.js';
 import type {
   AttachProfileOptions,
   AttachProgressEvent,
+  InProcessProfileOptions,
+  InProcessProgressEvent,
+  ProfileMode,
   RunProfileOptions,
   RunProgressEvent,
 } from './types.js';
@@ -111,6 +115,49 @@ export async function attachProfile(
   }
 }
 
+/**
+ * Profiles the current process via an in-process `node:inspector` session — no
+ * child spawn, no remote attach. Reuses the entire enrichment pipeline; the
+ * report has `meta.mode = 'in-process'`. Requires `durationMs` or an
+ * {@link InProcessProfileOptions.signal} to stop, since the host does not exit.
+ */
+export async function profileInProcess(
+  options: InProcessProfileOptions,
+  onProgress?: (event: InProcessProgressEvent) => void,
+): Promise<LanternaReport> {
+  if (options.durationMs === undefined && !options.signal) {
+    throw new Error('profileInProcess requires durationMs or an AbortSignal to stop the capture');
+  }
+  const kinds = options.kinds ?? [
+    createCpuProfileKind({
+      readStderrSoFar: () => '',
+      sampleIntervalMicros: options.sampleIntervalMicros,
+    }),
+  ];
+
+  const manualStop = createManualStopSignal();
+  const onAbort = () => manualStop.trigger();
+  if (options.signal) {
+    if (options.signal.aborted) manualStop.trigger();
+    else options.signal.addEventListener('abort', onAbort, { once: true });
+  }
+
+  try {
+    const bundle = await runCapture({
+      source: new InProcessSource(),
+      sourceOptions: { onProgress },
+      kinds,
+      durationMs: options.durationMs,
+      stopSignal: manualStop.promise,
+      abortSignal: manualStop.abortSignal,
+    });
+
+    return await analyzeAndBuild(bundle, options, kinds, 'in-process');
+  } finally {
+    options.signal?.removeEventListener('abort', onAbort);
+  }
+}
+
 async function analyzeAndBuild(
   bundle: CaptureBundle,
   options: {
@@ -120,7 +167,7 @@ async function analyzeAndBuild(
     sourceMaps?: boolean;
   },
   kinds: ProfileKind[],
-  mode: 'spawn' | 'attach',
+  mode: ProfileMode,
 ) {
   const sourceMaps: SourceMapResolver =
     options.sourceMaps === false

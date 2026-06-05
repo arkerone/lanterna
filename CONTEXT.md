@@ -87,7 +87,7 @@ collection differs. The report schema is identical between them.
 - **Noise / self-noise** — frames, packages, and retainer paths belonging to Lanterna's
   own injected code. Classified through a registry (`registerNoiseFilter`), not ad-hoc
   patterns inside analyzers.
-- **`mode`** — `spawn`, `attach`, or the reserved `in-process` (no current producer).
+- **`mode`** — `spawn` (`lanterna run`), `attach` (`lanterna attach`), or `in-process` (the programmatic `profileInProcess()` self-profiling API).
 - **Two Node floors** — Lanterna itself needs Node `>=22`; the *profiled target* only
   needs `>=12`.
 
