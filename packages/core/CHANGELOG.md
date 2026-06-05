@@ -1,5 +1,26 @@
 # @lanterna-profiler/core
 
+## 2.8.0
+
+### Minor Changes
+
+- df1db38: Fix `--heap-snapshot-analysis` always timing out on the start snapshot in spawn mode. The start heap snapshot was taken during `probe.start()`, while the target was still suspended at `--inspect-brk`, so `HeapProfiler.takeHeapSnapshot` could never complete and always hit the 30s capture timeout — leaving retention analysis permanently `unavailable` and forcing `rerun_required: true`.
+
+  Probes now expose an optional `afterRuntimeReleased` lifecycle hook that runs after the coordinator resumes the runtime (and is a no-op in attach mode, where the target was never suspended). The memory probe takes its start snapshot there, so start/end retainer-path comparison works end-to-end. CPU sampling still starts before the runtime is released, preserving startup-cost capture.
+
+  The agent renderer also no longer treats the informational "heap snapshot analysis truncated to top N constructor groups" note as a degrading caveat, so a successful retention analysis is no longer mislabeled `rerun_required`.
+
+- 7ddd193: Harden self-noise classification and apply it uniformly across every kind. `classifyNoiseUrl` now normalizes its input internally (strips the `file://` scheme, folds Windows separators), so a raw V8 frame url is classified the same way a pre-normalized path is — previously each caller (the CPU/memory frame classifier, the async kind, the CLI renderer) re-derived the path shape slightly differently, and the CLI path check missed `file://` urls entirely. Two helpers are exported for reuse: `isNoiseUrl(url)` and `normalizeNoiseUrl(url)`.
+
+  The async kind now routes every representative-frame pick (creation frame, hot-file aggregation key, CPU-attribution root and execution frames, user caller) through a single `firstUserFrame` helper backed by this shared registry, so Lanterna's own instrumentation can no longer surface as the origin of an async operation through any path. CPU and memory already classified frames through the registry; this brings async to parity.
+
+### Patch Changes
+
+- df1db38: Fix memory allocator `totalPct` (and the derived `alloc-in-hot-path` `combinedPct`) exceeding 100%. Inclusive `totalBytes` was summed once per occurrence of a frame, so a frame that recurses into itself (module bootstrap loading does this constantly) had the bytes of its nested subtrees counted multiple times — producing impossible percentages like 300%. Inclusive bytes are now counted only at a frame's outermost occurrence on each call path; self bytes still sum across every occurrence.
+- 66e0428: Stop surfacing Lanterna's own injected preload (`/tmp/lanterna-preload-*.cjs`) as user code in async reports. The preload could sit on an async resource's init stack and was being reported as a high-confidence `user_caller` in `top_operations`/`cpuAttribution` and as a `read-first` entry in **Files To Read First**, pointing investigations at the profiler instead of the app.
+
+  The async analysis now refuses to attribute a long await or CPU window to a Lanterna instrumentation frame, and picks the first non-instrumentation frame as the representative origin. The agent renderer additionally excludes the preload path from editable user files as defense-in-depth.
+
 ## 2.7.0
 
 ### Minor Changes
