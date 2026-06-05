@@ -91,6 +91,29 @@ The async kind reports its own quality fields:
 - `quality.clockSyncUncertaintyMs` — a real measured bound on CPU↔async clock alignment (CDP round-trip jitter / `performance.now()` resolution), not a placeholder. CPU sample times are treated as capture-relative; this bounds the residual `Profiler.start`↔capture-start skew.
 - `meta.kinds.async.transformStats.failed` — counter for `--async-instrumentation full` rewrite failures. These are non-fatal; when full instrumentation is partial, `quality.reasons[]` and `quality.recommendations[]` explain how to interpret the report.
 
+## Caveat → action cheat-sheet
+
+When an agent or automation sees one of these flags, this is the one-line "so what". Each row is expanded in the sections above and below.
+
+| Signal seen | What it means | Next action |
+| --- | --- | --- |
+| `meta.durationMs` very short (< 200 ms) | Timed observers never landed; correlation is weak. | Rerun longer with representative load (`--duration`, `--workload`). |
+| `captureIntegrity.controlChannel = false` (spawn) | FD 3 closed early (pm2, Docker entrypoint, descriptor stripping). | Run the target directly; weight GC/event-loop timing less. |
+| `captureIntegrity.controlChannel = false` (attach) | Expected — attach has no FD 3. | No action; this is normal in attach mode. |
+| `captureIntegrity.gcTimed = false` | GC-hotspot correlation unavailable. | Don't claim GC causality; rerun longer if GC matters. |
+| `kinds.cpu.samplesTimed = false` | `selfMs`/`totalMs` estimated from interval. | Trust `selfPct`/`totalPct` over millisecond fields. |
+| `profiles.cpu.quality.confidence = low` | Profile too short/idle/under-sampled. | Treat findings as leads; follow `recommendations[]`. |
+| `profiles.cpu.summary.idleRatio > 0.8` | Mostly idle — likely no real load. | Rerun under `--workload`; current hotspots may be startup noise. |
+| `profiles.cpu.eventLoop.measurementBasis = histogram` | No temporal alignment with stalls. | Don't claim stall causality from `correlatedHotspots[]`. |
+| `profiles.cpu.deopts` empty | `--deep` was off; deopt tracing absent. | Rerun with `--deep` if you suspect JIT instability (spawn only). |
+| `profiles.memory` slope steep on short capture | Warm-up inflates the slope. | Rerun longer / after warm-up before calling it a leak. |
+| `profiles.memory.heapSnapshotAnalysis.available = false` | Snapshot too large or parse failed. | Retained-growth claims are absent, not approximate; see warnings. |
+| `profiles.async.quality.attachPartialCapture = true` | Pre-install resources/code invisible. | Downgrade async findings; prefer spawn for async completeness. |
+| `profiles.async.quality.recordsDropped > 0` | Report is sampled, not exhaustive. | Raise `--async-max-events` next run if completeness matters. |
+| `profiles.async.quality.cdpAsyncStackCoverageRatio < 0.2` | Async stacks largely unavailable (older Node). | Weaken chain findings; `--kind cpu,async` improves attribution. |
+| `meta.kinds.async.transformStats.failed > 0` | Some `full` rewrites failed (non-fatal). | Read `quality.reasons[]`; prefer `safe` if failures are high. |
+| `findings[]` empty | Heuristics found nothing — **not** proof of health. | Still inspect top 5 hotspots/allocators manually. |
+
 ## Failure and degradation modes
 
 <details>
