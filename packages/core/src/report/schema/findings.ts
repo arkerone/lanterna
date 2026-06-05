@@ -162,6 +162,12 @@ const findingEvidenceSchema = z.object({
 const findingMeasurementsSchema = z.object({
   observed: z.record(z.string(), z.number()),
   thresholds: z.record(z.string(), z.number()),
+  priorityBasis: z
+    .object({
+      observed: z.number(),
+      threshold: z.number(),
+    })
+    .optional(),
 });
 
 const findingPrioritySchema = z.object({

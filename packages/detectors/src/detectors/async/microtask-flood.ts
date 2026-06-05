@@ -61,6 +61,10 @@ export const microtaskFloodDetector: KindScopedDetector<'async'> = {
             meanInflight: thresholds.meanInflight,
             criticalMaxInflight: thresholds.criticalMaxInflight,
           },
+          priorityBasis: {
+            observed: concurrency.meanInflight,
+            threshold: thresholds.meanInflight,
+          },
         },
         why: `The capture observed an average of ${concurrency.meanInflight.toFixed(0)} async resources inflight (peak ${concurrency.maxInflight}). When the loop is fed work faster than it drains it, latency rises and memory grows from queued continuations — this is the async equivalent of a thread-pool saturation.`,
         suggestion: `Throttle producers: cap concurrency on outgoing requests (e.g. \`p-limit\`, semaphore), batch fan-out work, and verify that no timer/Promise schedules itself recursively. If this is a queue-consumer, scale workers or bound the queue.`,

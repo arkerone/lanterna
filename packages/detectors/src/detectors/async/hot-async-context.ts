@@ -82,6 +82,10 @@ export const hotAsyncContextDetector: KindScopedDetector<'cpu' | 'async'> = {
             criticalCpuPct: thresholds.criticalCpuPct,
             minAttributedCoveragePct: thresholds.minAttributedCoveragePct,
           },
+          priorityBasis: {
+            observed: entry.cpuPct,
+            threshold: thresholds.minCpuPct,
+          },
         },
         why: buildWhy(entry, attribution.attributedCpuPct, dropped),
         suggestion: entry.rootFrame

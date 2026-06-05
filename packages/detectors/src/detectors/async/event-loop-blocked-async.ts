@@ -112,6 +112,10 @@ export const eventLoopBlockedAsyncDetector: KindScopedDetector<'cpu' | 'async'> 
             criticalWaitMs: thresholds.criticalWaitMs,
             minStallLagMs: thresholds.minStallLagMs,
           },
+          priorityBasis: {
+            observed: waitMs,
+            threshold: thresholds.minWaitMs,
+          },
         },
         why: buildWhy(op, waitMs, blockingFrame, stallMaxLagMs, dropped),
         suggestion: `The async ${op.kind} was ready but the event loop was blocked. Open \`${blockingFrame.file}:${blockingFrame.line}\` (\`${blockingFrame.function}\`) — the synchronous work there is the real cause. Offload it to a worker thread, make it async, or chunk it. Patching the await site will not help.`,

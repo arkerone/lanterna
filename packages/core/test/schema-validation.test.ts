@@ -169,6 +169,11 @@ describe('lanternaReportSchema', () => {
             category: 'custom',
             title: 'Prioritized finding',
             evidence: { file: '/app/x.ts', line: 1, function: 'x', selfPct: 5 },
+            measurements: {
+              observed: { durationMs: 1500 },
+              thresholds: { minDurationMs: 500 },
+              priorityBasis: { observed: 1500, threshold: 500 },
+            },
             confidence: 'high',
             proofLevel: 'direct-sample',
             priority: { score: 250, actionConfidence: 'high', impactEstimateMs: 125 },
@@ -182,6 +187,10 @@ describe('lanternaReportSchema', () => {
       expect(result.success).toBe(true);
       if (!result.success) return;
       expect(result.data.profiles.cpu?.summary.topUserHotspot?.function).toBe('computeRanking');
+      expect(result.data.findings[0]?.measurements?.priorityBasis).toEqual({
+        observed: 1500,
+        threshold: 500,
+      });
       expect(result.data.findings[0]?.priority?.score).toBe(250);
     });
 

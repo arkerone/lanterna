@@ -36,6 +36,7 @@ describe('long-await detector', () => {
     expect(finding).toBeDefined();
     expect(finding?.severity).toBe('critical');
     expect(finding?.profileKind).toBe('async');
+    expect(finding?.measurements?.priorityBasis).toEqual({ observed: 1500, threshold: 100 });
   });
 
   it('does not fire for short async ops', () => {
@@ -127,6 +128,7 @@ describe('deep-async-chain detector', () => {
     expect(finding?.profileKind).toBe('async');
     expect(finding?.severity).toBe('warning');
     expect(finding?.measurements?.observed?.recursionDepth).toBe(20);
+    expect(finding?.measurements?.priorityBasis).toEqual({ observed: 20, threshold: 16 });
   });
 
   it('escalates to `critical` past the recursion-depth threshold', () => {
@@ -243,6 +245,7 @@ describe('microtask-flood detector', () => {
     const finding = result.findings.find((f) => f.id === 'microtask-flood');
     expect(finding).toBeDefined();
     expect(finding?.severity).toBe('warning');
+    expect(finding?.measurements?.priorityBasis).toEqual({ observed: 300, threshold: 200 });
   });
 
   it('anchors microtask-flood on the top async hot file when stacks are available', () => {
@@ -536,6 +539,7 @@ describe('hot-async-context detector', () => {
     expect(finding?.evidence.function).toBe('requestHandler');
     expect(finding?.evidence.file).toBe('/app/src/server.js');
     expect(finding?.severity).toBe('critical');
+    expect(finding?.measurements?.priorityBasis).toEqual({ observed: 100, threshold: 10 });
     expect(finding?.evidence.extra).toMatchObject({
       entryFrame: {
         function: 'requestHandler',
@@ -875,6 +879,7 @@ describe('event-loop-blocked-async detector', () => {
     expect(finding?.proofLevel).toBe('correlated-window');
     expect(finding?.category).toBe('event-loop-blocked-async');
     expect(finding?.evidence.extra).toMatchObject({ waitMs: 600 });
+    expect(finding?.measurements?.priorityBasis).toEqual({ observed: 600, threshold: 100 });
   });
 
   it('skips silently when the CPU kind is absent', () => {

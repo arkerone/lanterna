@@ -424,6 +424,10 @@ export interface FindingRemediation {
 export interface FindingMeasurements {
   observed: Record<string, number>;
   thresholds: Record<string, number>;
+  priorityBasis?: {
+    observed: number;
+    threshold: number;
+  };
 }
 
 export interface FindingPriority {

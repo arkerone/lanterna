@@ -115,4 +115,20 @@ describe('sortFindings', () => {
     expect(sorted[0]?.priority?.score).toBe(250);
     expect(sorted[1]?.priority?.score).toBe(240);
   });
+
+  it('uses explicit priorityBasis before the generic observed-value fallback', () => {
+    const sorted = sortFindings([
+      finding({
+        id: 'long-await:1',
+        category: 'long-promise-await',
+        measurements: {
+          observed: { durationMs: 1500, runMs: 0, runCount: 1 },
+          thresholds: { minDurationMs: 500, criticalDurationMs: 1000 },
+          priorityBasis: { observed: 1500, threshold: 500 },
+        },
+      }),
+    ]);
+
+    expect(sorted[0]?.priority?.score).toBe(300);
+  });
 });
