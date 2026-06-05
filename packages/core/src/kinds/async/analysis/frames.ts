@@ -19,8 +19,12 @@ export interface AsyncFrameReporter {
   /**
    * First stack frame that is not Lanterna's own injected instrumentation, so a
    * representative "where this came from" frame never points at the profiler.
+   * Falls back to the first frame when every frame is instrumentation, so a
+   * required origin is always produced.
    */
   firstNonNoiseFrame(frames: AsyncStackFrame[] | undefined): AsyncStackFrame | undefined;
+  /** True when the frame belongs to Lanterna's own injected instrumentation. */
+  isInstrumentationFrame(frame: AsyncStackFrame): boolean;
 }
 
 export function createAsyncFrameReporter(resolver?: SourceMapResolver): AsyncFrameReporter {
@@ -82,11 +86,14 @@ export function createAsyncFrameReporter(resolver?: SourceMapResolver): AsyncFra
     return caller;
   };
 
+  const isInstrumentationFrame = (frame: AsyncStackFrame): boolean =>
+    isLanternaNoiseUrl(frame.file);
+
   const firstNonNoiseFrame = (
     frames: AsyncStackFrame[] | undefined,
   ): AsyncStackFrame | undefined => {
     if (!frames) return undefined;
-    return frames.find((frame) => !isLanternaNoiseUrl(frame.file)) ?? frames[0];
+    return frames.find((frame) => !isInstrumentationFrame(frame)) ?? frames[0];
   };
 
   return {
@@ -95,6 +102,7 @@ export function createAsyncFrameReporter(resolver?: SourceMapResolver): AsyncFra
     toReportFrame,
     userCallerFromAsyncFrame,
     firstNonNoiseFrame,
+    isInstrumentationFrame,
   };
 }
 

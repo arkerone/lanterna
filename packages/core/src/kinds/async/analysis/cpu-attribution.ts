@@ -174,7 +174,7 @@ export function buildCpuAttribution(args: BuildAttributionArgs): AsyncCpuAttribu
     };
     const rootOriginFrame = frameReporter.firstNonNoiseFrame(root.initStack);
     if (rootOriginFrame) entry.rootFrame = frameReporter.toReportFrame(rootOriginFrame);
-    const executionFrame = bestCpuFrame(bucket.frameCounts);
+    const executionFrame = bestCpuFrame(bucket.frameCounts, frameReporter);
     if (executionFrame) {
       const reportFrame = frameReporter.toReportFrame(executionFrame);
       entry.executionFrame = reportFrame;
@@ -226,10 +226,17 @@ function cpuFrameForNode(
 
 function bestCpuFrame(
   counts: Map<string, { frame: AsyncStackFrame; count: number }>,
+  frameReporter: AsyncFrameReporter,
 ): AsyncStackFrame | undefined {
-  return [...counts.values()].sort(
-    (a, b) => b.count - a.count || a.frame.file.localeCompare(b.frame.file),
-  )[0]?.frame;
+  // Pick the hottest frame that is not Lanterna's own instrumentation: the async
+  // hooks themselves burn CPU and can out-sample the user code they wrap, but
+  // reporting the preload as the execution frame points at the profiler. When
+  // every sampled frame is instrumentation there is no real user execution
+  // frame — return undefined so the chain falls back to its root frame.
+  return [...counts.values()]
+    .sort((a, b) => b.count - a.count || a.frame.file.localeCompare(b.frame.file))
+    .map((entry) => entry.frame)
+    .find((frame) => !frameReporter.isInstrumentationFrame(frame));
 }
 
 function findLatestStartedWindow<Window extends { startMs: number; order: number }>(
