@@ -34,6 +34,11 @@ export interface RunProfileOptions {
    * disable — useful when filesystem access is restricted or maps are absent.
    */
   sourceMaps?: boolean;
+  /**
+   * Allow fetching remote (`http(s)://`) `sourceMappingURL` targets. Default
+   * `false` — opt in only when you trust the map host (network egress).
+   */
+  sourceMapRemote?: boolean;
 }
 
 export interface AttachProfileOptions {
@@ -49,6 +54,8 @@ export interface AttachProfileOptions {
   setupPipeline?: ProfilePipelinePlugin;
   /** See {@link RunProfileOptions.sourceMaps}. */
   sourceMaps?: boolean;
+  /** See {@link RunProfileOptions.sourceMapRemote}. */
+  sourceMapRemote?: boolean;
 }
 
 export interface InProcessProfileOptions {
@@ -62,6 +69,8 @@ export interface InProcessProfileOptions {
   setupPipeline?: ProfilePipelinePlugin;
   /** See {@link RunProfileOptions.sourceMaps}. */
   sourceMaps?: boolean;
+  /** See {@link RunProfileOptions.sourceMapRemote}. */
+  sourceMapRemote?: boolean;
 }
 
 export type InProcessProgressEvent =

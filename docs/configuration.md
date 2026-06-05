@@ -11,6 +11,7 @@ Lanterna can read default options from a `.lanterna.json` (or `.lanterna.config.
   "format": "agent",
   "pretty": true,
   "sourceMaps": true,
+  "sourceMapRemote": false,
   "kinds": ["cpu", "memory"],
   "sampleInterval": 1000,
   "heapSampleInterval": "512KiB",
@@ -34,7 +35,7 @@ Lanterna can read default options from a `.lanterna.json` (or `.lanterna.config.
 }
 ```
 
-Every field maps 1:1 to a CLI flag. `format` accepts `json`, `text`, `markdown`, or `agent`. `sourceMaps` defaults to `true`; set it to `false` to match `--no-source-maps`. See [cli.md](./cli.md) for option semantics.
+Every field maps 1:1 to a CLI flag. `format` accepts `json`, `text`, `markdown`, or `agent`. `sourceMaps` defaults to `true`; set it to `false` to match `--no-source-maps`. `sourceMapRemote` defaults to `false`; set it to `true` to match `--source-map-remote` (fetch remote `http(s)` source maps — network egress). See [cli.md](./cli.md) for option semantics.
 
 ## Load order
 

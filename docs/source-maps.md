@@ -26,9 +26,16 @@ For every unique generated URL seen during capture, Lanterna:
 1. Reads the tail of the JS file looking for a `//# sourceMappingURL=…` comment.
 2. If the URL is a **sibling file** (e.g. `foo.js.map`), reads it.
 3. If it is a **`data:` URL** (`application/json` base64 or uri-encoded), decodes inline.
-4. Loads the parsed JSON into a `TraceMap` (`@jridgewell/trace-mapping`) for O(log n) lookups.
+4. If it is a **remote `http(s)://` URL** and remote fetching is enabled (`--source-map-remote` / `sourceMapRemote: true`), reads it from the pre-fetched cache (see below). Off by default.
+5. Loads the parsed JSON into a `TraceMap` (`@jridgewell/trace-mapping`) for O(log n) lookups.
 
-**Not supported:** remote schemes (`http://`, `https://`). Maps larger than 50 MiB are skipped.
+Maps larger than 50 MiB are skipped.
+
+### Remote source maps (opt-in)
+
+A bundle deployed to disk can point its `//# sourceMappingURL` at a CDN (`https://…`). Fetching that is **off by default** because it is network egress from the machine running Lanterna. Enable it with `--source-map-remote` (or `"sourceMapRemote": true` in `.lanterna.json`, or `sourceMapRemote: true` on the programmatic API).
+
+Because frame resolution is synchronous, Lanterna fetches remote maps **once, up front** (bounded by a 3 s timeout and the 50 MiB cap) into an in-memory cache, then resolves against that cache. A failed or oversized fetch is skipped silently and the frame stays at `unsupported-mapping-url`. Only enable it for maps you trust — see [security-and-privacy.md](./security-and-privacy.md).
 
 ## What lands in the report
 
@@ -92,7 +99,7 @@ Failure reasons:
 | `map-read-failed` | `sourceMappingURL` pointed at a missing/unreadable file. |
 | `map-parse-failed` | Map JSON or inline data URL is malformed. |
 | `map-too-large` | Map exceeded the 50 MiB cap. |
-| `unsupported-mapping-url` | Remote scheme (`http(s)://`) — not fetched. |
+| `unsupported-mapping-url` | Remote scheme (`http(s)://`) not fetched — either `--source-map-remote` was off, or the fetch failed/timed out/was too large. Other non-file schemes are also reported here. |
 
 ## Reading source-mapped data — agent contract
 

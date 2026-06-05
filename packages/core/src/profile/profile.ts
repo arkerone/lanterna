@@ -165,6 +165,7 @@ async function analyzeAndBuild(
     setupPipeline?: RunProfileOptions['setupPipeline'];
     command?: string[];
     sourceMaps?: boolean;
+    sourceMapRemote?: boolean;
   },
   kinds: ProfileKind[],
   mode: ProfileMode,
@@ -172,7 +173,14 @@ async function analyzeAndBuild(
   const sourceMaps: SourceMapResolver =
     options.sourceMaps === false
       ? createNoopSourceMapResolver()
-      : createSourceMapResolver({ cwd: bundle.target.cwd, enabled: true });
+      : createSourceMapResolver({
+          cwd: bundle.target.cwd,
+          enabled: true,
+          allowRemote: options.sourceMapRemote === true,
+        });
+  if (options.sourceMapRemote) {
+    await sourceMaps.prefetchRemote(collectScriptUrls(bundle));
+  }
   const analysisOptions = {
     command: options.command ?? [],
     mode,
@@ -195,6 +203,17 @@ async function analyzeAndBuild(
     report.meta.captureIntegrity.sourceMaps = integrity;
   }
   return report;
+}
+
+/** Generated script URLs that may carry a source map (CPU frames — the primary case). */
+function collectScriptUrls(bundle: CaptureBundle): Set<string> {
+  const urls = new Set<string>();
+  const cpu = bundle.kinds.cpu;
+  for (const node of cpu?.cpuProfile?.nodes ?? []) {
+    const url = node.callFrame?.url;
+    if (url) urls.add(url);
+  }
+  return urls;
 }
 
 function bindStopSignals(trigger: () => void, onSignal?: () => void): { dispose: () => void } {

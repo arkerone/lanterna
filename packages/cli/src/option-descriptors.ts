@@ -147,6 +147,11 @@ export const SOURCE_MAP_OPTIONS = [
     description: 'Disable source-map resolution of frame positions',
     hint: 'on by default',
   },
+  {
+    flag: '--source-map-remote',
+    description: 'Fetch remote (http/https) source maps referenced by sourceMappingURL',
+    hint: 'off by default; network egress',
+  },
 ] as const satisfies readonly CliOptionDescriptor[];
 
 export const PLUGIN_OPTIONS = [
@@ -188,5 +193,6 @@ export const OPTION_FLAGS = {
   format: OUTPUT_OPTIONS[1].flag,
   pretty: OUTPUT_OPTIONS[2].flag,
   noSourceMaps: SOURCE_MAP_OPTIONS[0].flag,
+  sourceMapRemote: SOURCE_MAP_OPTIONS[1].flag,
   detectors: PLUGIN_OPTIONS[0].flag,
 } as const;

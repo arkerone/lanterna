@@ -52,6 +52,7 @@ export interface RunProfileOptions {
   deep: boolean;
   sampleIntervalMicros: number;
   sourceMaps: boolean;
+  sourceMapRemote: boolean;
   heapSamplingIntervalBytes: number;
   memoryUsageIntervalMs: number;
   includeMemoryUsageSamples: boolean;
@@ -82,6 +83,7 @@ export interface AttachProfileOptions {
   pretty: boolean;
   sampleIntervalMicros: number;
   sourceMaps: boolean;
+  sourceMapRemote: boolean;
   heapSamplingIntervalBytes: number;
   memoryUsageIntervalMs: number;
   includeMemoryUsageSamples: boolean;
@@ -265,6 +267,10 @@ function addCommonProfilingOptions(command: Command): Command {
     .option(
       OPTION_FLAGS.noSourceMaps,
       'Disable source-map resolution of frame positions (on by default)',
+    )
+    .option(
+      OPTION_FLAGS.sourceMapRemote,
+      'Fetch remote (http/https) source maps referenced by sourceMappingURL (off by default; network egress)',
     )
     .option(
       OPTION_FLAGS.sampleInterval,

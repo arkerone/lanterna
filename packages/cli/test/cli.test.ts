@@ -19,6 +19,7 @@ const MEMORY_DEFAULTS = {
   asyncConcurrencyIntervalMs: DEFAULT_ASYNC_CONCURRENCY_INTERVAL_MS,
   asyncInstrumentation: 'safe',
   sourceMaps: true,
+  sourceMapRemote: false,
 };
 
 afterEach(() => {

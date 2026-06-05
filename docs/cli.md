@@ -221,6 +221,7 @@ Options are grouped by purpose. Capture options apply to `run` and `attach` unle
 | Option | Description |
 | --- | --- |
 | `--no-source-maps` | Disable source-map resolution for captured frame positions. Source maps are enabled by default for `run` and `attach`; `report` only renders what is already present in the JSON. |
+| `--source-map-remote` | Fetch remote (`http(s)://`) source maps referenced by `sourceMappingURL`. Off by default — this is network egress; see [source-maps.md](./source-maps.md#remote-source-maps-opt-in). |
 
 ### Output
 
