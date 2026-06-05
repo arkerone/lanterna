@@ -1,4 +1,5 @@
 import { fileURLToPath } from 'node:url';
+import { classifyNoiseUrl } from '../../../analysis/noise-filters.js';
 import type { SourceMapResolver } from '../../../analysis/sourcemap/resolver.js';
 import type {
   AsyncProfileReport,
@@ -15,6 +16,11 @@ export interface AsyncFrameReporter {
     frame: AsyncStackFrameReport | undefined,
     options: Pick<UserCallerAttribution, 'profilePct' | 'supportPct' | 'confidence' | 'basis'>,
   ): UserCallerAttribution | undefined;
+  /**
+   * First stack frame that is not Lanterna's own injected instrumentation, so a
+   * representative "where this came from" frame never points at the profiler.
+   */
+  firstNonNoiseFrame(frames: AsyncStackFrame[] | undefined): AsyncStackFrame | undefined;
 }
 
 export function createAsyncFrameReporter(resolver?: SourceMapResolver): AsyncFrameReporter {
@@ -57,6 +63,11 @@ export function createAsyncFrameReporter(resolver?: SourceMapResolver): AsyncFra
     options: Pick<UserCallerAttribution, 'profilePct' | 'supportPct' | 'confidence' | 'basis'>,
   ): UserCallerAttribution | undefined => {
     if (!frame) return undefined;
+    // Never attribute a long await or CPU window to Lanterna's own injected
+    // code (the async preload, runtime-signals hooks). Those frames can sit on
+    // a resource's init/await stack, but surfacing them as the "user caller"
+    // points investigations at the profiler instead of the app.
+    if (isLanternaNoiseFrame(frame)) return undefined;
     const caller: UserCallerAttribution = {
       function: frame.function,
       file: frame.file,
@@ -71,12 +82,37 @@ export function createAsyncFrameReporter(resolver?: SourceMapResolver): AsyncFra
     return caller;
   };
 
+  const firstNonNoiseFrame = (
+    frames: AsyncStackFrame[] | undefined,
+  ): AsyncStackFrame | undefined => {
+    if (!frames) return undefined;
+    return frames.find((frame) => !isLanternaNoiseUrl(frame.file)) ?? frames[0];
+  };
+
   return {
     normalizeFrameFile,
     toReportCdpContext,
     toReportFrame,
     userCallerFromAsyncFrame,
+    firstNonNoiseFrame,
   };
+}
+
+function isLanternaNoiseFrame(frame: AsyncStackFrameReport): boolean {
+  return isLanternaNoiseUrl(frame.file);
+}
+
+function isLanternaNoiseUrl(file: string): boolean {
+  const path = file.startsWith('file://') ? safeFileURLToPath(file) : file;
+  return classifyNoiseUrl(path.replaceAll('\\', '/')) !== undefined;
+}
+
+function safeFileURLToPath(url: string): string {
+  try {
+    return fileURLToPath(url);
+  } catch {
+    return url;
+  }
 }
 
 export function collectAsyncFrameUrls(data: AsyncKindData): Set<string> {

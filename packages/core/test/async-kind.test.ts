@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createAnalysisPipeline } from '../src/analysis/core/pipeline.js';
 import type { CaptureBundle } from '../src/capture/core/types.js';
 import type { CdpClient } from '../src/inspector/client.js';
+import { createAsyncFrameReporter } from '../src/kinds/async/analysis/frames.js';
 import { createAsyncProbe, createAsyncProfileKind } from '../src/kinds/async/index.js';
 import type { AsyncKindData, AsyncOperationRecord } from '../src/kinds/async/types.js';
 import { buildLanternaReport, serializeReport } from '../src/report/index.js';
@@ -1593,5 +1594,51 @@ describe('async latency cause wiring (regression)', () => {
     // capture-length duration.
     expect(async?.summary.byKindLatency?.promise?.count).toBe(1);
     expect(async?.summary.byKindLatency?.promise?.maxMs).toBe(100);
+  });
+});
+
+describe('async user-caller attribution', () => {
+  const options = {
+    profilePct: 0,
+    supportPct: 100,
+    confidence: 'high' as const,
+    basis: 'async-stack' as const,
+  };
+
+  it('does not attribute Lanterna preload frames as the user caller', () => {
+    const reporter = createAsyncFrameReporter();
+    const fromPlainPath = reporter.userCallerFromAsyncFrame(
+      { function: 'tickInit', file: '/tmp/lanterna-preload-123-456-abc.cjs', line: 468, column: 7 },
+      options,
+    );
+    const fromFileUrl = reporter.userCallerFromAsyncFrame(
+      {
+        function: 'tickInit',
+        file: 'file:///tmp/lanterna-preload-123-456-abc.cjs',
+        line: 468,
+        column: 7,
+      },
+      options,
+    );
+    expect(fromPlainPath).toBeUndefined();
+    expect(fromFileUrl).toBeUndefined();
+  });
+
+  it('attributes a real user frame as the user caller', () => {
+    const reporter = createAsyncFrameReporter();
+    const caller = reporter.userCallerFromAsyncFrame(
+      { function: 'fetchUser', file: '/app/server.js', line: 9, column: 3 },
+      options,
+    );
+    expect(caller).toMatchObject({ function: 'fetchUser', file: '/app/server.js', line: 9 });
+  });
+
+  it('skips leading Lanterna instrumentation when picking a representative frame', () => {
+    const reporter = createAsyncFrameReporter();
+    const origin = reporter.firstNonNoiseFrame([
+      { function: 'tickInit', file: '/tmp/lanterna-preload-1-2-3.cjs', line: 468, column: 7 },
+      { function: 'handle', file: '/app/server.js', line: 31, column: 2 },
+    ]);
+    expect(origin).toMatchObject({ function: 'handle', file: '/app/server.js', line: 31 });
   });
 });
