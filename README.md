@@ -51,7 +51,8 @@ Lanterna is the right fit when the consumer of the report is **an agent or an au
 
 ## What you get
 
-- **Two capture modes** — `lanterna run` to spawn & profile a command, `lanterna attach` to connect to a live process via the inspector. `lanterna ps` lists live `node`/`nodejs` processes (table or JSON) when you need to find a PID first.
+- **Three capture modes** — `lanterna run` to spawn & profile a command, `lanterna attach` to connect to a live process via the inspector, and programmatic in-process self-profiling via [`profileInProcess()`](docs/programmatic-api.md#self-profiling-profileinprocess) for a service that profiles itself. `lanterna ps` lists live `node`/`nodejs` processes (table or JSON) when you need to find a PID first.
+- **Regression diffs** — `lanterna diff before.json after.json` compares two reports (added / removed / changed findings + headline CPU/memory deltas) and emits a `regressed` flag for CI gates and agents. See [docs/diffing-reports.md](docs/diffing-reports.md).
 - **Three profile kinds** — opt in with `--kind`: `cpu` (V8 sampling profiler, default), `memory` (heap allocation profile + RSS series), and `async` (experimental async-resource profiling). Combine kinds by repeating `--kind` (`--kind cpu --kind memory`) or using commas (`--kind cpu,memory`).
 - **Enriched `LanternaReport`** — categorized hotspots, hot stacks, GC pauses, event-loop lag, allocator ranking, async chains, capture-integrity flags.
 - **19 built-in detectors** across CPU, memory, and async kinds, including 3 cross-kind detectors (`alloc-in-hot-path`, `hot-async-context`, `event-loop-blocked-async`) — see the [Built-in detectors](#built-in-detectors) section below.
@@ -81,6 +82,9 @@ lanterna run \
 
 # Memory leak hunt with start/end heap snapshot
 lanterna run --kind memory --heap-snapshot-analysis --duration 60s -- node app.js
+
+# Confirm a fix: capture again, then diff against the baseline
+lanterna diff report.json report.after.json --format agent
 ```
 
 `Ctrl+C` stops profiling early **and still emits a final report**.

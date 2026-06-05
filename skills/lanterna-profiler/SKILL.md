@@ -79,9 +79,15 @@ $LANTERNA attach --pid <pid> --duration 30s --format json --output report.json
 
 # Step 2 — render the agent contract (mandatory, every time)
 $LANTERNA report report.json --format agent --output report.agent.md
+
+# Optional — confirm a fix or catch a regression: re-capture after the change to
+# report.after.json (same workload/duration), then diff against the baseline.
+$LANTERNA diff report.json report.after.json --format agent --output diff.agent.md
 ```
 
 Use the same shape to **rerun** when signal is degraded (`rerun_required: true`, non-representative workload, mostly-idle CPU, missing kind, blocking caveats). For `run` servers without load, rerun with `--workload` (realistic headers, auth, payload, concurrency, route mix). For `attach`, run the workload externally during capture (`attach` takes no `--workload`); never invent an endpoint — ask for the representative workload. See [workload-guidance.md](references/workload-guidance.md) for autocannon/artillery examples.
+
+To **verify a proposed fix**, capture a second report under the *same* workload and duration, then `lanterna diff <baseline> <after>`. Read its `regressed` headline (true when a non-info finding was added or worsened) plus the added/removed/changed findings and metric deltas — the same evidence discipline applies: a clean diff lowers the odds of regression, it does not prove the fix. Keep workload and duration identical, or the deltas are noise. When a frame stays at `unsupported-mapping-url` because its `sourceMappingURL` is a remote `http(s)` URL, re-capture with `--source-map-remote` (opt-in; it is network egress) before treating that frame as unmapped.
 
 ## Output Format
 
