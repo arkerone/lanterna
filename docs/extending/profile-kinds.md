@@ -141,6 +141,7 @@ export interface CaptureProbe<TData> {
 
   install?(ctx: ProbeLifecycleContext): Promise<void>;
   start(ctx: ProbeLifecycleContext & { abortSignal?: AbortSignal }): Promise<void>;
+  afterRuntimeReleased?(ctx: ProbeLifecycleContext & { abortSignal?: AbortSignal }): Promise<void>;
   stop(ctx: ProbeLifecycleContext & {
     abortSignal?: AbortSignal;
     stopReason?: 'exit' | 'timeout' | 'signal';
@@ -160,7 +161,8 @@ export interface ProbeLifecycleContext {
 ```
 
 - `install` runs once before `start`. Use it to enable CDP domains (`Profiler.enable`, `HeapProfiler.enable`, …) and register listeners that must be active before user code runs.
-- `start` is called when the capture window opens (after `--wait-for-url` and `--capture-delay` if set).
+- `start` runs while the target is still suspended at `--inspect-brk` (spawn mode), before the runtime is resumed and before `--wait-for-url`/`--capture-delay`/`--workload`. Arm sampling-style probes here so they observe startup; do **not** issue CDP calls that need the isolate to actually run (e.g. `HeapProfiler.takeHeapSnapshot` never completes against a suspended isolate).
+- `afterRuntimeReleased` (optional) runs once the coordinator has resumed the runtime, still before the workload/readiness wait. It is a no-op in attach mode (the target was never suspended). Use it for start-of-capture work that needs the isolate running — the memory kind takes its baseline heap snapshot here.
 - `stop` is called when the duration expires, the target exits, or the user signals. Return the raw kind data.
 - `dispose` is best-effort cleanup and is called after `stop` for every installed probe, even when `start` or `stop` failed. Dispose failures do not discard collected data; they are recorded under `meta.captureIntegrity.diagnostics[]` with `stage: "probe-dispose"`.
 

@@ -104,6 +104,9 @@ export async function runCapture<TSourceOptions>(
     await probes.install(options.kinds);
     await probes.start();
     await connected.releaseRuntime?.();
+    // Probe work that needs the isolate to run (e.g. the start heap snapshot)
+    // happens here, once `--inspect-brk` has been released, never before.
+    await probes.afterRuntimeReleased();
 
     await options.beforeCaptureStart?.();
 

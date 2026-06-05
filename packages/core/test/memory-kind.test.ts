@@ -95,6 +95,65 @@ function profile(): RawSamplingHeapProfile {
   };
 }
 
+function recursiveProfile(): RawSamplingHeapProfile {
+  // A frame that recurses into itself (same url/line/column → same aggregate id),
+  // the way module bootstrap loading does. The two `loadModule` nodes share an
+  // id; their subtrees nest, so inclusive bytes must be counted only once.
+  //   (root)
+  //   └─ loadModule  @ /app/src/loader.js:1  self 100
+  //      └─ loadModule  @ /app/src/loader.js:1  self 100   (recursive, same id)
+  //         └─ allocLeaf @ /app/src/leaf.js:2   self 800
+  const loaderFrame = {
+    functionName: 'loadModule',
+    scriptId: '1',
+    url: 'file:///app/src/loader.js',
+    lineNumber: 1,
+    columnNumber: 2,
+  };
+  return {
+    head: {
+      callFrame: {
+        functionName: '(root)',
+        scriptId: '0',
+        url: '',
+        lineNumber: 0,
+        columnNumber: 0,
+      },
+      selfSize: 0,
+      id: 1,
+      children: [
+        {
+          callFrame: loaderFrame,
+          selfSize: 100,
+          id: 2,
+          children: [
+            {
+              callFrame: loaderFrame,
+              selfSize: 100,
+              id: 3,
+              children: [
+                {
+                  callFrame: {
+                    functionName: 'allocLeaf',
+                    scriptId: '2',
+                    url: 'file:///app/src/leaf.js',
+                    lineNumber: 2,
+                    columnNumber: 1,
+                  },
+                  selfSize: 800,
+                  id: 4,
+                  children: [],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    },
+    samples: [],
+  };
+}
+
 function externalAllocatorProfile(): RawSamplingHeapProfile {
   return {
     head: {
@@ -222,6 +281,33 @@ describe('memory kind analysis', () => {
     expect(doWork?.totalBytes).toBe(1000);
 
     // Schema validates.
+    expect(memoryProfileReportSchema.safeParse(report).success).toBe(true);
+  });
+
+  it('does not double-count inclusive bytes for a self-recursive frame', () => {
+    const data: MemoryKindData = {
+      samplingProfile: recursiveProfile(),
+      samplingIntervalBytes: 512 * 1024,
+      memoryUsage: { samples: series(0), available: true, sampleIntervalMs: 200 },
+    };
+    const pipeline = createAnalysisPipeline({ kinds: [createMemoryProfileKind()] });
+    const result = pipeline.run(bundle(data), { command: ['node', 'app.js'], mode: 'spawn' });
+    const report = result.profiles.memory as MemoryProfileReport;
+
+    expect(report.summary.totalSampledBytes).toBe(1000);
+    // No allocator's inclusive share may exceed the total it is measured against.
+    for (const allocator of report.hotAllocators) {
+      expect(allocator.totalPct).toBeLessThanOrEqual(100 + 1e-9);
+      expect(allocator.totalBytes).toBeLessThanOrEqual(report.summary.totalSampledBytes);
+    }
+
+    const loadModule = report.hotAllocators.find((h) => h.function === 'loadModule');
+    expect(loadModule).toBeDefined();
+    // Self bytes still sum across both occurrences (100 + 100); inclusive bytes
+    // count the nested subtree once (the outer occurrence owns the whole 1000).
+    expect(loadModule?.selfBytes).toBe(200);
+    expect(loadModule?.totalBytes).toBe(1000);
+    expect(Math.round(loadModule?.totalPct ?? 0)).toBe(100);
     expect(memoryProfileReportSchema.safeParse(report).success).toBe(true);
   });
 
@@ -560,6 +646,41 @@ describe('memory kind analysis', () => {
     });
   });
 
+  it('takes the start heap snapshot after the runtime is released, not during start', async () => {
+    // Regression: in spawn mode the target is still parked at `--inspect-brk`
+    // during `start()`, so `HeapProfiler.takeHeapSnapshot` there would never
+    // complete. The start snapshot must run in `afterRuntimeReleased`, while
+    // `start()` only arms heap sampling.
+    const outputDir = await mkdtemp(join(tmpdir(), 'lanterna-heap-order-'));
+    const sent: string[] = [];
+    const cdp = {
+      closed: false,
+      send: async (method: string) => {
+        sent.push(method);
+        if (method === 'HeapProfiler.stopSampling') return { profile: profile() };
+        return {};
+      },
+      evaluate: async () => ({ samples: series(0, 2), sampleIntervalMs: 250 }),
+      on: () => () => {},
+      onClose: () => () => {},
+      close: async () => {},
+    };
+    const probe = createMemoryProfileKind({
+      heapSnapshotAnalysis: { enabled: true, outputDir },
+    }).createProbe();
+
+    try {
+      await probe.start({ cdp, mode: 'spawn', kindId: 'memory' });
+      expect(sent).toContain('HeapProfiler.startSampling');
+      expect(sent).not.toContain('HeapProfiler.takeHeapSnapshot');
+
+      await probe.afterRuntimeReleased?.({ cdp, mode: 'spawn', kindId: 'memory' });
+      expect(sent).toContain('HeapProfiler.takeHeapSnapshot');
+    } finally {
+      await rm(outputDir, { recursive: true, force: true });
+    }
+  });
+
   it('bounds heap snapshot capture and still returns standard memory data', async () => {
     vi.useFakeTimers();
     const outputDir = await mkdtemp(join(tmpdir(), 'lanterna-heap-timeout-'));
@@ -584,21 +705,26 @@ describe('memory kind analysis', () => {
     const probe = createMemoryProfileKind({
       heapSnapshotAnalysis: { enabled: true, outputDir },
     }).createProbe();
-    let startState: 'pending' | 'resolved' | 'rejected' = 'pending';
-    const startPromise = probe.start({ cdp, mode: 'spawn', kindId: 'memory' }).then(
-      () => {
-        startState = 'resolved';
-      },
-      () => {
-        startState = 'rejected';
-      },
-    );
+
+    await probe.start({ cdp, mode: 'spawn', kindId: 'memory' });
+    expect(sent).toContain('HeapProfiler.startSampling');
+
+    let releasedState: 'pending' | 'resolved' | 'rejected' = 'pending';
+    const releasedPromise = probe
+      .afterRuntimeReleased?.({ cdp, mode: 'spawn', kindId: 'memory' })
+      .then(
+        () => {
+          releasedState = 'resolved';
+        },
+        () => {
+          releasedState = 'rejected';
+        },
+      );
 
     try {
       await vi.advanceTimersByTimeAsync(31_000);
       await Promise.resolve();
-      expect(startState).toBe('resolved');
-      expect(sent).toContain('HeapProfiler.startSampling');
+      expect(releasedState).toBe('resolved');
 
       const stopPromise = probe.stop({ cdp, mode: 'spawn', kindId: 'memory' });
       await vi.advanceTimersByTimeAsync(31_000);
@@ -609,7 +735,7 @@ describe('memory kind analysis', () => {
       expect(data.memoryUsage.available).toBe(true);
     } finally {
       rejectSnapshot(new Error('cleanup'));
-      await startPromise.catch(() => {});
+      await releasedPromise?.catch(() => {});
       vi.useRealTimers();
       await rm(outputDir, { recursive: true, force: true });
     }

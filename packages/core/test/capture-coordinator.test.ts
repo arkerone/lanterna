@@ -57,6 +57,7 @@ type FakeSourceOptions = {
 class FakeSource implements ProfileSource<FakeSourceOptions | undefined> {
   readonly cdp: FakeCdp;
   private readonly waitForExitImpl: () => Promise<void>;
+  private readonly releaseRuntimeImpl?: () => Promise<void>;
   finalizeCalls = 0;
   mode: ConnectedSource['mode'];
 
@@ -64,10 +65,12 @@ class FakeSource implements ProfileSource<FakeSourceOptions | undefined> {
     cdp = new FakeCdp(),
     waitForExitImpl: () => Promise<void> = async () => {},
     mode: ConnectedSource['mode'] = 'attach',
+    releaseRuntimeImpl?: () => Promise<void>,
   ) {
     this.cdp = cdp;
     this.waitForExitImpl = waitForExitImpl;
     this.mode = mode;
+    this.releaseRuntimeImpl = releaseRuntimeImpl;
   }
 
   async connect(
@@ -81,6 +84,7 @@ class FakeSource implements ProfileSource<FakeSourceOptions | undefined> {
       startedAtEpoch: Date.parse('2024-01-01T00:00:00.000Z'),
       initialIntegrity: createCaptureIntegrity(),
       waitForExit: this.waitForExitImpl,
+      ...(this.releaseRuntimeImpl ? { releaseRuntime: this.releaseRuntimeImpl } : {}),
       drainLiveSignals: () => ({
         gcEventsAbs: [],
         eventLoopSamplesAbs: [],
@@ -571,6 +575,49 @@ describe('runCapture lifecycle', () => {
     });
 
     expect(seen).toEqual([`install:${mode}`, `start:${mode}`, `stop:${mode}`, `dispose:${mode}`]);
+  });
+
+  it('runs probe afterRuntimeReleased after start and after the runtime is released', async () => {
+    const calls: string[] = [];
+    const source = new FakeSource(
+      new FakeCdp(),
+      async () => {},
+      'spawn',
+      async () => {
+        calls.push('release-runtime');
+      },
+    );
+
+    await runCapture({
+      source,
+      sourceOptions: undefined,
+      kinds: [
+        defineProfileKind({
+          id: 'after-release',
+          reportSectionKey: 'after-release',
+          reportSchema: z.unknown(),
+          createProbe() {
+            return {
+              start: async () => {
+                calls.push('start');
+              },
+              afterRuntimeReleased: async () => {
+                calls.push('after-runtime-released');
+              },
+              stop: async () => {
+                calls.push('stop');
+                return { ok: true };
+              },
+            };
+          },
+          createAnalysisContributor() {
+            return { analyze() {} };
+          },
+        }),
+      ],
+    });
+
+    expect(calls).toEqual(['start', 'release-runtime', 'after-runtime-released', 'stop']);
   });
 
   it('disposes a probe after a successful stop', async () => {

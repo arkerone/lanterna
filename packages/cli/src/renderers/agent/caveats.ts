@@ -36,7 +36,13 @@ export function degradingSignalCaveats(report: LanternaReport): string[] {
   if (report.profiles?.memory?.quality?.confidence === 'low') {
     caveats.push('memory confidence low');
   }
-  const heapSnapshotWarnings = report.profiles?.memory?.heapSnapshotAnalysis?.warnings ?? [];
+  // Only surface heap-snapshot warnings that mean the retention analysis was
+  // actually degraded (capture failed/timed out, snapshot too large, parse
+  // errors). The "truncated to top N …" notes are informational — the analysis
+  // succeeded and simply capped its output — so they must not gate a rerun.
+  const heapSnapshotWarnings = (
+    report.profiles?.memory?.heapSnapshotAnalysis?.warnings ?? []
+  ).filter((warning) => !isInformationalHeapSnapshotWarning(warning));
   if (heapSnapshotWarnings.length > 0) {
     caveats.push(`heap snapshot warnings: ${heapSnapshotWarnings.join('; ')}`);
   }
@@ -79,4 +85,12 @@ function rerunRequiredSignalCaveats(report: LanternaReport): string[] {
 
 function isBestEffortDetectorFinding(finding: Finding): boolean {
   return isBestEffortFinding(finding.id);
+}
+
+/**
+ * Informational heap-snapshot notes that do not indicate a degraded capture.
+ * The analysis ran successfully; it only capped how much it reported.
+ */
+function isInformationalHeapSnapshotWarning(warning: string): boolean {
+  return warning.startsWith('heap snapshot analysis truncated to top ');
 }

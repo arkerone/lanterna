@@ -57,32 +57,39 @@ export function createMemoryProbe(options: MemoryProbeOptions): CaptureProbe<Mem
         }
       : {}),
     async start(ctx: ProbeLifecycleContext & { abortSignal?: AbortSignal }) {
-      if (options.heapSnapshotAnalysis?.enabled) {
-        const outputDir = options.heapSnapshotAnalysis.outputDir ?? '.lanterna-heapsnapshots';
-        const startPath = resolveHeapSnapshotPath(outputDir, 'start');
-        const endPath = resolveHeapSnapshotPath(outputDir, 'end');
-        capturedHeapSnapshots = {
-          available: true,
-          mode: 'start-end',
-          start: { path: startPath },
-          end: { path: endPath },
-          warnings: [],
-        };
-        try {
-          await takeHeapSnapshotToFile(ctx.cdp, startPath, {
-            abortSignal: ctx.abortSignal,
-            timeoutMs: DEFAULT_HEAP_SNAPSHOT_CAPTURE_TIMEOUT_MS,
-          });
-        } catch (error) {
-          capturedHeapSnapshots.available = false;
-          capturedHeapSnapshots.warnings.push(
-            `failed to capture start heap snapshot: ${
-              error instanceof Error ? error.message : String(error)
-            }`,
-          );
-        }
-      }
       await startHeapSampling(ctx.cdp, options.samplingIntervalBytes);
+    },
+    // The start heap snapshot runs here, not in `start()`: in spawn mode the
+    // target is still parked at `--inspect-brk` during `start()`, and
+    // `HeapProfiler.takeHeapSnapshot` never completes while the isolate is
+    // suspended (it would always hit the capture timeout). By the time the
+    // coordinator releases the runtime and calls this hook, the isolate runs
+    // and the baseline snapshot is taken before any workload starts.
+    async afterRuntimeReleased(ctx: ProbeLifecycleContext & { abortSignal?: AbortSignal }) {
+      if (!options.heapSnapshotAnalysis?.enabled) return;
+      const outputDir = options.heapSnapshotAnalysis.outputDir ?? '.lanterna-heapsnapshots';
+      const startPath = resolveHeapSnapshotPath(outputDir, 'start');
+      const endPath = resolveHeapSnapshotPath(outputDir, 'end');
+      capturedHeapSnapshots = {
+        available: true,
+        mode: 'start-end',
+        start: { path: startPath },
+        end: { path: endPath },
+        warnings: [],
+      };
+      try {
+        await takeHeapSnapshotToFile(ctx.cdp, startPath, {
+          abortSignal: ctx.abortSignal,
+          timeoutMs: DEFAULT_HEAP_SNAPSHOT_CAPTURE_TIMEOUT_MS,
+        });
+      } catch (error) {
+        capturedHeapSnapshots.available = false;
+        capturedHeapSnapshots.warnings.push(
+          `failed to capture start heap snapshot: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      }
     },
     async stop(
       ctx: ProbeLifecycleContext & { abortSignal?: AbortSignal; stopReason?: ProbeStopReason },
