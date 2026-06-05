@@ -64,6 +64,15 @@ export interface CaptureProbe<TData> {
   };
   install?(ctx: ProbeLifecycleContext): Promise<void>;
   start(ctx: ProbeLifecycleContext & { abortSignal?: AbortSignal }): Promise<void>;
+  /**
+   * Optional step that runs once the target runtime has been resumed (spawn mode
+   * releases `--inspect-brk` here; in attach mode the target was never suspended).
+   * Use it for start-of-capture work that needs the V8 isolate to actually run —
+   * e.g. `HeapProfiler.takeHeapSnapshot`, which never completes while the isolate
+   * is parked at the inspector breakpoint. Runs after {@link start} and before the
+   * workload/readiness wait, so it still observes a clean start-of-capture baseline.
+   */
+  afterRuntimeReleased?(ctx: ProbeLifecycleContext & { abortSignal?: AbortSignal }): Promise<void>;
   stop(
     ctx: ProbeLifecycleContext & {
       abortSignal?: AbortSignal;

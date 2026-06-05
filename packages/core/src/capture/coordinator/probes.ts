@@ -57,10 +57,32 @@ export class ProbeOrchestrator<TSourceOptions> {
   async start(): Promise<void> {
     for (const { kind, probe } of this.probeInstances) {
       try {
-        this.emitStartProgress(probe);
+        // Probes with a deferred post-resume step own their start progress
+        // message — emitting it here would announce work that has not run yet.
+        if (!probe.afterRuntimeReleased) this.emitStartProgress(probe);
         await probe.start(this.lifecycleContext(kind.id, { abortSignal: this.ctx.abortSignal }));
       } catch (error) {
         logger.warn({ kindId: kind.id, err: error }, 'kind probe failed to start');
+        this.recordDiagnostic('probe-start', kind.id, error);
+      }
+    }
+  }
+
+  /**
+   * Run each probe's optional post-resume step. Called after the coordinator has
+   * released the target runtime, so work that needs the isolate to actually run
+   * (e.g. the start heap snapshot) no longer deadlocks against `--inspect-brk`.
+   */
+  async afterRuntimeReleased(): Promise<void> {
+    for (const { kind, probe } of this.probeInstances) {
+      if (!probe.afterRuntimeReleased) continue;
+      try {
+        this.emitStartProgress(probe);
+        await probe.afterRuntimeReleased(
+          this.lifecycleContext(kind.id, { abortSignal: this.ctx.abortSignal }),
+        );
+      } catch (error) {
+        logger.warn({ kindId: kind.id, err: error }, 'kind probe post-resume step failed');
         this.recordDiagnostic('probe-start', kind.id, error);
       }
     }

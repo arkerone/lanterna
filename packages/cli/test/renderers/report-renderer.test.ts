@@ -778,6 +778,61 @@ describe('renderReport', () => {
     );
   });
 
+  it('does not gate a rerun on an informational heap-snapshot truncation note', () => {
+    const output = renderReport(
+      {
+        meta: { ...baseMeta, profileKinds: ['memory'] },
+        profiles: {
+          memory: {
+            quality: { confidence: 'high', reasons: [], recommendations: [] },
+            memoryUsage: { available: true, sampleIntervalMs: 250, sampleCount: 40 },
+            heapSnapshotAnalysis: {
+              available: true,
+              mode: 'start-end',
+              summary: { totalRetainedGrowthBytes: 1000, topGrowingConstructor: 'Object' },
+              growthByConstructor: [],
+              retainerPaths: [],
+              warnings: ['heap snapshot analysis truncated to top 20 constructor groups'],
+            },
+          },
+        },
+        findings: [],
+      },
+      { format: 'agent' },
+    );
+
+    expect(output).toContain('rerun_required: false');
+    expect(output).toContain('degrading_caveats: []');
+    expect(output).toContain('heap_snapshot: available');
+  });
+
+  it('still gates a rerun on a real heap-snapshot capture failure', () => {
+    const output = renderReport(
+      {
+        meta: { ...baseMeta, profileKinds: ['memory'] },
+        profiles: {
+          memory: {
+            quality: { confidence: 'high', reasons: [], recommendations: [] },
+            memoryUsage: { available: true, sampleIntervalMs: 250, sampleCount: 40 },
+            heapSnapshotAnalysis: {
+              available: false,
+              mode: 'start-end',
+              summary: { totalRetainedGrowthBytes: 0 },
+              growthByConstructor: [],
+              retainerPaths: [],
+              warnings: ['failed to capture start heap snapshot: heap snapshot capture timed out'],
+            },
+          },
+        },
+        findings: [],
+      },
+      { format: 'agent' },
+    );
+
+    expect(output).toContain('rerun_required: true');
+    expect(output).toContain('heap snapshot warnings:');
+  });
+
   it('labels inclusive CPU aggregate read targets with total signal when CPU has no findings', () => {
     const output = renderReport(
       {

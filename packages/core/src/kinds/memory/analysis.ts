@@ -261,6 +261,13 @@ function aggregateAllocators(
 
   // Walk: post-order accumulation of subtree size into `totalBytes`, summing
   // self into the per-frame aggregate keyed by (file, function, line, column).
+  //
+  // `ancestorIds` tracks the frame ids on the current root→node path so a frame
+  // that recurses into itself (module bootstrap loading does this constantly)
+  // only counts its subtree toward inclusive `totalBytes` at its OUTERMOST
+  // occurrence. Without this guard, every nested re-entry re-adds the bytes the
+  // outer occurrence already owns, inflating inclusive `totalPct` past 100%.
+  const ancestorIds = new Set<string>();
   const walk = (
     node: RawSamplingHeapProfileNode,
     userAncestor: ClassifiedHeapFrame | undefined,
@@ -269,12 +276,18 @@ function aggregateAllocators(
     const frame = classifyHeapFrame(node, cwd, sourceMaps);
     const nextUserAncestor = frame.category === 'user' ? frame : userAncestor;
 
+    const reentrant = ancestorIds.has(frame.id);
+    if (!reentrant) ancestorIds.add(frame.id);
     for (const child of node.children) subtreeSize += walk(child, nextUserAncestor);
+    if (!reentrant) ancestorIds.delete(frame.id);
 
+    // Re-entrant occurrences contribute their self bytes but not their subtree
+    // total — those bytes are already included in the outermost occurrence.
+    const totalContribution = reentrant ? 0 : subtreeSize;
     const existing = byId.get(frame.id);
     if (existing) {
       existing.selfBytes += node.selfSize;
-      existing.totalBytes += subtreeSize;
+      existing.totalBytes += totalContribution;
       if (!existing.source && frame.source) existing.source = frame.source;
     } else {
       const aggregate: AllocatorAggregate = {
@@ -286,7 +299,7 @@ function aggregateAllocators(
         category: frame.category,
         ...(frame.package ? { package: frame.package } : {}),
         selfBytes: node.selfSize,
-        totalBytes: subtreeSize,
+        totalBytes: totalContribution,
         userCallerBytes: new Map(),
       };
       if (frame.source) aggregate.source = frame.source;
