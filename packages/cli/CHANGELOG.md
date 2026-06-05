@@ -1,5 +1,19 @@
 # @lanterna-profiler/cli
 
+## 1.16.0
+
+### Minor Changes
+
+- 3d574ff: Validate report JSON on intake for `lanterna report` and `lanterna diff`. A new `readLanternaReport` helper parses the file, validates it against the report schema, and checks the schema version, replacing the bare `JSON.parse(...) as LanternaReport` casts. Malformed JSON, reports that don't match the schema, or reports from an unsupported schema version now fail with a clear, labeled error (e.g. which file and which field) instead of surfacing as confusing downstream crashes.
+
+### Patch Changes
+
+- 1894c49: Validate kind-scoped options after the `.lanterna.json` config is merged instead of at parse time. Previously `--async-*` and `--heap-snapshot-*` flags were rejected during arg parsing whenever the matching kind was missing, so a kind supplied only through config (e.g. `"kinds": ["async"]`) would still be falsely rejected. The check now runs in `validateKindScopedOptions` once flags and config kinds are merged, and the standalone heap-snapshot config assertion was folded into the same place. Config-provided async/heap-snapshot options are now validated too, with their own messages.
+- Updated dependencies [209a42e]
+- Updated dependencies [fded65f]
+  - @lanterna-profiler/core@2.7.0
+  - @lanterna-profiler/detectors@2.7.0
+
 ## 1.15.0
 
 ### Minor Changes
