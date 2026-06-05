@@ -36,18 +36,24 @@ export async function openInspectorForPid(
   if (!Number.isInteger(pid) || pid <= 0) {
     throw new Error(`invalid --pid: ${pid}`);
   }
-  if (process.platform === 'win32') {
-    throw new Error(
-      '`lanterna attach --pid` is not supported on Windows; use --inspect-url instead',
-    );
-  }
 
+  // The HTTP scan for an already-open inspector works on every platform — only
+  // *opening* one (via SIGUSR1) is POSIX-only. So try discovery first, and only
+  // gate the SIGUSR1 fallback on the platform.
   onProgress?.(`Checking whether pid ${pid} already exposes a CDP inspector endpoint...`);
   const existingTargets = await readInspectorTargets();
   const existingTarget = await findInspectorTargetByPid(existingTargets, pid);
   if (existingTarget?.webSocketDebuggerUrl) {
     onProgress?.(`Found an existing CDP inspector endpoint for pid ${pid}.`);
     return existingTarget.webSocketDebuggerUrl;
+  }
+
+  if (process.platform === 'win32') {
+    throw new Error(
+      `no already-open inspector found for pid ${pid} on Windows, and Lanterna cannot open one ` +
+        `(opening an inspector needs SIGUSR1, which is POSIX-only). Start the process with ` +
+        `--inspect (or --inspect=0), or pass --inspect-url with the WebSocket URL.`,
+    );
   }
 
   onProgress?.(
