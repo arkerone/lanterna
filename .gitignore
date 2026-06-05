@@ -15,6 +15,13 @@ packages/core/src/report/version.generated.ts
 coverage/
 packages/*/coverage/
 
+# E2E test artifacts (generated on failure; uploaded as CI artifacts, never committed)
+e2e-artifacts/
+
+# Local heap snapshots from --heap-snapshot-analysis
+.lanterna-heaps/
+.lanterna-heapsnapshots/
+
 # Tooling caches
 .turbo/
 packages/*/.turbo/
