@@ -87,3 +87,34 @@ Async-specific options:
 - **The blocking frame is attributed per stall.** The `event-loop-blocked-async` finding anchors on the user frame that dominated CPU during the *specific* stall that delayed each operation — matched by when the callback became runnable (`firstRunAtMs`) — so several distinct blocking call sites each point at their own culprit rather than one globally-dominant frame (`profiles.cpu.eventLoop.stallIntervals[].topFrame` carries the per-stall culprit). It falls back to the globally-dominant hotspot only when an op's run time matches no stall, and stands down entirely when no CPU hotspot correlates.
 - **CPU↔async attribution is statistical, with a reported bound.** CPU sample times are profile-relative (≈ capture-relative); the residual skew versus the async timeline is the small `Profiler.start`↔capture-start startup gap, surfaced as `quality.clockSyncUncertaintyMs` (a real measured bound — CDP round-trip jitter / `performance.now()` resolution, replacing the former misleading value). The precision win is in attribution, not the clock: samples in overlapping ancestor/descendant run windows are attributed to the innermost async context, and only genuinely *unrelated* overlapping windows count toward `quality.ambiguousRatio`, which lowers CPU-attribution confidence proportionally instead of dropping the sample.
 - **Public async file paths are normalized.** When V8/CDP reports `file://` URLs, Lanterna converts them to normal filesystem paths before grouping hot files, chains, and finding evidence. Virtual bundler URLs are kept as-is.
+
+## Graduation criteria
+
+The async kind is experimental on purpose: its report contract and findings may still
+change. This checklist is the exit gate from "experimental" to "stable". When every box is
+checked, drop the experimental warnings (`packages/cli/src/option-descriptors.ts`,
+`packages/cli/src/commands/profile-command.ts`) and the "experimental" wording in this page,
+and ship it as a `core` minor (schema-version bump if the section shape changed).
+
+- [ ] **Report contract frozen.** The `profiles.async.*` shape (and `asyncProfileReportSchema`)
+      is stable; field additions are additive-only and the generated JSON Schema in
+      `docs/generated/` is the committed contract.
+- [ ] **`full` instrumentation is robust.** `--async-instrumentation=full` accounts for every
+      transform outcome in `meta.kinds.async.transformStats` (parsed / rewritten / failed /
+      skipped), never throws into the target, and documents its bundler / source-map
+      interactions. A failed transform degrades to `safe` behavior for that module rather than
+      losing the capture.
+- [ ] **Attach partiality is always legible.** `quality.attachPartialCapture` is set whenever
+      pre-installation resources or already-loaded code could be missed, and the agent renderer
+      surfaces it as a caveat.
+- [ ] **Best-effort findings resolved.** `deep-async-chain` and `hot-async-context` are either
+      stabilized (their example E2E fails-on-missing) or carry an explicit reliability tier — see
+      [extending/detectors.md](../extending/detectors.md). No async detector is advertised as
+      guaranteed while it only warns in verification.
+- [ ] **Overhead published.** `docs/performance-overhead.md` includes current `cpu,async` safe and
+      full numbers from the HTTP scenario.
+- [ ] **Coverage.** The async probe, source-instrumentation, and analysis paths meet the per-area
+      coverage expectations in [testing-and-coverage.md](../testing-and-coverage.md).
+
+Target: graduate no earlier than the next `core` minor after all boxes are checked. Until then,
+keep `safe` as the default and the experimental warnings in place.
