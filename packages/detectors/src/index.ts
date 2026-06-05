@@ -5,11 +5,18 @@ export type {
 export { analyzeCapture, createDefaultAnalysisPipeline } from './analyze-capture.js';
 export type {
   BlockingThresholds,
+  DetectorReliabilityTier,
   DetectorThresholds,
   EventLoopThresholds,
   GcThresholds,
 } from './config.js';
-export { DETECTOR_THRESHOLDS } from './config.js';
+export {
+  BEST_EFFORT_DETECTOR_IDS,
+  DETECTOR_THRESHOLDS,
+  detectorReliabilityTier,
+  findingBaseId,
+  isBestEffortFinding,
+} from './config.js';
 export { deepAsyncChainDetector } from './detectors/async/deep-async-chain.js';
 export { hotAsyncContextDetector } from './detectors/async/hot-async-context.js';
 export {
