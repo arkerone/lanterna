@@ -1641,4 +1641,24 @@ describe('async user-caller attribution', () => {
     ]);
     expect(origin).toMatchObject({ function: 'handle', file: '/app/server.js', line: 31 });
   });
+
+  it('identifies Lanterna instrumentation frames', () => {
+    const reporter = createAsyncFrameReporter();
+    expect(
+      reporter.isInstrumentationFrame({
+        function: 'tickInit',
+        file: 'file:///tmp/lanterna-preload-1-2-3.cjs',
+        line: 468,
+        column: 7,
+      }),
+    ).toBe(true);
+    expect(
+      reporter.isInstrumentationFrame({
+        function: 'fetchUser',
+        file: '/app/server.js',
+        line: 9,
+        column: 3,
+      }),
+    ).toBe(false);
+  });
 });
