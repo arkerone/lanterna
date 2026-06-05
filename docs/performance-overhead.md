@@ -20,52 +20,63 @@ npm run build
 npm run bench
 ```
 
-Each scenario runs 3 times in baseline (no Lanterna) and 3 times under Lanterna. Wall time is measured around `child_process.spawn()` and includes child startup. Overhead is reported as `(lanterna_median − baseline_median) / baseline_median`. The harness writes the report to a temp directory and discards it — only wall-time impact is measured.
+Each mode runs `BENCH_RUNS` times (the committed snapshot used 5) in baseline (no Lanterna) and under each Lanterna mode; the median is reported. Micro wall time is measured around `child_process.spawn()` and includes child startup. Overhead is `(lanterna_median − baseline_median) / baseline_median`. The report is written to a temp directory and discarded — only the timing impact is measured.
 
-The bench harness also includes an HTTP service scenario that starts `examples/realistic-server`, waits for readiness, drives POST traffic, and reports throughput plus p50/p95/p99 latency across `cpu`, `memory`, `cpu,memory`, `cpu,async` safe, and `cpu,async` full modes. Use this table when evaluating request-path impact rather than CPU-only wall time.
+Beyond the micro CPU/allocation scenarios, the harness also runs: an **in-process** scenario (`profileInProcess()` vs. baseline in the same process — the only scenario that reports peak RSS), and an **HTTP** scenario that drives `examples/realistic-server` under load across `cpu`, `memory`, `cpu,memory`, `cpu,async` (safe & full) spawn modes plus an `attach` mode, reporting throughput and p50/p95/p99 latency.
 
 See [`bench/README.md`](../bench/README.md) for scenario details and tunable knobs.
 
 ## Latest numbers
 
-| Scenario | Mode | Median (ms) | Overhead | Notes |
-| --- | --- | ---: | ---: | --- |
-| cpu-fib (recursive `fib(37)` × 20) | baseline | 4515 | — | Pure CPU, no allocations |
-| cpu-fib | `lanterna run --kind cpu` | 5181 | +14.8 % | Includes ~600 ms startup |
-| alloc-heavy (`Array(64)` × 25 M) | baseline | 3818 | — | GC-pressure workload |
-| alloc-heavy | `lanterna run --kind memory` | 4734 | +24.0 % | Includes ~600 ms startup |
+All numbers below are one committed run — [`bench/baseline.json`](../bench/baseline.json) — on a Linux x64 dev laptop, Node v24.2.0, **5 runs per mode (median)**. They are single-machine and **load-sensitive**: profiler overhead depends on spare CPU headroom, so a quiet box shows less than these figures (captured on a busy laptop) and a saturated one shows more. Reproduce on your hardware with `npm run bench`; the **percentage**, not the absolute time, is what transfers.
 
-Hardware: Linux x64, Node v24.2.0, 3 runs per mode.
+### Micro — CPU & allocation wall time
 
-### Reading the numbers
+| Scenario | Mode | Median (ms) | Overhead |
+| --- | --- | ---: | ---: |
+| cpu-fib (`fib(37)` × 20) | baseline | 4135 | — |
+| cpu-fib | `--kind cpu` | 4729 | +14.4 % |
+| cpu-fib | `--kind cpu --sample-interval 250` | 4775 | +15.5 % |
+| cpu-fib | `--kind cpu --sample-interval 4000` | 4689 | +13.4 % |
+| cpu-fib | `--kind cpu --deep` | 4858 | +17.5 % |
+| cpu-fib | `--kind cpu,memory` | 4732 | +14.4 % |
+| alloc-heavy (`Array(64)` × 25 M) | baseline | 3402 | — |
+| alloc-heavy | `--kind memory` | 4289 | +26.1 % |
+| alloc-heavy | `--kind memory --heap-snapshot-analysis` | 35058 | +930 % |
 
-The reported overhead bundles a fixed-cost startup with a per-millisecond steady-state cost. Subtract ~600 ms from the Lanterna-mode column and the remainder is what the capture actually costs:
+This overhead bundles the fixed ~600 ms spawn/inspector startup. On a ~4 s baseline that startup alone is ~14 %, which is why the sample-interval sweep barely moves the total — 250 µs (+15.5 %) vs 4000 µs (+13.4 %): **steady-state CPU sampling is near-free; what you pay is startup**. `--deep` adds a few points (deopt-trace I/O). `--heap-snapshot-analysis` is **seconds-scale** (a full heap snapshot + parse) — budget for it explicitly, never on a hot loop. For a startup-free overhead number, see the in-process table.
 
-- **cpu-fib:** 5181 − 4515 ≈ 666 ms over baseline. ~600 ms is startup → ~66 ms (~1.5 %) is steady-state CPU sampling.
-- **alloc-heavy:** 4734 − 3818 ≈ 916 ms over baseline. ~600 ms is startup → ~316 ms (~8 %) is steady-state heap-sampling + RSS observation.
+### In-process self-profiling — the clean steady-state + RSS number
 
-Captures longer than ~5 s should see the steady-state numbers; shorter captures will see a worse overall percentage because of the fixed startup.
+`profileInProcess()` runs in the same process (no spawn), so it isolates the steady-state cost and is the one apples-to-apples **memory** measurement (`process.resourceUsage().maxRSS`).
 
-### HTTP / async numbers
+| Mode | Median (ms) | Overhead | Peak RSS | RSS Δ |
+| --- | ---: | ---: | ---: | ---: |
+| baseline | 1251 | — | 89.7 MiB | — |
+| `profileInProcess()` (cpu) | 1350 | +7.9 % | 96.6 MiB | +7.7 % |
 
-The microbenchmarks above are CPU/allocation bound. The adoption-critical question is different: *what does profiling cost a Node HTTP service under load?* The bench harness drives `examples/realistic-server` with concurrent POST traffic (8 s, concurrency 32, 3 runs) and reports throughput and latency percentiles per mode.
+On a short (~1.3 s) workload the +7.9 % is capture start/stop plus sampling, and the profiler's sample buffers add ~7 % RSS. Longer captures amortise the start/stop and trend toward the low-single-digit steady-state sampling cost.
+
+### HTTP service under load — throughput & tail latency
+
+The adoption-critical case: `examples/realistic-server` driven with concurrent POST traffic (8 s, concurrency 32, 5 runs), spawn modes plus an attach mode.
 
 | Mode | RPS | RPS Δ | p50 (ms) | p95 (ms) | p99 (ms) |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| baseline | 5456 | — | 5.1 | 10.4 | 13.5 |
-| `--kind cpu` | 5493 | +0.7 % | 5.1 | 10.2 | 13.8 |
-| `--kind memory` | 5565 | +2.0 % | 5.0 | 10.3 | 13.8 |
-| `--kind cpu,memory` | 5461 | +0.1 % | 5.1 | 10.4 | 13.8 |
-| `--kind cpu,async` (safe) | 5281 | −3.2 % | 5.3 | 11.1 | 14.3 |
-| `--kind cpu,async` (full) | 5273 | −3.4 % | 5.4 | 11.3 | 14.5 |
+| baseline | 4844 | — | 5.8 | 12.0 | 15.7 |
+| `--kind cpu` | 4624 | −4.5 % | 6.0 | 12.5 | 15.9 |
+| `--kind memory` | 4947 | +2.1 % | 5.7 | 12.4 | 16.1 |
+| `--kind cpu,memory` | 4298 | −11.3 % | 6.6 | 13.6 | 17.0 |
+| `--kind cpu,async` (safe) | 4240 | −12.5 % | 6.7 | 13.5 | 17.3 |
+| `--kind cpu,async` (full) | 4405 | −9.1 % | 6.4 | 13.3 | 17.4 |
+| `attach --kind cpu` | 4623 | −4.6 % | 6.1 | 13.0 | 16.2 |
 
-Hardware: Linux x64, Node v24.2.0, 3 runs per mode. Reproduce with `npm run bench`; the committed snapshot lives in [`bench/baseline.json`](../bench/baseline.json).
+Reading it (on this contended laptop):
 
-Reading it:
-
-- **CPU and memory profiling are effectively free on an I/O-bound request path.** The cpu/memory/cpu+memory deltas (+0.1 % … +2.0 %) are inside run-to-run noise — they are not real speedups, they mean "no measurable throughput cost". Tail latency is unchanged (p99 within ~0.3 ms).
-- **Async profiling costs ~3 % throughput** and adds roughly 1 ms to p95/p99. `safe` and `full` are close on this workload; prefer `safe` unless you need `full`'s await-site rewriting.
-- These are throughput/latency numbers for a request path, not the wall-time overhead of a CPU-bound batch job — use the microbenchmark table for the latter.
+- **One kind costs a few percent.** `cpu` ≈ −4.5 % throughput, and `attach --kind cpu` matches it (−4.6 %) — attaching to a live server is neither cheaper nor dearer than spawning it. `memory` alone is within run-to-run noise (+2.1 %).
+- **Stacking kinds or adding async lands around 9–13 %.** `cpu,memory` and `cpu,async` (safe and full) sit in that band; safe and full are comparable on this workload (the small safe↔full ordering is inside the noise).
+- **Tail latency rises modestly** — p99 from 15.7 ms to 16–17.4 ms.
+- These are request-path throughput numbers, not the wall time of a batch job — use the micro table for that, and remember overhead shrinks with spare headroom.
 
 ## Overhead drivers
 
