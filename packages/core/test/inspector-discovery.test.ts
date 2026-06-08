@@ -75,6 +75,35 @@ describe('inspector discovery', () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
+  it('discovers an inspector that only listens on IPv6 loopback and dedupes dual-stack hits', async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockImplementation((input: string | URL | Request) => {
+        const url = String(input);
+        if (url.includes('[::1]') && url.includes(':9229/')) {
+          return Promise.resolve(
+            new Response(JSON.stringify([{ webSocketDebuggerUrl: 'ws://[::1]:9229/ipv6' }]), {
+              status: 200,
+            }),
+          );
+        }
+        return Promise.reject(new Error('ECONNREFUSED'));
+      });
+
+    const targets = await readInspectorTargets();
+
+    expect(targets).toEqual([{ webSocketDebuggerUrl: 'ws://[::1]:9229/ipv6' }]);
+    // Both loopback families are probed, so IPv4 is attempted before IPv6.
+    expect(fetchSpy).toHaveBeenCalledWith(
+      'http://127.0.0.1:9229/json/list',
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+    expect(fetchSpy).toHaveBeenCalledWith(
+      'http://[::1]:9229/json/list',
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    );
+  });
+
   it('returns an already-open inspector endpoint for a pid on Windows', async () => {
     await withPlatform('win32', async () => {
       vi.spyOn(globalThis, 'fetch').mockResolvedValue(
