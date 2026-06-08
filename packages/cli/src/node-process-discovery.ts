@@ -1,8 +1,15 @@
+import { execFile } from 'node:child_process';
 import { readlink } from 'node:fs/promises';
+import { promisify } from 'node:util';
 import { readInspectableTargetsByPid } from '@lanterna-profiler/core';
 import psList from 'ps-list';
 
+const execFileAsync = promisify(execFile);
+
 const DIRECT_NODE_RUNTIMES = new Set(['node', 'nodejs']);
+
+// Bound the macOS `lsof` cwd lookup so a slow/stuck call can't stall discovery.
+const MACOS_CWD_LSOF_TIMEOUT_MS = 500;
 
 export interface RunningNodeProcess {
   pid: number;
@@ -34,7 +41,7 @@ export async function listRunningNodeProcesses(): Promise<RunningNodeProcess[]> 
     processes
       .filter((entry) => entry.pid !== process.pid)
       .filter((entry) => isProcessRunning(entry.pid))
-      .filter((entry) => hasDirectNodeRuntime(entry.name, entry.path))
+      .filter((entry) => hasDirectNodeRuntime(entry.name, entry.path, entry.cmd))
       .map(async (entry) => {
         const runtime = normalizeRuntime(entry.path ?? entry.name);
         const command = (entry.cmd ?? entry.name).trim();
@@ -71,9 +78,27 @@ export async function listRunningNodeProcesses(): Promise<RunningNodeProcess[]> 
   return attachableProcesses.sort(compareRunningNodeProcesses);
 }
 
-function hasDirectNodeRuntime(name: string, path: string | undefined): boolean {
-  const runtime = normalizeRuntime(path ?? name).toLowerCase();
-  return DIRECT_NODE_RUNTIMES.has(runtime);
+function hasDirectNodeRuntime(
+  name: string,
+  path: string | undefined,
+  cmd: string | undefined,
+): boolean {
+  // `ps-list` reports `path`/`name` as best-effort on macOS (extracted from the
+  // command line, falling back to a possibly-truncated `comm`). Treat the first
+  // token of the full command line as another candidate so a truncated name
+  // doesn't hide an attachable Node process. Match the basename exactly against
+  // the allow-list (no prefix match) so `nodemon`/`node-gyp` stay excluded.
+  for (const candidate of [path, name, firstCommandToken(cmd)]) {
+    if (candidate && DIRECT_NODE_RUNTIMES.has(normalizeRuntime(candidate).toLowerCase())) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function firstCommandToken(cmd: string | undefined): string | undefined {
+  const token = cmd?.trim().split(/\s+/)[0];
+  return token || undefined;
 }
 
 function normalizeRuntime(value: string): string {
@@ -117,12 +142,28 @@ function isProcessRunning(pid: number): boolean {
 }
 
 async function readProcessCwd(pid: number): Promise<string | undefined> {
-  if (process.platform !== 'linux') return undefined;
   try {
-    return await readlink(`/proc/${pid}/cwd`);
+    if (process.platform === 'linux') {
+      return await readlink(`/proc/${pid}/cwd`);
+    }
+    if (process.platform === 'darwin') {
+      return await readProcessCwdViaLsof(pid);
+    }
+    return undefined;
   } catch {
     return undefined;
   }
+}
+
+// macOS has no /proc; `lsof -Fn` emits the cwd descriptor on an `n<path>` line.
+async function readProcessCwdViaLsof(pid: number): Promise<string | undefined> {
+  const { stdout } = await execFileAsync('lsof', ['-a', '-p', String(pid), '-d', 'cwd', '-Fn'], {
+    timeout: MACOS_CWD_LSOF_TIMEOUT_MS,
+  });
+  for (const line of stdout.split('\n')) {
+    if (line.startsWith('n')) return line.slice(1).trim() || undefined;
+  }
+  return undefined;
 }
 
 function computeAgeMs(startTime: Date | undefined): number | undefined {

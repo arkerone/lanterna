@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   psList: vi.fn<() => Promise<PsEntry[]>>(),
   readInspectableTargetsByPid:
     vi.fn<() => Promise<Map<number, { webSocketDebuggerUrl: string }>>>(),
+  execFile: vi.fn<(cmd: string, args: string[]) => Promise<{ stdout: string; stderr: string }>>(),
 }));
 
 vi.mock('ps-list', () => ({
@@ -23,6 +24,25 @@ vi.mock('ps-list', () => ({
 vi.mock('@lanterna-profiler/core', () => ({
   readInspectableTargetsByPid: mocks.readInspectableTargetsByPid,
 }));
+
+vi.mock('node:child_process', async () => {
+  const { promisify } = await import('node:util');
+  // The module under test wraps `execFile` with `promisify`, which honors the
+  // custom-promisify symbol — point it at our mock so the {stdout} contract holds.
+  const execFile = ((..._args: unknown[]) => undefined) as unknown as {
+    [key: symbol]: unknown;
+  };
+  execFile[promisify.custom] = (cmd: string, args: string[]) => mocks.execFile(cmd, args);
+  return { execFile };
+});
+
+function withPlatform(platform: NodeJS.Platform, fn: () => Promise<void>): Promise<void> {
+  const original = process.platform;
+  Object.defineProperty(process, 'platform', { value: platform, configurable: true });
+  return fn().finally(() => {
+    Object.defineProperty(process, 'platform', { value: original, configurable: true });
+  });
+}
 
 const { listRunningNodeProcesses } = await import('../src/node-process-discovery.js');
 
@@ -41,6 +61,7 @@ describe('listRunningNodeProcesses', () => {
     vi.restoreAllMocks();
     mocks.psList.mockReset();
     mocks.readInspectableTargetsByPid.mockReset();
+    mocks.execFile.mockReset();
   });
 
   it('lists live node and nodejs runtimes, excluding other launchers', async () => {
@@ -139,6 +160,38 @@ describe('listRunningNodeProcesses', () => {
         attachMode: 'pid-attach',
       }),
     ]);
+  });
+
+  it('detects a node process when only the full command line is available (truncated comm)', async () => {
+    vi.spyOn(process, 'kill').mockImplementation(() => true);
+
+    mocks.psList.mockResolvedValue([
+      // `ps-list` can report a truncated/odd comm and no path on macOS; the
+      // first token of the command line still identifies the runtime.
+      { pid: 2300, name: 'com.example.tr', path: undefined, cmd: 'node /srv/app/server.js' },
+    ]);
+    mocks.readInspectableTargetsByPid.mockResolvedValue(new Map());
+
+    await expect(listRunningNodeProcesses()).resolves.toEqual([
+      expect.objectContaining({ pid: 2300, attachMode: 'pid-attach' }),
+    ]);
+  });
+
+  it('resolves the cwd via lsof on macOS', async () => {
+    await withPlatform('darwin', async () => {
+      vi.spyOn(process, 'kill').mockImplementation(() => true);
+      mocks.execFile.mockResolvedValue({ stdout: 'p2400\nfcwd\nn/Users/me/project\n', stderr: '' });
+
+      mocks.psList.mockResolvedValue([
+        { pid: 2400, name: 'node', path: '/usr/local/bin/node', cmd: 'node app.js' },
+      ]);
+      mocks.readInspectableTargetsByPid.mockResolvedValue(new Map());
+
+      await expect(listRunningNodeProcesses()).resolves.toEqual([
+        expect.objectContaining({ pid: 2400, cwd: '/Users/me/project' }),
+      ]);
+      expect(mocks.execFile).toHaveBeenCalledWith('lsof', ['-a', '-p', '2400', '-d', 'cwd', '-Fn']);
+    });
   });
 
   it('drops stale snapshot entries whose pid no longer exists', async () => {
