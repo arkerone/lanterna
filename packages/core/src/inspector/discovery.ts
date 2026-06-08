@@ -10,6 +10,10 @@ const INSPECTOR_DISCOVERY_FETCH_TIMEOUT_MS = 250;
 const INSPECTOR_DISCOVERY_CDP_TIMEOUT_MS = 250;
 const DEFAULT_INSPECTOR_DISCOVERY_PORT = 9229;
 const INSPECTOR_DISCOVERY_PORT_RANGE = 10;
+// Node binds the inspector to IPv4 loopback by default, but a target started
+// with `--inspect-host=::1` (or on an IPv6-only loopback) is only reachable over
+// IPv6. Scan both so attach-by-pid discovery isn't IPv4-only.
+const INSPECTOR_DISCOVERY_HOSTS = ['127.0.0.1', '[::1]'] as const;
 const INSPECTOR_DISCOVERY_PORT_END =
   DEFAULT_INSPECTOR_DISCOVERY_PORT + INSPECTOR_DISCOVERY_PORT_RANGE - 1;
 
@@ -111,24 +115,35 @@ export async function readInspectableTargetsByPid(): Promise<
 
 export async function readInspectorTargets(): Promise<InspectorTargetDescriptor[]> {
   const allTargets: InspectorTargetDescriptor[] = [];
+  // The same inspector may answer on both 127.0.0.1 and ::1 (dual-stack);
+  // dedupe by WebSocket URL so a target isn't probed twice downstream.
+  const seenWebSocketUrls = new Set<string>();
   for (
     let port = DEFAULT_INSPECTOR_DISCOVERY_PORT;
     port < DEFAULT_INSPECTOR_DISCOVERY_PORT + INSPECTOR_DISCOVERY_PORT_RANGE;
     port += 1
   ) {
-    try {
-      const response = await fetchWithTimeout(
-        `http://127.0.0.1:${port}/json/list`,
-        INSPECTOR_DISCOVERY_FETCH_TIMEOUT_MS,
-      );
-      if (!response.ok) continue;
-      const value = (await response.json()) as unknown;
-      const parsed = inspectorTargetSchema.array().safeParse(value);
-      if (parsed.success) {
-        allTargets.push(...parsed.data);
+    for (const host of INSPECTOR_DISCOVERY_HOSTS) {
+      try {
+        const response = await fetchWithTimeout(
+          `http://${host}:${port}/json/list`,
+          INSPECTOR_DISCOVERY_FETCH_TIMEOUT_MS,
+        );
+        if (!response.ok) continue;
+        const value = (await response.json()) as unknown;
+        const parsed = inspectorTargetSchema.array().safeParse(value);
+        if (!parsed.success) continue;
+        for (const target of parsed.data) {
+          const url = target.webSocketDebuggerUrl;
+          if (url) {
+            if (seenWebSocketUrls.has(url)) continue;
+            seenWebSocketUrls.add(url);
+          }
+          allTargets.push(target);
+        }
+      } catch {
+        // Ignore hosts/ports with no inspector listener.
       }
-    } catch {
-      // Ignore ports with no inspector listener.
     }
   }
   return allTargets;
