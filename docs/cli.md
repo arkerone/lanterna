@@ -63,6 +63,10 @@ Select multiple profile kinds either by repeating `--kind` (`--kind cpu --kind m
 
 `--workload` is a shell command run from the same cwd and environment as Lanterna. It is intended for external traffic generators: `npx -y autocannon ...`, `npx -y artillery run load.yml`, `npm run load`, `node scripts/load.mjs`. Prefer `npx -y` for one-off tools so the workload cannot block on an install confirmation prompt. If the workload exits non-zero, Lanterna still writes the report and then returns an error, so automation can fail the run without losing the captured evidence.
 
+Point the target command at the Node entry directly (`node server.js`), not at a package-manager wrapper. `npm start`, `yarn dev`, and similar wrappers are themselves Node processes: Lanterna would attach to the wrapper, not your application, and prints a warning when it detects one. The preload restores the parent `NODE_OPTIONS` once loaded, so processes spawned *by* the target do not inherit the inspector flags.
+
+`--fail-on-target-error` makes `lanterna run` exit non-zero when the profiled command itself exits with a non-zero code (the report is still written first). The exit status is also recorded in the report as `meta.targetExitCode` / `meta.targetExitSignal`. A target terminated by Lanterna's own end-of-capture `SIGTERM` reports `targetExitCode: null` and does not trip the flag.
+
 ## `lanterna attach`
 
 ```bash
@@ -188,6 +192,7 @@ Options are grouped by purpose. Capture options apply to `run` and `attach` unle
 | `--wait-timeout <ms\|s\|m>` | Readiness timeout for `--wait-for-url`. Default `30s`. |
 | `--capture-delay <ms\|s\|m>` | Extra delay after readiness before capture starts. |
 | `--workload <command>` | Shell command run in parallel during capture. |
+| `--fail-on-target-error` | Exit non-zero when the profiled command exits with a non-zero code. The report is still written. |
 
 ### Attach-only
 
