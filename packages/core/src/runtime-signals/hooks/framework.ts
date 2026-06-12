@@ -58,7 +58,23 @@ export function composePreloadScript(
     )
     .join('\n');
 
-  return `'use strict';\n(${installLanternaFramework.toString()})(${frameworkJson}, function register(__lanterna){\n${installerFragments}\n});\n`;
+  // Once the preload has loaded, NODE_OPTIONS has done its job for this
+  // process. Restore the parent value (captured by the spawn source) so
+  // descendant Node processes — package-manager wrappers, child_process
+  // spawns — don't inherit `--inspect-brk` and the preload.
+  const restoreNodeOptions = `(function restoreParentNodeOptions() {
+  try {
+    var parentNodeOptions = process.env.LANTERNA_PARENT_NODE_OPTIONS;
+    if (parentNodeOptions !== undefined) process.env.NODE_OPTIONS = parentNodeOptions;
+    else delete process.env.NODE_OPTIONS;
+    delete process.env.LANTERNA_PARENT_NODE_OPTIONS;
+    delete process.env.LANTERNA_CONTROL_FD;
+  } catch (_error) {
+    /* never break the target over env cleanup */
+  }
+})();`;
+
+  return `'use strict';\n(${installLanternaFramework.toString()})(${frameworkJson}, function register(__lanterna){\n${installerFragments}\n});\n${restoreNodeOptions}\n`;
 }
 
 /**
@@ -137,12 +153,14 @@ declare global {
     | {
         ensureInstalled(): FrameworkResult;
         readonly api: FrameworkApi;
+        keepalive?(): void;
         dispose(): { disposed: true; errors: string[] };
       }
     | undefined;
   var __LANTERNA_ATTACH_RUNTIME__:
     | {
         ensureInstalled(): FrameworkResult;
+        keepalive?(): void;
         dispose(): { disposed: true; errors: string[] };
       }
     | undefined;
@@ -157,6 +175,7 @@ export function installLanternaFramework(
     register(existing.api);
     globalThis.__LANTERNA_ATTACH_RUNTIME__ = {
       ensureInstalled: existing.ensureInstalled,
+      ...(existing.keepalive ? { keepalive: existing.keepalive } : {}),
       dispose: existing.dispose,
     };
     return existing.ensureInstalled();
@@ -286,6 +305,13 @@ export function installLanternaFramework(
   // Heartbeat loop — drives capture-start + heartbeat emissions used by
   // installers that observe event-loop lag (runtime-signals). Stays on even if
   // no installer consumes it: the cost is negligible.
+  // The sample buffer is capped (drop-oldest): the hook lives inside the
+  // target process, so an abandoned session must never grow its heap
+  // unboundedly. 90k samples ≈ 30 min at the 20ms default resolution; spawn
+  // mode streams every heartbeat over the control channel anyway, so the cap
+  // only trims very long CDP-read-only (attach) captures.
+  const HEARTBEAT_SAMPLE_CAP = 90_000;
+  const HEARTBEAT_SAMPLE_DROP_CHUNK = 1_000;
   let heartbeatTimer: NodeJS.Timeout | null = null;
   let nextExpectedHeartbeatMs = 0;
   const heartbeatSamples: Array<{ atMs: number; lagMs: number }> = [];
@@ -298,6 +324,9 @@ export function installLanternaFramework(
       const now = performanceApi.now();
       const lagMs = Math.max(0, now - nextExpectedHeartbeatMs);
       const sample = { atMs: now, lagMs };
+      if (heartbeatSamples.length >= HEARTBEAT_SAMPLE_CAP) {
+        heartbeatSamples.splice(0, HEARTBEAT_SAMPLE_DROP_CHUNK);
+      }
       heartbeatSamples.push(sample);
       const sent = emit({ type: 'heartbeat', ...sample });
       if (!sent && fs && controlFd >= 0) integrity.heartbeatDropped += 1;
@@ -305,6 +334,29 @@ export function installLanternaFramework(
       scheduleHeartbeat();
     }, resolutionMs);
     if (typeof heartbeatTimer?.unref === 'function') heartbeatTimer.unref();
+  };
+
+  // Liveness watchdog — the profiler pings keepalive() over CDP while a
+  // capture runs. If the profiler dies (SIGKILL, network drop) the hooks would
+  // otherwise keep observing forever inside the target; after the stale
+  // timeout the framework disposes itself. Generous margins so a slow capture
+  // setup or a few missed pings never trip it. Note: pausing the target under
+  // another debugger for longer than the timeout can end the hooks early —
+  // preferable to leaking instrumentation in a production process.
+  const KEEPALIVE_STALE_TIMEOUT_MS = 150_000;
+  const KEEPALIVE_CHECK_INTERVAL_MS = 30_000;
+  let lastKeepaliveMs = performanceApi.now();
+  let watchdogTimer: NodeJS.Timeout | null = null;
+  const keepalive = () => {
+    lastKeepaliveMs = performanceApi.now();
+  };
+  const armWatchdog = () => {
+    if (watchdogTimer) return;
+    watchdogTimer = setInterval(() => {
+      if (performanceApi.now() - lastKeepaliveMs <= KEEPALIVE_STALE_TIMEOUT_MS) return;
+      dispose();
+    }, KEEPALIVE_CHECK_INTERVAL_MS);
+    if (typeof watchdogTimer?.unref === 'function') watchdogTimer.unref();
   };
 
   const startCapture = () => {
@@ -319,6 +371,8 @@ export function installLanternaFramework(
     if (heartbeatTimer) clearTimeout(heartbeatTimer);
     nextExpectedHeartbeatMs = performanceApi.now() + resolutionMs;
     scheduleHeartbeat();
+    keepalive();
+    armWatchdog();
     emit({ type: 'capture-start', atMs: 0, resolutionMs });
   };
 
@@ -327,6 +381,10 @@ export function installLanternaFramework(
     if (heartbeatTimer) {
       clearTimeout(heartbeatTimer);
       heartbeatTimer = null;
+    }
+    if (watchdogTimer) {
+      clearInterval(watchdogTimer);
+      watchdogTimer = null;
     }
     heartbeatSamples.length = 0;
     for (const fn of disposeHooks.splice(0)) {
@@ -401,6 +459,12 @@ export function installLanternaFramework(
     };
     process.once('beforeExit', (code) => sendCompletion('beforeExit', code));
     process.once('exit', (code) => sendCompletion('exit', code));
+    // `uncaughtExceptionMonitor` observes without changing behavior, and in
+    // Node's default `--unhandled-rejections=throw` mode it also fires for
+    // unhandled rejections (they crash as ERR_UNHANDLED_REJECTION). Do NOT
+    // listen to 'unhandledRejection' here: the mere presence of a listener
+    // disables Node's default crash, silently changing the target's semantics
+    // under profiling.
     process.once('uncaughtExceptionMonitor', (err) => {
       emit({
         type: 'crash',
@@ -411,14 +475,6 @@ export function installLanternaFramework(
             ? (err as { message: unknown }).message
             : err,
         ),
-      });
-    });
-    process.once('unhandledRejection', (reason) => {
-      emit({
-        type: 'crash',
-        atMs: performanceApi.now(),
-        kind: 'unhandledRejection',
-        message: String(reason),
       });
     });
   }
@@ -433,10 +489,12 @@ export function installLanternaFramework(
   globalThis.__LANTERNA_FRAMEWORK__ = {
     ensureInstalled: () => ({ ...result, integrity: { ...integrity }, capabilities }),
     api,
+    keepalive,
     dispose,
   };
   globalThis.__LANTERNA_ATTACH_RUNTIME__ = {
     ensureInstalled: () => ({ ...result, integrity: { ...integrity }, capabilities }),
+    keepalive,
     dispose,
   };
 

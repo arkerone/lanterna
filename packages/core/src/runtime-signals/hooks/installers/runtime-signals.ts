@@ -57,6 +57,12 @@ function installRuntimeSignals(api: {
     }
   }
 
+  // Capped (drop-oldest): this buffer lives inside the target process and must
+  // stay bounded even if the profiler never reads it back. Spawn mode streams
+  // every GC event over the control channel, so the cap only trims extremely
+  // GC-heavy or abandoned attach sessions.
+  const GC_EVENT_CAP = 50_000;
+  const GC_EVENT_DROP_CHUNK = 500;
   const gcEvents: Array<{ atMs: number; kind: string; durationMs: number }> = [];
   let gcObserver: PerformanceObserver | null = null;
 
@@ -77,6 +83,7 @@ function installRuntimeSignals(api: {
             kind: entry.detail?.kind !== undefined ? gcKindName(entry.detail.kind) : 'other',
             durationMs: entry.duration,
           };
+          if (gcEvents.length >= GC_EVENT_CAP) gcEvents.splice(0, GC_EVENT_DROP_CHUNK);
           gcEvents.push(event);
           api.controlChannel.emit({ type: 'gc', ...event });
         }

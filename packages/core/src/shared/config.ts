@@ -14,6 +14,12 @@ export const ASYNC_LONGLIVED_DURATION_RATIO = 0.8;
 export const ASYNC_STALL_READINESS_MARGIN_MS = 50;
 
 export const INSPECTOR_STARTUP_TIMEOUT_MS = 5_000;
+/**
+ * Cadence of the coordinator's `keepalive()` ping to the in-target hook
+ * framework. The framework auto-disposes its instrumentation when pings stop
+ * (see the liveness watchdog in `hooks/framework.ts`, stale after 150s).
+ */
+export const RUNTIME_HOOK_KEEPALIVE_INTERVAL_MS = 30_000;
 export const TERMINATE_GRACE_MS = 500;
 export const TERMINATE_SIGTERM_WAIT_MS = 2_000;
 export const TERMINATE_SIGKILL_FALLBACK_MS = 1_000;
