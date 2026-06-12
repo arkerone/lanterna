@@ -1,8 +1,14 @@
+import { execFile } from 'node:child_process';
+import { readlink } from 'node:fs/promises';
+import { basename } from 'node:path';
+import { promisify } from 'node:util';
 import { z } from 'zod';
 import { sleep } from '../shared/sleep.js';
 import { withTimeoutOrThrow } from '../shared/timeout.js';
 import { connectCdp } from './client.js';
 import { fetchTargetInfo } from './runtime.js';
+
+const execFileAsync = promisify(execFile);
 
 const INSPECTOR_DISCOVERY_TIMEOUT_MS = 5_000;
 const INSPECTOR_DISCOVERY_INTERVAL_MS = 100;
@@ -63,6 +69,17 @@ export async function openInspectorForPid(
   onProgress?.(
     `No inspector endpoint found in the default scan range for pid ${pid}. Requesting Node to open one via SIGUSR1...`,
   );
+  // SIGUSR1's default disposition is *terminate*: signalling a pid that is not
+  // a Node.js runtime would kill it. Only proceed when the executable looks
+  // like Node, or when the platform gives us no way to tell.
+  const runtimeName = await readProcessExecutableName(pid);
+  if (runtimeName !== undefined && !isNodeRuntimeName(runtimeName)) {
+    throw new Error(
+      `refusing to signal pid ${pid} with SIGUSR1: its executable ("${runtimeName}") does not ` +
+        `look like a Node.js runtime, and SIGUSR1 terminates processes that do not handle it. ` +
+        `Start the target with --inspect, or pass --inspect-url.`,
+    );
+  }
   try {
     process.kill(pid, 'SIGUSR1');
   } catch (error) {
@@ -115,9 +132,11 @@ export async function readInspectableTargetsByPid(): Promise<
 
 export async function readInspectorTargets(): Promise<InspectorTargetDescriptor[]> {
   const allTargets: InspectorTargetDescriptor[] = [];
-  // The same inspector may answer on both 127.0.0.1 and ::1 (dual-stack);
-  // dedupe by WebSocket URL so a target isn't probed twice downstream.
-  const seenWebSocketUrls = new Set<string>();
+  // The same inspector may answer on both 127.0.0.1 and ::1 (dual-stack). The
+  // WebSocket URL reflects the host it was fetched from, so it differs per
+  // host — dedupe by the target's UUID `id` (stable across hosts) and fall
+  // back to the URL when an id is missing.
+  const seenTargetKeys = new Set<string>();
   for (
     let port = DEFAULT_INSPECTOR_DISCOVERY_PORT;
     port < DEFAULT_INSPECTOR_DISCOVERY_PORT + INSPECTOR_DISCOVERY_PORT_RANGE;
@@ -134,10 +153,10 @@ export async function readInspectorTargets(): Promise<InspectorTargetDescriptor[
         const parsed = inspectorTargetSchema.array().safeParse(value);
         if (!parsed.success) continue;
         for (const target of parsed.data) {
-          const url = target.webSocketDebuggerUrl;
-          if (url) {
-            if (seenWebSocketUrls.has(url)) continue;
-            seenWebSocketUrls.add(url);
+          const key = target.id ?? target.webSocketDebuggerUrl;
+          if (key) {
+            if (seenTargetKeys.has(key)) continue;
+            seenTargetKeys.add(key);
           }
           allTargets.push(target);
         }
@@ -147,6 +166,32 @@ export async function readInspectorTargets(): Promise<InspectorTargetDescriptor[
     }
   }
   return allTargets;
+}
+
+const NODE_RUNTIME_NAMES = new Set(['node', 'nodejs']);
+
+function isNodeRuntimeName(executable: string): boolean {
+  return NODE_RUNTIME_NAMES.has(basename(executable).toLowerCase());
+}
+
+/**
+ * Best-effort lookup of a pid's executable name. Returns `undefined` when the
+ * platform offers no answer (the caller then preserves the historical
+ * signal-anyway behavior rather than breaking exotic environments).
+ */
+async function readProcessExecutableName(pid: number): Promise<string | undefined> {
+  try {
+    if (process.platform === 'linux') {
+      return await readlink(`/proc/${pid}/exe`);
+    }
+    const { stdout } = await execFileAsync('ps', ['-p', String(pid), '-o', 'comm='], {
+      timeout: 1000,
+    });
+    const command = stdout.trim().split('\n')[0]?.trim();
+    return command || undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 async function findInspectorTargetByPid(

@@ -24,17 +24,46 @@ export interface CdpClient {
   onClose(handler: CloseHandler): () => void;
   close(): Promise<void>;
   readonly closed: boolean;
+  /** Whether `Debugger.enable` has been sent (and not since disabled) on this connection. */
+  readonly debuggerDomainEnabled: boolean;
 }
 
-interface RuntimeEvaluateResult {
+export interface RuntimeEvaluateResult {
   result?: {
     value?: unknown;
+    description?: string;
   };
+  exceptionDetails?: {
+    text?: string;
+    exception?: {
+      description?: string;
+    };
+  };
+}
+
+/**
+ * Unwraps a `Runtime.evaluate` response. An expression that threw in the
+ * target used to come back as a silent `undefined`; surfacing it keeps the
+ * fail-fast contract — callers that tolerate failures already catch.
+ */
+export function extractEvaluateValue(result: RuntimeEvaluateResult): unknown {
+  const exception = result.exceptionDetails;
+  if (exception) {
+    const description = exception.exception?.description ?? exception.text ?? 'unknown error';
+    throw new Error(`target evaluation threw: ${description}`);
+  }
+  return result.result?.value;
+}
+
+export function trackDebuggerDomain(method: string, state: { enabled: boolean }): void {
+  if (method === 'Debugger.enable') state.enabled = true;
+  if (method === 'Debugger.disable') state.enabled = false;
 }
 
 export async function connectCdp(webSocketDebuggerUrl: string): Promise<CdpClient> {
   const client = (await CDP({ target: webSocketDebuggerUrl })) as ChromeRemoteInterfaceClient;
   const closeHandlers = new Set<CloseHandler>();
+  const debuggerDomain = { enabled: false };
   let closed = false;
 
   const handleDisconnect = () => {
@@ -55,6 +84,9 @@ export async function connectCdp(webSocketDebuggerUrl: string): Promise<CdpClien
     get closed() {
       return closed;
     },
+    get debuggerDomainEnabled() {
+      return debuggerDomain.enabled;
+    },
     async send<TResponse = unknown>(
       method: string,
       params?: Record<string, unknown>,
@@ -62,7 +94,9 @@ export async function connectCdp(webSocketDebuggerUrl: string): Promise<CdpClien
       if (closed) {
         throw new Error('CDP connection closed');
       }
-      return (await client.send(method, params)) as TResponse;
+      const response = (await client.send(method, params)) as TResponse;
+      trackDebuggerDomain(method, debuggerDomain);
+      return response;
     },
     async evaluate(expression: string, opts: { awaitPromise?: boolean } = {}): Promise<unknown> {
       const result = await client.send('Runtime.evaluate', {
@@ -70,7 +104,7 @@ export async function connectCdp(webSocketDebuggerUrl: string): Promise<CdpClien
         returnByValue: true,
         awaitPromise: opts.awaitPromise,
       });
-      return (result as RuntimeEvaluateResult).result?.value;
+      return extractEvaluateValue(result as RuntimeEvaluateResult);
     },
     on(event: string, handler: EventHandler): () => void {
       const wrapped = (params: unknown) => {

@@ -1,15 +1,14 @@
 import { Session } from 'node:inspector';
 import { logger } from '../shared/logger.js';
-import type { CdpClient } from './client.js';
+import {
+  type CdpClient,
+  extractEvaluateValue,
+  type RuntimeEvaluateResult,
+  trackDebuggerDomain,
+} from './client.js';
 
 type EventHandler = (params: unknown) => void;
 type CloseHandler = () => void;
-
-interface RuntimeEvaluateResult {
-  result?: {
-    value?: unknown;
-  };
-}
 
 /**
  * A {@link CdpClient} backed by an in-process `node:inspector` `Session` instead
@@ -26,6 +25,7 @@ export async function connectInProcessCdp(): Promise<CdpClient> {
   const session = new Session();
   session.connect();
   const closeHandlers = new Set<CloseHandler>();
+  const debuggerDomain = { enabled: false };
   let closed = false;
 
   const post = <TResponse = unknown>(
@@ -52,11 +52,16 @@ export async function connectInProcessCdp(): Promise<CdpClient> {
     get closed() {
       return closed;
     },
-    send<TResponse = unknown>(
+    get debuggerDomainEnabled() {
+      return debuggerDomain.enabled;
+    },
+    async send<TResponse = unknown>(
       method: string,
       params?: Record<string, unknown>,
     ): Promise<TResponse> {
-      return post<TResponse>(method, params);
+      const response = await post<TResponse>(method, params);
+      trackDebuggerDomain(method, debuggerDomain);
+      return response;
     },
     async evaluate(expression: string, opts: { awaitPromise?: boolean } = {}): Promise<unknown> {
       const result = await post<RuntimeEvaluateResult>('Runtime.evaluate', {
@@ -64,7 +69,7 @@ export async function connectInProcessCdp(): Promise<CdpClient> {
         returnByValue: true,
         awaitPromise: opts.awaitPromise,
       });
-      return result.result?.value;
+      return extractEvaluateValue(result);
     },
     on(event: string, handler: EventHandler): () => void {
       // node:inspector emits protocol notifications as `{ method, params }`.
