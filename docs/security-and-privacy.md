@@ -19,7 +19,7 @@ Lanterna does not intentionally collect environment variables, request bodies, s
 
 `lanterna run` starts the target with `--inspect-brk=0`, connects locally over the V8 inspector, installs preload hooks, captures the requested kinds, and then writes a report.
 
-`lanterna attach` connects to an already-running inspector endpoint or opens one with `SIGUSR1` when supported. This is operationally powerful:
+`lanterna attach` connects to an already-running inspector endpoint or opens one with `SIGUSR1` when supported. Because `SIGUSR1`'s default disposition terminates processes that don't handle it, Lanterna verifies that the pid's executable looks like a Node.js runtime before signalling and refuses otherwise (it proceeds only when the platform offers no way to verify). This is operationally powerful:
 
 - Prefer local inspector endpoints bound to `127.0.0.1`.
 - Avoid exposing inspector ports on public or shared networks.
@@ -34,6 +34,11 @@ If your environment forbids inspector access, Lanterna should fail fast rather t
 Lanterna injects runtime hooks to observe GC, event-loop timing, memory usage, async resources, and optional await instrumentation. Spawn mode injects a composed CommonJS preload through `NODE_OPTIONS --require=<tmpfile>`. Attach mode evaluates an equivalent runtime hook through CDP.
 
 The hooks are designed to clean up after capture, and capture-integrity fields record degraded channels. Still, they run inside the target process. Use representative staging when you cannot tolerate any in-process instrumentation risk.
+
+Two safety nets bound the in-target footprint when cleanup never happens (the profiler was killed, the connection dropped):
+
+- The hook's sample buffers (event-loop heartbeats, GC events) are capped with drop-oldest semantics, so an abandoned session cannot grow the target's heap unboundedly.
+- A liveness watchdog disposes the hooks automatically when the profiler's periodic keepalive pings stop for ~2.5 minutes. Side effect: pausing the target under another debugger for longer than that during a capture can end the hooks early.
 
 The programmatic `profileInProcess()` API runs the same hooks in the **current** process via an in-process inspector session (no child, no socket). It carries the same in-process instrumentation considerations as attach.
 

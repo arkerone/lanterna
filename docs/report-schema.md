@@ -33,6 +33,8 @@ For built-in kinds, populated `profiles.<kind>` entries match `meta.profileKinds
 | `durationMs` | Wall-clock duration of the capture. |
 | `command` | Executed command, or `[]` in attach mode. |
 | `mode` | `"spawn"` (`lanterna run`), `"attach"` (`lanterna attach`), or `"in-process"` (the programmatic `profileInProcess()` self-profiling API). |
+| `targetExitCode` | Optional, spawn mode only. Exit code of the target when it exited during the capture; `null` when it was terminated by a signal (including Lanterna's own end-of-capture `SIGTERM`). Absent when the target was still running at collection time. |
+| `targetExitSignal` | Optional, spawn mode only. Signal that terminated the target, when applicable. |
 | `cwd` | Working directory used to classify `user` frames. |
 | `profileKinds` | Kinds that produced capture data, in declared order. |
 | `kinds` | Per-kind metadata contributions. CPU lives under `meta.kinds.cpu`, memory under `meta.kinds.memory`, async under `meta.kinds.async`. |
