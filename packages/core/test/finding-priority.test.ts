@@ -116,6 +116,32 @@ describe('sortFindings', () => {
     expect(sorted[1]?.priority?.score).toBe(240);
   });
 
+  it('clamps the fallback score when observed values have no matching threshold pair', () => {
+    const sorted = sortFindings(
+      [
+        finding({
+          id: 'plugin-unpaired-count',
+          measurements: {
+            observed: { customCount: 50_000 },
+            thresholds: {},
+          },
+        }),
+        finding({
+          id: 'curated-strong-signal',
+          measurements: {
+            observed: { totalPct: 60 },
+            thresholds: { minTotalPct: 3 },
+          },
+        }),
+      ],
+      1_000,
+    );
+
+    // The unpaired raw value must not drown curated ratio-based findings.
+    expect(sorted[0]?.id).toBe('curated-strong-signal');
+    expect(sorted.find((f) => f.id === 'plugin-unpaired-count')?.priority?.score).toBe(1000);
+  });
+
   it('uses explicit priorityBasis before the generic observed-value fallback', () => {
     const sorted = sortFindings([
       finding({

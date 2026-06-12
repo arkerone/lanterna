@@ -126,4 +126,26 @@ describe('inspector discovery', () => {
       await expect(openInspectorForPid(4242)).rejects.toThrow(/--inspect-url/);
     });
   });
+
+  it.skipIf(process.platform === 'win32')(
+    'refuses to SIGUSR1 a pid whose executable is not a Node.js runtime',
+    async () => {
+      // SIGUSR1's default disposition terminates non-Node processes, so a
+      // typo'd --pid must never reach process.kill.
+      vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('ECONNREFUSED'));
+      const { spawn } = await import('node:child_process');
+      const child = spawn('sleep', ['30'], { stdio: 'ignore' });
+      try {
+        await new Promise((resolve) => child.once('spawn', resolve));
+        const pid = child.pid;
+        if (!pid) throw new Error('sleep child has no pid');
+        await expect(openInspectorForPid(pid)).rejects.toThrow(/refusing to signal pid/);
+        // The guard must have refused before signalling: the child is alive.
+        expect(child.exitCode).toBeNull();
+        expect(child.signalCode).toBeNull();
+      } finally {
+        child.kill('SIGKILL');
+      }
+    },
+  );
 });

@@ -620,6 +620,37 @@ describe('runCapture lifecycle', () => {
     expect(calls).toEqual(['start', 'release-runtime', 'after-runtime-released', 'stop']);
   });
 
+  it('propagates the target exit status from live signals to the bundle and meta', async () => {
+    const source = new FakeSource();
+    const wrappedSource: ProfileSource<undefined> = {
+      connect: async (options, preload) => {
+        const connected = await source.connect(options, preload);
+        return {
+          ...connected,
+          drainLiveSignals: () => ({
+            gcEventsAbs: [],
+            eventLoopSamplesAbs: [],
+            eventLoopAvailable: false,
+            appCompleted: true,
+            targetExit: { code: 7, signal: null },
+          }),
+        };
+      },
+    };
+
+    const bundle = await runCapture({
+      source: wrappedSource,
+      sourceOptions: undefined,
+      kinds: [],
+    });
+    expect(bundle.targetExit).toEqual({ code: 7, signal: null });
+
+    const { buildReportMeta } = await import('../src/report/meta.js');
+    const meta = buildReportMeta(bundle, [], { command: [], mode: 'spawn' });
+    expect(meta.targetExitCode).toBe(7);
+    expect(meta.targetExitSignal).toBeNull();
+  });
+
   it('disposes a probe after a successful stop', async () => {
     const source = new FakeSource();
     const calls: string[] = [];
@@ -635,17 +666,40 @@ describe('runCapture lifecycle', () => {
     expect(diagnosticStages(bundle)).toEqual([]);
   });
 
-  it('disposes a probe after start fails', async () => {
+  it('fails the capture and disposes the probe when every probe fails to start', async () => {
+    const source = new FakeSource();
+    const calls: string[] = [];
+
+    await expect(
+      runCapture({
+        source,
+        sourceOptions: undefined,
+        kinds: [lifecycleKind('start-fails', calls, { failStart: true })],
+      }),
+    ).rejects.toThrow(/no profile probe could be installed and started.*start-fails start failed/);
+
+    expect(calls).toEqual(['start-fails:start', 'start-fails:dispose:false']);
+  });
+
+  it('continues the capture when at least one probe starts', async () => {
     const source = new FakeSource();
     const calls: string[] = [];
 
     const bundle = await runCapture({
       source,
       sourceOptions: undefined,
-      kinds: [lifecycleKind('start-fails', calls, { failStart: true })],
+      kinds: [lifecycleKind('start-fails', calls, { failStart: true }), lifecycleKind('ok', calls)],
     });
 
-    expect(calls).toEqual(['start-fails:start', 'start-fails:stop', 'start-fails:dispose:true']);
+    expect(calls).toEqual([
+      'start-fails:start',
+      'ok:start',
+      'start-fails:stop',
+      'start-fails:dispose:true',
+      'ok:stop',
+      'ok:dispose:true',
+    ]);
+    expect(bundle.kinds).toEqual({ 'start-fails': { ok: true }, ok: { ok: true } });
     expect(diagnosticStages(bundle)).toEqual(['probe-start']);
   });
 
