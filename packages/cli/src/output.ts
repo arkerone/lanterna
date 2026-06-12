@@ -81,7 +81,7 @@ async function writeRenderedOutput(
 ): Promise<void> {
   if (outputPath) {
     await writeFile(resolve(outputPath), ensureTrailingNewline(rendered), 'utf8');
-    logger.warn({ outputPath }, 'report written');
+    logger.debug({ outputPath }, 'report written');
     return;
   }
   process.stdout.write(ensureTrailingNewline(rendered));

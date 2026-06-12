@@ -187,6 +187,10 @@ class ShellWorkloadRunner implements WorkloadRunner {
         resolve({ code, signal });
       });
     });
+    // A spawn error can reject before finishAfterCapture/terminateIfRunning
+    // attach their handlers; without this noop the CLI dies on an
+    // unhandledRejection instead of reporting the workload failure.
+    this.result.catch(() => undefined);
   }
 
   async finishAfterCapture(): Promise<void> {
@@ -206,7 +210,7 @@ class ShellWorkloadRunner implements WorkloadRunner {
     if (!this.child || this.settled) return;
     this.killedByLanterna = true;
     this.child.kill('SIGTERM');
-    await Promise.race([this.result, sleep(1000)]);
+    await Promise.race([this.result?.catch(() => undefined), sleep(1000)]);
     if (!this.settled) this.child.kill('SIGKILL');
     await this.result?.catch(() => undefined);
   }
