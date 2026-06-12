@@ -36,8 +36,14 @@ export interface ProbeOrchestratorContext<TSourceOptions> {
  */
 export class ProbeOrchestrator<TSourceOptions> {
   private readonly probeInstances: ProbeInstance[] = [];
+  private startedProbeCount = 0;
 
   constructor(private readonly ctx: ProbeOrchestratorContext<TSourceOptions>) {}
+
+  /** True once at least one probe has installed and started successfully. */
+  get hasStartedProbes(): boolean {
+    return this.startedProbeCount > 0;
+  }
 
   /** Install each kind's probe, recording a diagnostic for any that fail. */
   async install(kinds: readonly ProfileKind[]): Promise<void> {
@@ -61,6 +67,7 @@ export class ProbeOrchestrator<TSourceOptions> {
         // message — emitting it here would announce work that has not run yet.
         if (!probe.afterRuntimeReleased) this.emitStartProgress(probe);
         await probe.start(this.lifecycleContext(kind.id, { abortSignal: this.ctx.abortSignal }));
+        this.startedProbeCount += 1;
       } catch (error) {
         logger.warn({ kindId: kind.id, err: error }, 'kind probe failed to start');
         this.recordDiagnostic('probe-start', kind.id, error);
@@ -85,6 +92,18 @@ export class ProbeOrchestrator<TSourceOptions> {
         logger.warn({ kindId: kind.id, err: error }, 'kind probe post-resume step failed');
         this.recordDiagnostic('probe-start', kind.id, error);
       }
+    }
+  }
+
+  /**
+   * Dispose every installed probe without collecting data. Used when the
+   * capture aborts before running (e.g. no probe could start): in attach mode
+   * an installed-but-unused probe would otherwise leave its CDP domain enabled
+   * in the target.
+   */
+  async disposeAll(stopReason: StopReason): Promise<void> {
+    for (const probeInstance of this.probeInstances) {
+      await this.disposeProbe(probeInstance, stopReason, false);
     }
   }
 

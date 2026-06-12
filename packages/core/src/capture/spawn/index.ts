@@ -15,6 +15,7 @@ import type {
   ProfileSource,
   RawGcEvent,
   SpawnStartOptions,
+  TargetExitInfo,
 } from '../core/types.js';
 import { waitForInspectorUrl } from './inspector-url.js';
 import { terminateSpawnedChild } from './terminate.js';
@@ -40,10 +41,18 @@ export class SpawnSource implements ProfileSource<SpawnStartOptions> {
     );
     await writeFile(preloadPath, preload.preloadScript, { encoding: 'utf8' });
 
-    const nodeOptions = ['--inspect-brk=0', `--require=${preloadPath}`, ...preload.nodeOptions];
+    // The preload path is double-quoted: NODE_OPTIONS parses quoted arguments,
+    // and temp paths can contain spaces (e.g. Windows user profiles).
+    const nodeOptions = ['--inspect-brk=0', `--require "${preloadPath}"`, ...preload.nodeOptions];
     const env: NodeJS.ProcessEnv = {
       ...process.env,
       NODE_OPTIONS: [process.env.NODE_OPTIONS, ...nodeOptions].filter(Boolean).join(' '),
+      // The preload restores NODE_OPTIONS to the parent value once it has
+      // loaded, so descendant Node processes don't inherit the inspector flags
+      // and preload (see composePreloadScript).
+      ...(process.env.NODE_OPTIONS !== undefined
+        ? { LANTERNA_PARENT_NODE_OPTIONS: process.env.NODE_OPTIONS }
+        : {}),
       LANTERNA_ACTIVE: '1',
       LANTERNA_CONTROL_FD: String(preload.controlFd),
     };
@@ -84,6 +93,7 @@ export class SpawnSource implements ProfileSource<SpawnStartOptions> {
     let eventLoopResolutionMs: number | undefined;
     let memoryUsageSampleIntervalMs: number | undefined;
     let appCompleted = false;
+    let targetExit: TargetExitInfo | undefined;
     let resolveAppCompletion = () => {};
     const appCompletionPromise = new Promise<void>((resolve) => {
       resolveAppCompletion = resolve;
@@ -142,7 +152,10 @@ export class SpawnSource implements ProfileSource<SpawnStartOptions> {
       });
     }
 
-    child.once('exit', () => resolveAppCompletion());
+    child.once('exit', (code, signal) => {
+      targetExit = { code, signal };
+      resolveAppCompletion();
+    });
 
     try {
       options.onProgress?.({
@@ -190,6 +203,7 @@ export class SpawnSource implements ProfileSource<SpawnStartOptions> {
           heartbeatDropped: captureIntegrity.heartbeatDropped,
         },
         appCompleted,
+        ...(targetExit ? { targetExit } : {}),
       });
 
       const finalize = async (args: { appCompleted: boolean }): Promise<void> => {
@@ -216,6 +230,14 @@ export class SpawnSource implements ProfileSource<SpawnStartOptions> {
         initialIntegrity: captureIntegrity,
         waitForExit,
         releaseRuntime: async () => {
+          // Without an enabled Debugger domain, `--inspect-brk` releases on
+          // `runIfWaitingForDebugger` alone — V8 has no agent to deliver the
+          // start pause to. Waiting for `Debugger.paused` in that case used to
+          // burn a fixed 500ms on every default (cpu-only) capture.
+          if (!cdp.debuggerDomainEnabled) {
+            await cdp.send('Runtime.runIfWaitingForDebugger');
+            return;
+          }
           let resolvePaused = () => {};
           const pausedPromise = new Promise<void>((resolve) => {
             resolvePaused = resolve;
@@ -226,7 +248,7 @@ export class SpawnSource implements ProfileSource<SpawnStartOptions> {
             await Promise.race([pausedPromise, new Promise((resolve) => setTimeout(resolve, 500))]);
             await cdp.send('Debugger.resume');
           } catch {
-            // The target may already be running when no probe enabled Debugger.
+            // The target may already be running if the pause was already consumed.
           } finally {
             unsubscribePaused();
           }
