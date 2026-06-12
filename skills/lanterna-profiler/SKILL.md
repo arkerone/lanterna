@@ -61,6 +61,9 @@ Do not start a long-running server capture until the workload choice is explicit
 # CPU only, HTTP server with readiness gate and load
 $LANTERNA run --duration 30s --wait-for-url <health-url> --workload "<representative-load-command>" --format json --output report.json -- node server.js
 
+# Exit non-zero when the profiled process itself crashes (report still written first)
+# $LANTERNA run --fail-on-target-error --duration 30s --format json --output report.json -- node server.js
+
 # CPU + memory together (enables alloc-in-hot-path correlation)
 $LANTERNA run --kind cpu --kind memory --duration 60s --wait-for-url <health-url> --workload "<representative-load-command>" --format json --output report.json -- node server.js
 
