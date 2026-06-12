@@ -138,6 +138,12 @@ export interface RuntimeSignalsData {
   eventLoopAvailable: boolean;
 }
 
+/** How the spawned target exited, when it exited during the capture. */
+export interface TargetExitInfo {
+  code: number | null;
+  signal: string | null;
+}
+
 /**
  * Raw capture output produced by {@link runCapture}. Replaces the legacy
  * CPU-hardcoded `RawCapture`. Kind-specific payloads live under `kinds`.
@@ -151,6 +157,8 @@ export interface CaptureBundle {
   kinds: Partial<CaptureKindDataMap>;
   /** Half the CDP round-trip span of the capture-start clock read (ms) — a bound on cross-kind clock-alignment uncertainty. */
   cdpClockJitterMs?: number;
+  /** Exit status of the spawned target, when it exited before collection (spawn mode only). */
+  targetExit?: TargetExitInfo;
 }
 
 /**
@@ -170,6 +178,8 @@ export interface LiveSourceSignals {
     heartbeatDropped: number;
   };
   appCompleted?: boolean;
+  /** Set once the spawned child has exited (spawn mode only). */
+  targetExit?: TargetExitInfo;
 }
 
 /**

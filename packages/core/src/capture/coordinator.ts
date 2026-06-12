@@ -3,6 +3,7 @@ import {
   fetchTargetInfo,
   markCaptureStart,
   readRuntimeClockNow,
+  startRuntimeKeepalive,
 } from '../inspector/runtime.js';
 import type { ProfileKind } from '../kinds/core/types.js';
 import { composeAttachScript, composePreloadScript } from '../runtime-signals/hooks/framework.js';
@@ -13,7 +14,7 @@ import {
 } from '../runtime-signals/readers/event-loop.js';
 import { readGcEvents } from '../runtime-signals/readers/gc.js';
 import { readRuntimeIntegrity } from '../runtime-signals/readers/integrity.js';
-import { HEARTBEAT_RESOLUTION_MS } from '../shared/config.js';
+import { HEARTBEAT_RESOLUTION_MS, RUNTIME_HOOK_KEEPALIVE_INTERVAL_MS } from '../shared/config.js';
 import { withTimeout } from '../shared/timeout.js';
 import { ProbeOrchestrator } from './coordinator/probes.js';
 import { emitCaptureProgress } from './coordinator/progress.js';
@@ -34,6 +35,7 @@ import type {
   ProfileSource,
   RawGcEvent,
   RuntimeSignalsData,
+  TargetExitInfo,
 } from './core/types.js';
 
 export { createManualStopSignal } from './coordinator/stop-handling.js';
@@ -81,10 +83,12 @@ export async function runCapture<TSourceOptions>(
   const session = new CaptureSession(connected);
   const cdp = connected.cdp;
   const captureIntegrity: CaptureIntegrity = connected.initialIntegrity;
+  let stopKeepalive: (() => void) | undefined;
 
   try {
     const target = await fetchTargetInfo(cdp, { pid: connected.target.pid });
     await markCaptureStart(cdp);
+    stopKeepalive = startRuntimeKeepalive(cdp, RUNTIME_HOOK_KEEPALIVE_INTERVAL_MS);
     const clockReadStartHr = performance.now();
     const runtimeCaptureStartMs = await readRuntimeClockNow(cdp);
     const cdpClockJitterMs = (performance.now() - clockReadStartHr) / 2;
@@ -103,6 +107,14 @@ export async function runCapture<TSourceOptions>(
     });
     await probes.install(options.kinds);
     await probes.start();
+    // Fail-fast: a capture where every probe failed would otherwise complete
+    // "successfully" with an empty report and only buried diagnostics.
+    if (options.kinds.length > 0 && !probes.hasStartedProbes) {
+      await probes.disposeAll('signal');
+      throw new Error(
+        `capture failed: no profile probe could be installed and started (${summarizeProbeDiagnostics(captureIntegrity)})`,
+      );
+    }
     await connected.releaseRuntime?.();
     // Probe work that needs the isolate to run (e.g. the start heap snapshot)
     // happens here, once `--inspect-brk` has been released, never before.
@@ -123,10 +135,13 @@ export async function runCapture<TSourceOptions>(
       message: 'Stopping the profiler and collecting the final samples...',
     });
 
-    const kindsData = await probes.stop(connected, stopReason);
+    // Freeze the capture window before stopping probes: probe stop can take
+    // seconds (final heap snapshot has no timeout) and must not inflate
+    // durationMs, which feeds rate thresholds and impact estimates downstream.
     const durationMs = performance.now() - startedAtHr;
+    const kindsData = await probes.stop(connected, stopReason);
 
-    const runtimeSignals = await collectRuntimeSignals({
+    const { runtimeSignals, targetExit } = await collectRuntimeSignals({
       cdp,
       connected,
       session,
@@ -140,6 +155,11 @@ export async function runCapture<TSourceOptions>(
 
     await session.finalize({ suppressErrors: false });
 
+    // The exit status often lands only during finalize (the control channel's
+    // app-complete event races ahead of the OS-level exit event), so read the
+    // live signals once more now that the source has waited for the child.
+    const finalTargetExit = targetExit ?? connected.drainLiveSignals?.().targetExit;
+
     return {
       target: { ...target, pid: target.pid ?? connected.target.pid },
       startedAtEpoch: connected.startedAtEpoch,
@@ -148,8 +168,10 @@ export async function runCapture<TSourceOptions>(
       runtimeSignals,
       cdpClockJitterMs,
       kinds: kindsData as CaptureBundle['kinds'],
+      ...(finalTargetExit ? { targetExit: finalTargetExit } : {}),
     };
   } finally {
+    stopKeepalive?.();
     await session.cleanup();
   }
 }
@@ -173,6 +195,16 @@ function composeCapturePreload(kinds: readonly ProfileKind[]): PreloadContributi
   };
 }
 
+function summarizeProbeDiagnostics(captureIntegrity: CaptureIntegrity): string {
+  const probeDiagnostics = (captureIntegrity.diagnostics ?? []).filter(
+    (diagnostic) => diagnostic.stage === 'probe-install' || diagnostic.stage === 'probe-start',
+  );
+  if (probeDiagnostics.length === 0) return 'no diagnostics recorded';
+  return probeDiagnostics
+    .map((diagnostic) => `${diagnostic.kindId ?? 'unknown kind'}: ${diagnostic.message}`)
+    .join('; ');
+}
+
 async function disposeRuntimeBestEffort(
   cdp: RunCaptureConnectedSession['cdp'],
   captureIntegrity: CaptureIntegrity,
@@ -194,7 +226,10 @@ async function collectRuntimeSignals({
   captureIntegrity,
   runtimeCaptureStartMs,
   durationMs,
-}: RuntimeSignalCollectionInput): Promise<RuntimeSignalsData> {
+}: RuntimeSignalCollectionInput): Promise<{
+  runtimeSignals: RuntimeSignalsData;
+  targetExit?: TargetExitInfo;
+}> {
   const live = drainLiveSourceSignals(connected);
   session.appCompleted = Boolean(live.appCompleted);
 
@@ -217,15 +252,22 @@ async function collectRuntimeSignals({
   const resolvedEventLoopResolutionMs = eventLoopRead.resolutionMs ?? live.eventLoopResolutionMs;
 
   return {
-    gcEvents: normalizeTimedEvents(absoluteGcEvents, runtimeCaptureStartMs, durationMs),
-    eventLoopSamples: normalizedEventLoopSamples,
-    eventLoopHistogram: resolveEventLoopHistogram(
-      eventLoopRead,
-      normalizedEventLoopSamples,
-      resolvedEventLoopResolutionMs,
-    ),
-    eventLoopResolutionMs: resolvedEventLoopResolutionMs,
-    eventLoopAvailable: hasRuntimeEventLoopSignals(live, eventLoopRead, normalizedEventLoopSamples),
+    runtimeSignals: {
+      gcEvents: normalizeTimedEvents(absoluteGcEvents, runtimeCaptureStartMs, durationMs),
+      eventLoopSamples: normalizedEventLoopSamples,
+      eventLoopHistogram: resolveEventLoopHistogram(
+        eventLoopRead,
+        normalizedEventLoopSamples,
+        resolvedEventLoopResolutionMs,
+      ),
+      eventLoopResolutionMs: resolvedEventLoopResolutionMs,
+      eventLoopAvailable: hasRuntimeEventLoopSignals(
+        live,
+        eventLoopRead,
+        normalizedEventLoopSamples,
+      ),
+    },
+    ...(live.targetExit ? { targetExit: live.targetExit } : {}),
   };
 }
 
