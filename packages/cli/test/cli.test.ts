@@ -52,10 +52,20 @@ describe('parseRunArgs', () => {
       pretty: true,
       format: 'json',
       deep: true,
+      failOnTargetError: false,
       sampleIntervalMicros: 2500,
       detectors: [],
       kinds: ['cpu'],
       ...MEMORY_DEFAULTS,
+    });
+  });
+
+  it('parses --fail-on-target-error for run captures', () => {
+    expect(parseRunArgs(['--fail-on-target-error', '--', 'node', 'app.js'])).toMatchObject({
+      failOnTargetError: true,
+    });
+    expect(parseRunArgs(['--', 'node', 'app.js'])).toMatchObject({
+      failOnTargetError: false,
     });
   });
 
