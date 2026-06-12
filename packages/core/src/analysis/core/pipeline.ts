@@ -268,8 +268,11 @@ function computeMeasurementRatio(finding: Finding): number {
   }
 
   if (bestRatio > 0) return bestRatio;
+  // No observed/threshold pair matched — the raw observed values have no
+  // ratio semantics, so clamp them: an unpaired `count: 50000` from a plugin
+  // detector must not produce a score that drowns every curated finding.
   const observedValues = Object.values(measurements.observed).filter((value) => value > 0);
-  return Math.max(1, ...observedValues);
+  return Math.min(10, Math.max(1, ...observedValues));
 }
 
 function confidenceWeight(finding: Finding): number {

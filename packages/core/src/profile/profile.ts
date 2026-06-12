@@ -217,17 +217,31 @@ function collectScriptUrls(bundle: CaptureBundle): Set<string> {
 }
 
 function bindStopSignals(trigger: () => void, onSignal?: () => void): { dispose: () => void } {
-  const listener = () => {
-    onSignal?.();
-    trigger();
-  };
   const signals: NodeJS.Signals[] = ['SIGINT', 'SIGTERM'];
-  for (const signal of signals) process.on(signal, listener);
-  return {
-    dispose: () => {
-      for (const signal of signals) process.off(signal, listener);
-    },
+  const listeners = new Map<NodeJS.Signals, () => void>();
+  let stopRequested = false;
+  const dispose = () => {
+    for (const [signal, listener] of listeners) process.off(signal, listener);
+    listeners.clear();
   };
+  for (const signal of signals) {
+    const listener = () => {
+      if (stopRequested) {
+        // Second signal: finalization is stuck or too slow for the user.
+        // Remove our handlers and re-deliver so the default disposition
+        // terminates the process instead of swallowing every Ctrl+C.
+        dispose();
+        process.kill(process.pid, signal);
+        return;
+      }
+      stopRequested = true;
+      onSignal?.();
+      trigger();
+    };
+    listeners.set(signal, listener);
+    process.on(signal, listener);
+  }
+  return { dispose };
 }
 
 function manualStopMessage(kinds: ProfileKind[]): string | undefined {

@@ -80,6 +80,14 @@ export interface ReportMeta {
   command: string[];
   lanternaVersion: string;
   mode: 'spawn' | 'attach' | 'in-process';
+  /**
+   * Exit code of the spawned target when it exited during the capture
+   * (spawn mode only). `null` when the target was terminated by a signal —
+   * including Lanterna's own end-of-capture SIGTERM; see `targetExitSignal`.
+   */
+  targetExitCode?: number | null;
+  /** Signal that terminated the spawned target, when it exited during the capture. */
+  targetExitSignal?: string | null;
   /** Ordered list of profile kind ids that contributed to this report. */
   profileKinds: string[];
   /** Per-kind meta contributions. Each kind writes under `kinds[kind.id]`. */

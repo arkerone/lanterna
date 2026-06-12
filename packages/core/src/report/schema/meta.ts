@@ -33,6 +33,8 @@ export const metaSchema = z.object({
   command: z.array(z.string()),
   lanternaVersion: z.string().min(1),
   mode: z.enum(['spawn', 'attach', 'in-process']),
+  targetExitCode: z.number().int().nullable().optional(),
+  targetExitSignal: z.string().nullable().optional(),
   profileKinds: z.array(z.string().min(1)),
   kinds: z.record(z.string(), z.unknown()),
   captureIntegrity: z.object({
