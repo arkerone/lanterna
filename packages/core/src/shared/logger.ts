@@ -14,7 +14,7 @@ export function resolveLogLevel(value = process.env.LANTERNA_LOG): LoggerLevel {
 function toPinoLevel(level: LoggerLevel): LevelWithSilent {
   if (level === 'debug') return 'debug';
   if (level === 'warn') return 'warn';
-  return 'error';
+  return 'silent';
 }
 
 export function createLogger({ level = resolveLogLevel() }: { level?: LoggerLevel } = {}): Logger {

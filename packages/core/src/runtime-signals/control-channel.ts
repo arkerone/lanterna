@@ -7,6 +7,11 @@ export function attachControlChannel(
 ): void {
   let buffer = '';
   stream.setEncoding('utf8');
+  // Without a listener, a pipe error (e.g. EPIPE on early child teardown) is
+  // an unhandled 'error' event that crashes the profiler process.
+  stream.on('error', (err) => {
+    logger.debug({ err }, 'control channel: stream error');
+  });
   stream.on('data', (chunk: string) => {
     buffer += chunk;
     while (true) {

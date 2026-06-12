@@ -48,6 +48,12 @@ export function buildReportMeta(
     command: opts.command,
     lanternaVersion: LANTERNA_VERSION,
     mode: opts.mode ?? 'spawn',
+    ...(bundle.targetExit
+      ? {
+          targetExitCode: bundle.targetExit.code,
+          targetExitSignal: bundle.targetExit.signal,
+        }
+      : {}),
     profileKinds: capturedKinds,
     kinds: kindsMeta,
     captureIntegrity: {
