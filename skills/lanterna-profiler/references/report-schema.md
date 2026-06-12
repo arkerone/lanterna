@@ -93,6 +93,8 @@ Common fields:
 | `profileKinds` | Ordered kind ids that successfully produced capture data |
 | `kinds` | Per-kind metadata keyed by kind id |
 | `captureIntegrity` | Global and per-kind capture quality indicators |
+| `targetExitCode` | Exit code of the spawned process (spawn mode only, `null` for signal-terminated) |
+| `targetExitSignal` | OS signal that terminated the spawned process (spawn mode only, `null` when normal exit) |
 
 Important global integrity flags:
 
