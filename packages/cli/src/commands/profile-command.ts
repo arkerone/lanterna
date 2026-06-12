@@ -42,6 +42,7 @@ type ParsedProfileOptions = {
   waitTimeoutMs?: number;
   captureDelayMs?: number;
   workload?: string;
+  failOnTargetError?: boolean;
 };
 
 type ExecuteProfileCommandOptions =
@@ -88,9 +89,12 @@ export async function executeProfileCommand(command: ExecuteProfileCommandOption
 
     const qualityWarning = formatProfileQualityWarning(result.report);
     if (qualityWarning) indicator.update(qualityWarning);
+    const diagnosticsWarning = formatCaptureDiagnosticsWarning(result.report);
+    if (diagnosticsWarning) indicator.update(diagnosticsWarning);
     indicator.update('Writing the Lanterna report output...');
     await writeReportOutput(result.report, options.output, options.pretty, options.format, kinds);
     await result.afterReportWritten?.();
+    assertTargetExitOk(resolvedCommand, result.report);
     indicator.succeed(command.successMessage);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -142,6 +146,32 @@ function formatProfileQualityWarning(report: {
   const reasonText = formatQualityReasons(reasons);
   const recommendationText = formatQualityRecommendations(recommendations);
   return `Low confidence profile: ${reasonText}.${recommendationText}`;
+}
+
+function formatCaptureDiagnosticsWarning(report: {
+  meta?: {
+    captureIntegrity?: {
+      diagnostics?: Array<{ stage: string }>;
+    };
+  };
+}): string | undefined {
+  const diagnostics = report.meta?.captureIntegrity?.diagnostics;
+  if (!diagnostics || diagnostics.length === 0) return undefined;
+  const stages = [...new Set(diagnostics.map((diagnostic) => diagnostic.stage))].join(', ');
+  return `Capture recorded ${diagnostics.length} diagnostic(s) (${stages}); see meta.captureIntegrity.diagnostics in the report.`;
+}
+
+function assertTargetExitOk(
+  command: ExecuteProfileCommandOptions,
+  report: { meta?: { targetExitCode?: number | null } },
+): void {
+  if (command.mode !== 'run' || !command.options.failOnTargetError) return;
+  const exitCode = report.meta?.targetExitCode;
+  // `null` means signal-terminated — including Lanterna's own end-of-capture
+  // SIGTERM — so only a real non-zero exit code counts as a target failure.
+  if (typeof exitCode === 'number' && exitCode !== 0) {
+    throw new Error(`target exited with code ${exitCode} (--fail-on-target-error)`);
+  }
 }
 
 function shouldWarnAsyncQuality(quality: {

@@ -36,6 +36,7 @@ interface ParsedRunOptions extends ParsedCommonOptions {
   waitTimeout?: number;
   captureDelay?: number;
   workload?: string;
+  failOnTargetError?: boolean;
 }
 
 interface ParsedAttachOptions extends ParsedCommonOptions {
@@ -71,6 +72,7 @@ export interface RunProfileOptions {
   waitTimeoutMs?: number;
   captureDelayMs?: number;
   workload?: string;
+  failOnTargetError: boolean;
 }
 
 export interface AttachProfileOptions {
@@ -139,6 +141,7 @@ export function parseRunArgs(args: string[]): RunProfileOptions {
   const options: RunProfileOptions = {
     command: targetCommand,
     deep: Boolean(parsed.deep),
+    failOnTargetError: Boolean(parsed.failOnTargetError),
     ...normalizeCommonOptions(parsed),
   };
   applyRunOrchestrationOptions(options, parsed);
@@ -244,7 +247,11 @@ function createRunParser(): Command {
     .option(OPTION_FLAGS.waitForUrl, 'Wait until the target URL responds before capture')
     .option(OPTION_FLAGS.waitTimeout, 'Readiness timeout', parseDuration)
     .option(OPTION_FLAGS.captureDelay, 'Extra delay after readiness before capture', parseDuration)
-    .option(OPTION_FLAGS.workload, 'Shell command to run in parallel during capture');
+    .option(OPTION_FLAGS.workload, 'Shell command to run in parallel during capture')
+    .option(
+      OPTION_FLAGS.failOnTargetError,
+      'Exit non-zero when the profiled command exits with a non-zero code (the report is still written)',
+    );
 }
 
 function createAttachParser(): Command {

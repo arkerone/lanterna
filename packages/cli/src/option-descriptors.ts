@@ -44,6 +44,11 @@ export const RUN_CAPTURE_OPTIONS = [
     flag: '--workload <command>',
     description: 'Shell command to run in parallel during capture',
   },
+  {
+    flag: '--fail-on-target-error',
+    description: 'Exit non-zero when the profiled command exits with a non-zero code',
+    hint: 'report is still written',
+  },
 ] as const satisfies readonly CliOptionDescriptor[];
 
 export const ATTACH_CAPTURE_OPTIONS = [
@@ -177,6 +182,7 @@ export const OPTION_FLAGS = {
   waitTimeout: RUN_CAPTURE_OPTIONS[2].flag,
   captureDelay: RUN_CAPTURE_OPTIONS[3].flag,
   workload: RUN_CAPTURE_OPTIONS[4].flag,
+  failOnTargetError: RUN_CAPTURE_OPTIONS[5].flag,
   pid: ATTACH_CAPTURE_OPTIONS[0].flag,
   inspectUrl: ATTACH_CAPTURE_OPTIONS[1].flag,
   heapSampleInterval: MEMORY_OPTIONS[0].flag,
