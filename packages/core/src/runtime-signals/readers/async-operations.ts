@@ -66,6 +66,9 @@ const integritySchema = z.object({
   destroyCount: z.number().int().nonnegative(),
   resolveCount: z.number().int().nonnegative(),
   orphanCount: z.number().int().nonnegative(),
+  pendingAwaitStacksDropped: z.number().int().nonnegative().optional(),
+  runWindowsDropped: z.number().int().nonnegative().optional(),
+  concurrencySamplesDropped: z.number().int().nonnegative().optional(),
 });
 
 const readSchema = z.object({
@@ -126,5 +129,33 @@ export async function disableAsyncOperations(cdp: CdpClient): Promise<void> {
     await cdp.evaluate(DISABLE_EXPRESSION);
   } catch {
     // best-effort
+  }
+}
+
+const drainSchema = z.object({
+  records: z.array(recordSchema),
+  concurrency: z.array(concurrencySchema),
+});
+
+export type AsyncOperationsDrain = z.infer<typeof drainSchema>;
+
+const DRAIN_EXPRESSION = `(() => {
+  if (!globalThis.__LANTERNA_ASYNC__?.drain) return null;
+  return globalThis.__LANTERNA_ASYNC__.drain();
+})()`;
+
+/**
+ * Periodic mid-capture drain (attach/in-process): pulls only the *completed*
+ * records + concurrency samples observed since the last drain — in-flight
+ * records stay in the target so later lifecycle callbacks keep finding them.
+ * See {@link readAsyncOperations} for the final, full read.
+ */
+export async function drainAsyncOperations(cdp: CdpClient): Promise<AsyncOperationsDrain | null> {
+  try {
+    const value = await cdp.evaluate(DRAIN_EXPRESSION);
+    const parsed = drainSchema.safeParse(value);
+    return parsed.success ? parsed.data : null;
+  } catch {
+    return null;
   }
 }

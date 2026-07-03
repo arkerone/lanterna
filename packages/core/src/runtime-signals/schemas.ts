@@ -32,6 +32,9 @@ export const runtimeIntegrityCountersSchema = z.object({
   controlChannelWriteErrors: z.number().int().nonnegative(),
   gcObserverSetupFailed: z.number().int().nonnegative(),
   heartbeatDropped: z.number().int().nonnegative(),
+  eventLoopSamplesDropped: z.number().int().nonnegative().optional(),
+  gcEventsDropped: z.number().int().nonnegative().optional(),
+  memoryUsageSamplesDropped: z.number().int().nonnegative().optional(),
 });
 
 export const eventLoopReadSchema = z.object({
@@ -93,6 +96,13 @@ export const controlAppCompleteSchema = z.object({
   integrity: runtimeIntegrityCountersSchema.optional(),
 });
 
+export const controlCrashSchema = z.object({
+  type: z.literal('crash'),
+  atMs: z.number().optional(),
+  kind: z.string(),
+  message: z.string(),
+});
+
 export const controlEventSchema = z.discriminatedUnion('type', [
   controlHookReadySchema,
   controlCaptureStartSchema,
@@ -100,6 +110,7 @@ export const controlEventSchema = z.discriminatedUnion('type', [
   controlGcSchema,
   controlMemoryUsageSchema,
   controlAppCompleteSchema,
+  controlCrashSchema,
 ]);
 
 export type ParsedEventLoopRead = z.infer<typeof eventLoopReadSchema>;

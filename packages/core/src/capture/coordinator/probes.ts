@@ -6,6 +6,7 @@ import type { CaptureDiagnosticStage, CaptureIntegrity, ConnectedSource } from '
 import { emitCaptureProgress } from './progress.js';
 
 const PROBE_STOP_TIMEOUT_MS = 5000;
+const PROBE_DRAIN_TIMEOUT_MS = 1500;
 
 /** Why the capture stopped — threaded into the probe stop/dispose lifecycle. */
 export type StopReason = 'exit' | 'timeout' | 'signal';
@@ -37,6 +38,7 @@ export interface ProbeOrchestratorContext<TSourceOptions> {
 export class ProbeOrchestrator<TSourceOptions> {
   private readonly probeInstances: ProbeInstance[] = [];
   private startedProbeCount = 0;
+  private readonly drainFailedKinds = new Set<string>();
 
   constructor(private readonly ctx: ProbeOrchestratorContext<TSourceOptions>) {}
 
@@ -91,6 +93,39 @@ export class ProbeOrchestrator<TSourceOptions> {
       } catch (error) {
         logger.warn({ kindId: kind.id, err: error }, 'kind probe post-resume step failed');
         this.recordDiagnostic('probe-start', kind.id, error);
+      }
+    }
+  }
+
+  /**
+   * Runs every probe's optional periodic mid-capture drain, best-effort. Used
+   * by {@link PeriodicSignalDrain} in attach/in-process mode. Each probe gets
+   * a bounded timeout; a probe that times out or throws gets exactly one
+   * diagnostic (not one per tick) so a slow/busy target doesn't spam
+   * `captureIntegrity.diagnostics`.
+   */
+  async drain(): Promise<void> {
+    for (const { kind, probe } of this.probeInstances) {
+      if (!probe.drain) continue;
+      if (this.drainFailedKinds.has(kind.id)) continue;
+      try {
+        const result = await withTimeoutResult(
+          probe.drain(this.lifecycleContext(kind.id)),
+          PROBE_DRAIN_TIMEOUT_MS,
+        );
+        if (!result.ok) {
+          this.drainFailedKinds.add(kind.id);
+          this.recordTimeout(
+            'probe-drain',
+            kind.id,
+            `periodic mid-capture drain of ${kind.id} probe`,
+            PROBE_DRAIN_TIMEOUT_MS,
+          );
+        }
+      } catch (error) {
+        this.drainFailedKinds.add(kind.id);
+        logger.warn({ kindId: kind.id, err: error }, 'kind probe periodic drain failed');
+        this.recordDiagnostic('probe-drain', kind.id, error);
       }
     }
   }

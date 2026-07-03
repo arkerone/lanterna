@@ -55,3 +55,28 @@ export async function disableMemoryUsageSeries(cdp: CdpClient): Promise<void> {
     // best-effort
   }
 }
+
+const DRAIN_MEMORY_USAGE_EXPRESSION = `(() => {
+  if (!globalThis.__LANTERNA_MEMORY__?.drain) return null;
+  return globalThis.__LANTERNA_MEMORY__.drain();
+})()`;
+
+/**
+ * Periodic mid-capture drain (attach/in-process): pulls and empties the
+ * in-target `process.memoryUsage()` sample buffer. See
+ * {@link readMemoryUsageSeries} for the final, non-draining read.
+ */
+export async function drainMemoryUsageSeries(cdp: CdpClient): Promise<MemoryUsageReadResult> {
+  try {
+    const value = await cdp.evaluate(DRAIN_MEMORY_USAGE_EXPRESSION);
+    const parsed = memoryUsageReadSchema.safeParse(value);
+    if (!parsed.success) return { samples: [], available: false, sampleIntervalMs: 0 };
+    return {
+      samples: parsed.data.samples,
+      available: true,
+      sampleIntervalMs: parsed.data.sampleIntervalMs,
+    };
+  } catch {
+    return { samples: [], available: false, sampleIntervalMs: 0 };
+  }
+}

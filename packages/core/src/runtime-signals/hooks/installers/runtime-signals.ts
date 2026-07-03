@@ -16,11 +16,11 @@ export const runtimeSignalsInstaller: HookInstaller = {
 };
 
 // Serialized body — self-contained, no closures over this file.
-function installRuntimeSignals(api: {
+export function installRuntimeSignals(api: {
   performance: typeof globalThis.performance;
   resolutionMs: number;
   controlChannel: { emit(event: object): boolean };
-  integrity: { gcObserverSetupFailed: number };
+  integrity: { gcObserverSetupFailed: number; gcEventsDropped: number };
   registerGlobal(name: string, value: unknown): void;
   addResetHook(fn: () => void): void;
   addDisposeHook(fn: () => void): void;
@@ -83,7 +83,10 @@ function installRuntimeSignals(api: {
             kind: entry.detail?.kind !== undefined ? gcKindName(entry.detail.kind) : 'other',
             durationMs: entry.duration,
           };
-          if (gcEvents.length >= GC_EVENT_CAP) gcEvents.splice(0, GC_EVENT_DROP_CHUNK);
+          if (gcEvents.length >= GC_EVENT_CAP) {
+            gcEvents.splice(0, GC_EVENT_DROP_CHUNK);
+            api.integrity.gcEventsDropped += GC_EVENT_DROP_CHUNK;
+          }
           gcEvents.push(event);
           api.controlChannel.emit({ type: 'gc', ...event });
         }
@@ -130,6 +133,15 @@ function installRuntimeSignals(api: {
         : null,
       resolutionMs: api.resolutionMs,
     }),
+    // Periodic mid-capture drain (attach/in-process): unlike `read`, this
+    // only empties the sample buffer — the histogram keeps accumulating so
+    // the final summary still covers the whole capture, not just the tail
+    // since the last drain.
+    drain: () => {
+      const samples = api.heartbeatSamples.slice();
+      api.heartbeatSamples.length = 0;
+      return samples;
+    },
     reset: () => {
       histogram?.reset?.();
       api.heartbeatSamples.length = 0;
@@ -138,6 +150,11 @@ function installRuntimeSignals(api: {
 
   api.registerGlobal('__LANTERNA_GC__', {
     read: () => gcEvents.slice(),
+    drain: () => {
+      const events = gcEvents.slice();
+      gcEvents.length = 0;
+      return events;
+    },
     clear: () => {
       gcEvents.length = 0;
     },

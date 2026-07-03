@@ -15,7 +15,8 @@ import {
 import { readGcEvents } from '../runtime-signals/readers/gc.js';
 import { readRuntimeIntegrity } from '../runtime-signals/readers/integrity.js';
 import { HEARTBEAT_RESOLUTION_MS, RUNTIME_HOOK_KEEPALIVE_INTERVAL_MS } from '../shared/config.js';
-import { withTimeout } from '../shared/timeout.js';
+import { withTimeoutResult } from '../shared/timeout.js';
+import { PeriodicSignalDrain } from './coordinator/periodic-drain.js';
 import { ProbeOrchestrator } from './coordinator/probes.js';
 import { emitCaptureProgress } from './coordinator/progress.js';
 import { dedupeTimedEvents, resolveEventLoopHistogram } from './coordinator/runtime-signals.js';
@@ -35,6 +36,7 @@ import type {
   ProfileSource,
   RawGcEvent,
   RuntimeSignalsData,
+  TargetCrashInfo,
   TargetExitInfo,
 } from './core/types.js';
 
@@ -49,6 +51,7 @@ interface RuntimeSignalCollectionInput {
   captureIntegrity: CaptureIntegrity;
   runtimeCaptureStartMs: number;
   durationMs: number;
+  periodicDrain?: PeriodicSignalDrain;
 }
 
 type RunCaptureConnectedSession = ConnectedSource;
@@ -67,6 +70,13 @@ export interface RunCaptureOptions<TSourceOptions> {
   beforeCaptureStart?: () => void | Promise<void>;
   /** Optional hook after probes start, before waiting for capture completion. */
   onCaptureStarted?: () => void | Promise<void>;
+  /**
+   * Overrides the periodic mid-capture drain cadence (attach/in-process
+   * mode). Internal — not exposed on the CLI; tests use it to shrink the
+   * interval so drain behavior is verifiable without waiting out the real
+   * {@link PERIODIC_DRAIN_INTERVAL_MS}.
+   */
+  periodicDrainIntervalMs?: number;
 }
 
 /**
@@ -84,6 +94,7 @@ export async function runCapture<TSourceOptions>(
   const cdp = connected.cdp;
   const captureIntegrity: CaptureIntegrity = connected.initialIntegrity;
   let stopKeepalive: (() => void) | undefined;
+  let periodicDrain: PeriodicSignalDrain | undefined;
 
   try {
     const target = await fetchTargetInfo(cdp, { pid: connected.target.pid });
@@ -129,7 +140,24 @@ export async function runCapture<TSourceOptions>(
       message: captureRunningMessage(options.durationMs),
     });
 
+    // Spawn already streams every signal live over the control channel; the
+    // periodic drain only earns its keep in attach/in-process mode, where the
+    // in-target buffers would otherwise be read exactly once, at stop.
+    if (connected.mode !== 'spawn') {
+      periodicDrain = new PeriodicSignalDrain(
+        cdp,
+        probes,
+        captureIntegrity,
+        options.periodicDrainIntervalMs,
+      );
+      periodicDrain.start();
+    }
+
     const stopReason = await waitForStop(connected, options);
+    // Stop draining before probe.stop(): some probes' stop steps (e.g. the
+    // final memory heap snapshot) block the isolate for seconds, and a drain
+    // tick racing that would just time out for no benefit.
+    await periodicDrain?.stop();
     emitCaptureProgress(options.sourceOptions, {
       stage: 'finalize-capture',
       message: 'Stopping the profiler and collecting the final samples...',
@@ -141,13 +169,14 @@ export async function runCapture<TSourceOptions>(
     const durationMs = performance.now() - startedAtHr;
     const kindsData = await probes.stop(connected, stopReason);
 
-    const { runtimeSignals, targetExit } = await collectRuntimeSignals({
+    const { runtimeSignals, targetExit, targetCrash } = await collectRuntimeSignals({
       cdp,
       connected,
       session,
       captureIntegrity,
       runtimeCaptureStartMs,
       durationMs,
+      periodicDrain,
     });
     await disposeRuntimeBestEffort(cdp, captureIntegrity);
 
@@ -158,7 +187,9 @@ export async function runCapture<TSourceOptions>(
     // The exit status often lands only during finalize (the control channel's
     // app-complete event races ahead of the OS-level exit event), so read the
     // live signals once more now that the source has waited for the child.
-    const finalTargetExit = targetExit ?? connected.drainLiveSignals?.().targetExit;
+    const finalLiveSignals = connected.drainLiveSignals?.();
+    const finalTargetExit = targetExit ?? finalLiveSignals?.targetExit;
+    const finalTargetCrash = targetCrash ?? finalLiveSignals?.targetCrash;
 
     return {
       target: { ...target, pid: target.pid ?? connected.target.pid },
@@ -169,8 +200,13 @@ export async function runCapture<TSourceOptions>(
       cdpClockJitterMs,
       kinds: kindsData as CaptureBundle['kinds'],
       ...(finalTargetExit ? { targetExit: finalTargetExit } : {}),
+      ...(finalTargetCrash ? { targetCrash: finalTargetCrash } : {}),
     };
   } finally {
+    // Idempotent safety net: the normal path already stops the drain right
+    // after `waitForStop` resolves; this only matters if something earlier
+    // in the try block threw before reaching that point.
+    await periodicDrain?.stop();
     stopKeepalive?.();
     await session.cleanup();
   }
@@ -226,20 +262,27 @@ async function collectRuntimeSignals({
   captureIntegrity,
   runtimeCaptureStartMs,
   durationMs,
+  periodicDrain,
 }: RuntimeSignalCollectionInput): Promise<{
   runtimeSignals: RuntimeSignalsData;
   targetExit?: TargetExitInfo;
+  targetCrash?: TargetCrashInfo;
 }> {
   const live = drainLiveSourceSignals(connected);
   session.appCompleted = Boolean(live.appCompleted);
+  const drained = periodicDrain?.accumulated();
 
-  const eventLoopRead = await readEventLoopSignals(cdp);
-  const gcEventsViaCdp = await readGcSignals(cdp);
+  const eventLoopRead = await readEventLoopSignals(cdp, captureIntegrity);
+  const gcEventsViaCdp = await readGcSignals(cdp, captureIntegrity);
   const absoluteEventLoopSamples = mergeTimedSamples(
-    live.eventLoopSamplesAbs,
+    [...live.eventLoopSamplesAbs, ...(drained?.eventLoopSamplesAbs ?? [])],
     eventLoopRead.samples,
   );
-  const absoluteGcEvents = dedupeTimedEvents([...live.gcEventsAbs, ...gcEventsViaCdp]);
+  const absoluteGcEvents = dedupeTimedEvents([
+    ...live.gcEventsAbs,
+    ...(drained?.gcEventsAbs ?? []),
+    ...gcEventsViaCdp,
+  ]);
 
   markTimedSignalsAvailable(captureIntegrity, absoluteEventLoopSamples, absoluteGcEvents);
   await mergeRuntimeIntegrity(cdp, captureIntegrity, live);
@@ -268,6 +311,7 @@ async function collectRuntimeSignals({
       ),
     },
     ...(live.targetExit ? { targetExit: live.targetExit } : {}),
+    ...(live.targetCrash ? { targetCrash: live.targetCrash } : {}),
   };
 }
 
@@ -281,16 +325,34 @@ function drainLiveSourceSignals(connected: RunCaptureConnectedSession): LiveSour
   );
 }
 
+const RUNTIME_READ_TIMEOUT_MS = 1500;
+
 async function readEventLoopSignals(
   cdp: RunCaptureConnectedSession['cdp'],
+  captureIntegrity: CaptureIntegrity,
 ): Promise<EventLoopReadResult> {
   if (cdp.closed) return { samples: [], available: false };
-  return withTimeout(readEventLoopSamples(cdp), 1500, { samples: [], available: false });
+  const result = await withTimeoutResult(readEventLoopSamples(cdp), RUNTIME_READ_TIMEOUT_MS);
+  if (result.ok) return result.value;
+  recordCaptureDiagnostic(captureIntegrity, {
+    stage: 'runtime-read',
+    message: `timed out reading event-loop samples after ${RUNTIME_READ_TIMEOUT_MS}ms`,
+  });
+  return { samples: [], available: false };
 }
 
-async function readGcSignals(cdp: RunCaptureConnectedSession['cdp']): Promise<RawGcEvent[]> {
+async function readGcSignals(
+  cdp: RunCaptureConnectedSession['cdp'],
+  captureIntegrity: CaptureIntegrity,
+): Promise<RawGcEvent[]> {
   if (cdp.closed) return [];
-  return withTimeout(readGcEvents(cdp), 1500, [] as RawGcEvent[]);
+  const result = await withTimeoutResult(readGcEvents(cdp), RUNTIME_READ_TIMEOUT_MS);
+  if (result.ok) return result.value;
+  recordCaptureDiagnostic(captureIntegrity, {
+    stage: 'runtime-read',
+    message: `timed out reading GC events after ${RUNTIME_READ_TIMEOUT_MS}ms`,
+  });
+  return [];
 }
 
 function markTimedSignalsAvailable(
@@ -311,9 +373,20 @@ async function mergeRuntimeIntegrity(
   captureIntegrity: CaptureIntegrity,
   live: LiveSourceSignals,
 ): Promise<void> {
-  const runtimeIntegrity = cdp.closed
-    ? undefined
-    : await withTimeout(readRuntimeIntegrity(cdp), 1500, undefined);
+  let runtimeIntegrity: Awaited<ReturnType<typeof readRuntimeIntegrity>> | undefined;
+  if (!cdp.closed) {
+    const result = await withTimeoutResult(readRuntimeIntegrity(cdp), RUNTIME_READ_TIMEOUT_MS);
+    if (result.ok) {
+      runtimeIntegrity = result.value;
+    } else if (!live.integrityCounters) {
+      // Only worth a diagnostic when nothing else will supply these
+      // counters — the live control channel already covers spawn mode.
+      recordCaptureDiagnostic(captureIntegrity, {
+        stage: 'runtime-read',
+        message: `timed out reading runtime integrity counters after ${RUNTIME_READ_TIMEOUT_MS}ms`,
+      });
+    }
+  }
   mergeCaptureIntegrityCounters(captureIntegrity, live.integrityCounters ?? runtimeIntegrity);
 }
 

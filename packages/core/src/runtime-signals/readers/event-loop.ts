@@ -1,6 +1,6 @@
 import type { EventLoopSample } from '../../capture/core/types.js';
 import type { CdpClient } from '../../inspector/client.js';
-import { eventLoopReadSchema } from '../schemas.js';
+import { eventLoopReadSchema, eventLoopSampleSchema } from '../schemas.js';
 
 export interface EventLoopReadResult {
   samples: EventLoopSample[];
@@ -42,5 +42,27 @@ export async function readEventLoopSamples(cdp: CdpClient): Promise<EventLoopRea
     };
   } catch {
     return { samples: [], available: false };
+  }
+}
+
+const DRAIN_EVENT_LOOP_EXPRESSION = `(() => {
+  if (!globalThis.__LANTERNA_EVENT_LOOP__?.drain) return null;
+  return globalThis.__LANTERNA_EVENT_LOOP__.drain();
+})()`;
+
+/**
+ * Periodic mid-capture drain (attach/in-process): pulls and empties the
+ * in-target heartbeat buffer without disturbing the histogram, so a target
+ * that exits or blocks between drains still yields everything observed up to
+ * the last one. Returns `[]` if the hook is unavailable or the read fails —
+ * callers treat that the same as "nothing new since the last drain".
+ */
+export async function drainEventLoopSamples(cdp: CdpClient): Promise<EventLoopSample[]> {
+  try {
+    const value = await cdp.evaluate(DRAIN_EVENT_LOOP_EXPRESSION);
+    const parsed = eventLoopSampleSchema.array().safeParse(value);
+    return parsed.success ? parsed.data : [];
+  } catch {
+    return [];
   }
 }

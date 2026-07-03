@@ -3,6 +3,7 @@ import { z } from 'zod';
 const captureDiagnosticStageSchema = z.enum([
   'probe-install',
   'probe-start',
+  'probe-drain',
   'probe-stop',
   'probe-dispose',
   'runtime-read',
@@ -35,6 +36,12 @@ export const metaSchema = z.object({
   mode: z.enum(['spawn', 'attach', 'in-process']),
   targetExitCode: z.number().int().nullable().optional(),
   targetExitSignal: z.string().nullable().optional(),
+  targetCrash: z
+    .object({
+      kind: z.string().min(1),
+      message: z.string().min(1),
+    })
+    .optional(),
   profileKinds: z.array(z.string().min(1)),
   kinds: z.record(z.string(), z.unknown()),
   captureIntegrity: z.object({
@@ -46,6 +53,9 @@ export const metaSchema = z.object({
     controlChannelWriteErrors: z.number().int().nonnegative(),
     gcObserverSetupFailed: z.number().int().nonnegative(),
     heartbeatDropped: z.number().int().nonnegative(),
+    eventLoopSamplesDropped: z.number().int().nonnegative().optional(),
+    gcEventsDropped: z.number().int().nonnegative().optional(),
+    memoryUsageSamplesDropped: z.number().int().nonnegative().optional(),
     diagnostics: z.array(captureDiagnosticSchema).optional(),
     kinds: z.record(z.string(), z.unknown()),
     sourceMaps: z

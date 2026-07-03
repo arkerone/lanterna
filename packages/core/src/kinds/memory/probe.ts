@@ -6,6 +6,7 @@ import {
 import type { MemoryUsageSample } from '../../report/types.js';
 import {
   disableMemoryUsageSeries,
+  drainMemoryUsageSeries,
   readMemoryUsageSeries,
 } from '../../runtime-signals/readers/memory-usage.js';
 import type { CaptureProbe, ProbeLifecycleContext, ProbeStopReason } from '../core/types.js';
@@ -46,6 +47,11 @@ export interface MemoryProbeOptions {
 export function createMemoryProbe(options: MemoryProbeOptions): CaptureProbe<MemoryKindData> {
   let capturedHeapSnapshots: CapturedHeapSnapshots | undefined;
   const warnings: string[] = [];
+  // Accumulated by periodic mid-capture drains (attach/in-process): each
+  // drain empties the in-target `process.memoryUsage()` sample buffer, so a
+  // target that exits between drains still yields the full series instead of
+  // only whatever the final read sees.
+  const drainedMemoryUsageSamples: MemoryUsageSample[] = [];
   return {
     ...(options.heapSnapshotAnalysis?.enabled ? { stopTimeoutMs: false as const } : {}),
     ...(options.heapSnapshotAnalysis?.enabled
@@ -56,6 +62,11 @@ export function createMemoryProbe(options: MemoryProbeOptions): CaptureProbe<Mem
           },
         }
       : {}),
+    async drain(ctx: ProbeLifecycleContext) {
+      if (ctx.cdp.closed) return;
+      const drained = await drainMemoryUsageSeries(ctx.cdp);
+      if (drained.available) drainedMemoryUsageSamples.push(...drained.samples);
+    },
     async start(ctx: ProbeLifecycleContext & { abortSignal?: AbortSignal }) {
       await startHeapSampling(ctx.cdp, options.samplingIntervalBytes);
     },
@@ -129,11 +140,17 @@ export function createMemoryProbe(options: MemoryProbeOptions): CaptureProbe<Mem
         }
       }
       const memoryUsage = await readMemoryUsage(ctx, options.memoryUsageIntervalMs);
+      const combinedSamples =
+        drainedMemoryUsageSamples.length > 0
+          ? [...drainedMemoryUsageSamples, ...memoryUsage.samples]
+          : memoryUsage.samples;
       return {
         samplingProfile,
         samplingIntervalBytes: options.samplingIntervalBytes,
         memoryUsage: {
           ...memoryUsage,
+          samples: combinedSamples,
+          available: memoryUsage.available || combinedSamples.length > 0,
           sampleIntervalMs: memoryUsage.sampleIntervalMs || options.memoryUsageIntervalMs,
         },
         heapSamplingAvailable,

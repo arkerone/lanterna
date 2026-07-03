@@ -145,6 +145,37 @@ describe('lanternaReportSchema', () => {
       ]);
     });
 
+    it('accepts a report without the new optional drop counters or targetCrash', () => {
+      const result = lanternaReportSchema.safeParse(makeReport());
+      expect(result.success).toBe(true);
+    });
+
+    it('accepts captureIntegrity drop counters and meta.targetCrash', () => {
+      const report = makeReport({
+        meta: {
+          ...makeReport().meta,
+          targetCrash: { kind: 'uncaughtException', message: 'boom' },
+          captureIntegrity: {
+            ...makeReport().meta.captureIntegrity,
+            eventLoopSamplesDropped: 3000,
+            gcEventsDropped: 12,
+            memoryUsageSamplesDropped: 0,
+          },
+        },
+      });
+
+      const result = lanternaReportSchema.safeParse(report);
+
+      expect(result.success).toBe(true);
+      if (!result.success) return;
+      expect(result.data.meta.targetCrash).toEqual({
+        kind: 'uncaughtException',
+        message: 'boom',
+      });
+      expect(result.data.meta.captureIntegrity.eventLoopSamplesDropped).toBe(3000);
+      expect(result.data.meta.captureIntegrity.gcEventsDropped).toBe(12);
+    });
+
     it('accepts summary topUserHotspot and finding priority metadata', () => {
       const report = makeReport({
         profiles: {

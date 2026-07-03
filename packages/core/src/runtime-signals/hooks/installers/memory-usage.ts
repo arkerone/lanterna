@@ -20,16 +20,22 @@ export function createMemoryUsageInstaller(
   };
 }
 
-interface MemoryUsageInstallerApi {
+export interface MemoryUsageInstallerApi {
   performance: typeof globalThis.performance;
   controlChannel: { emit(event: object): boolean };
+  integrity: { memoryUsageSamplesDropped: number };
   registerGlobal(name: string, value: unknown): void;
   addResetHook(fn: () => void): void;
   addDisposeHook?(fn: () => void): void;
   releaseInstaller?(id: string): void;
 }
 
-function installMemoryUsage(api: MemoryUsageInstallerApi, sampleIntervalMs: number): void {
+export function installMemoryUsage(api: MemoryUsageInstallerApi, sampleIntervalMs: number): void {
+  // Capped (drop-oldest): this buffer lives inside the target process, so an
+  // abandoned/very-long attach session must never grow the target heap
+  // unboundedly. 20k samples ≈ 83 min at the 250ms default interval.
+  const MEMORY_USAGE_SAMPLE_CAP = 20_000;
+  const MEMORY_USAGE_SAMPLE_DROP_CHUNK = 200;
   const samples: Array<{
     atMs: number;
     rss: number;
@@ -54,6 +60,10 @@ function installMemoryUsage(api: MemoryUsageInstallerApi, sampleIntervalMs: numb
         external: usage.external,
         arrayBuffers: usage.arrayBuffers ?? 0,
       };
+      if (samples.length >= MEMORY_USAGE_SAMPLE_CAP) {
+        samples.splice(0, MEMORY_USAGE_SAMPLE_DROP_CHUNK);
+        api.integrity.memoryUsageSamplesDropped += MEMORY_USAGE_SAMPLE_DROP_CHUNK;
+      }
       samples.push(entry);
       api.controlChannel.emit({
         type: 'memory-usage',
@@ -95,6 +105,13 @@ function installMemoryUsage(api: MemoryUsageInstallerApi, sampleIntervalMs: numb
       samples: samples.slice(),
       sampleIntervalMs: intervalMs,
     }),
+    // Periodic mid-capture drain (attach/in-process): empties the sample
+    // buffer without resetting the capture-start clock the way `reset` does.
+    drain: () => {
+      const drained = samples.slice();
+      samples.length = 0;
+      return { samples: drained, sampleIntervalMs: intervalMs };
+    },
     clear: () => {
       samples.length = 0;
     },
