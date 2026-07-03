@@ -13,7 +13,7 @@ export interface AsyncOperationsInstallerOptions {
   concurrencyIntervalMs?: number;
   /** Include TickObject / Microtask resources. Default false (very noisy). */
   includeMicrotasks?: boolean;
-  /** How many JS stack frames to capture per init. Defaults to 8. 0 disables. */
+  /** How many JS stack frames to capture per init. Defaults to 16. 0 disables. */
   stackDepth?: number;
   /** How many run windows to retain per resource (for CPU attribution). Defaults to 8. */
   maxRunWindows?: number;

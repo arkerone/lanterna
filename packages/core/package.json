@@ -23,7 +23,8 @@
     "dev": "tsc -b --watch",
     "test": "vitest run",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "clean": "rm -rf dist .turbo .tsbuildinfo src/report/version.generated.ts"
+    "clean": "rm -rf dist .turbo .tsbuildinfo src/report/version.generated.ts",
+    "prepack": "npm run clean && npm run build"
   },
   "dependencies": {
     "@jridgewell/trace-mapping": "^0.3.25",

@@ -23,7 +23,8 @@
     "dev": "tsc -b --watch",
     "test": "vitest run",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "clean": "rm -rf dist .turbo .tsbuildinfo"
+    "clean": "rm -rf dist .turbo .tsbuildinfo",
+    "prepack": "npm run clean && npm run build"
   },
   "dependencies": {
     "@lanterna-profiler/core": "^2.7.0"

@@ -22,7 +22,8 @@
     "test:e2e": "npm run build && LANTERNA_E2E=1 LANTERNA_E2E_PROGRESS=1 vitest run examples.e2e",
     "test:e2e:smoke": "npm run build && LANTERNA_E2E=1 LANTERNA_E2E_SCOPE=smoke LANTERNA_E2E_PROGRESS=1 vitest run examples.e2e --reporter verbose",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "clean": "rm -rf dist .turbo .tsbuildinfo"
+    "clean": "rm -rf dist .turbo .tsbuildinfo",
+    "prepack": "npm run clean && npm run build"
   },
   "dependencies": {
     "@clack/prompts": "^1.6.0",
