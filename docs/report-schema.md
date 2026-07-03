@@ -35,6 +35,7 @@ For built-in kinds, populated `profiles.<kind>` entries match `meta.profileKinds
 | `mode` | `"spawn"` (`lanterna run`), `"attach"` (`lanterna attach`), or `"in-process"` (the programmatic `profileInProcess()` self-profiling API). |
 | `targetExitCode` | Optional, spawn mode only. Exit code of the target when it exited during the capture; `null` when it was terminated by a signal (including Lanterna's own end-of-capture `SIGTERM`). Absent when the target was still running at collection time. |
 | `targetExitSignal` | Optional, spawn mode only. Signal that terminated the target, when applicable. |
+| `targetCrash` | Optional, spawn mode only. `{ kind, message }` recording a fatal in-target crash (currently `kind: "uncaughtException"`) observed during the capture, so the report explains *why* the target died instead of just that it did. |
 | `cwd` | Working directory used to classify `user` frames. |
 | `profileKinds` | Kinds that produced capture data, in declared order. |
 | `kinds` | Per-kind metadata contributions. CPU lives under `meta.kinds.cpu`, memory under `meta.kinds.memory`, async under `meta.kinds.async`. |
@@ -65,9 +66,12 @@ Instrumentation mode (`safe` / `full` / `off`), `maxRecords` cap, stack depth, m
 | `eventLoopTimed` | Timed event-loop heartbeat data was observed. |
 | `gcTimed` | Timed GC events were observed. |
 | `gcObserverAvailable` | The `PerformanceObserver` GC observer was installed successfully. |
-| `controlChannelWriteErrors` | Counter — write failures on FD 3. |
+| `controlChannelWriteErrors` | Counter — batched control-channel writes that threw (e.g. EPIPE), each covering however many events were queued in that flush. |
 | `gcObserverSetupFailed` | Counter — GC observer setup failures in target. |
-| `heartbeatDropped` | Counter — heartbeats lost. |
+| `heartbeatDropped` | Counter — heartbeat events lost to a failed control-channel write (spawn only; not buffer-cap evictions — see `eventLoopSamplesDropped`). |
+| `eventLoopSamplesDropped` | Optional counter — event-loop heartbeat samples evicted (drop-oldest) once the in-target buffer cap was reached. Non-zero means very-long-capture history was trimmed before Lanterna could read it; expected to stay 0 in normal spawn/short captures, and rare even in attach mode now that the periodic mid-capture drain keeps the buffer from filling. |
+| `gcEventsDropped` | Optional counter — GC events evicted (drop-oldest) once the in-target buffer cap was reached. Same interpretation as `eventLoopSamplesDropped`. |
+| `memoryUsageSamplesDropped` | Optional counter — `process.memoryUsage()` samples evicted (drop-oldest) once the in-target buffer cap was reached. |
 | `sourceMaps` | Optional source-map resolution integrity when source maps were enabled for the capture. |
 | `kinds.cpu.samplesTimed` | The CPU profile included usable per-sample timing deltas. |
 | `kinds.memory.*` | Memory-specific integrity counters when `--kind memory` is active. |
@@ -141,6 +145,8 @@ Detail: [kinds/memory.md](./kinds/memory.md).
 Async resource lifecycle summaries, `topOperations`, `hotFiles`, `chains`, `orphans`, `concurrencyTimeline`, `filteredCounts`, `cdpAsyncContexts`, `cpuAttribution`, and quality metadata. Only present when `--kind async` was selected. In attach mode, capture is intentionally partial — the section's `quality` records this.
 
 `summary.byKindLatency` adds per-family latency percentiles (`p50/p95/p99/maxMs` + `meanWaitMs`). Each `topOperations[]` entry decomposes latency into `durationMs` (total), `runMs` (on-CPU), `waitMs` (waiting, not on CPU), `scheduleDelayMs`, and `firstRunAtMs`, plus a classified `latencyCause` (`event-loop-blocked` | `gc-pause` | `downstream-async` | `io-wait` | `cpu-bound` | `background` | `unknown`) with `causeConfidence`/`causeEvidence` (where `causeEvidence.basis` distinguishes `no-eventloop-signal` from `none` for `unknown`), and `attributedFrameOrigin` (`self` | `inherited-trigger` | `cpu-window` | `cdp`). `quality` adds `attributedStackRatio` and `ambiguousRatio`, and `clockSyncUncertaintyMs` is now a real measured bound (CDP jitter / clock resolution) rather than a placeholder. These fields are additive and optional within schema v2.
+
+`quality` also carries four optional truncation counters, each non-zero only under sustained high load: `pendingAwaitStacksDropped` (await call-site stacks evicted before a matching promise could claim them), `runWindowsDropped` (per-resource CPU-attribution windows evicted on very hot resources), `concurrencySamplesDropped` (concurrency-timeline samples evicted on very long captures), and `cdpAsyncContextsDropped` (CDP async-stack contexts dropped once the profiler-side cap was reached). Each surfaces a matching entry in `quality.reasons[]` when non-zero.
 
 Detail: [kinds/async.md](./kinds/async.md).
 

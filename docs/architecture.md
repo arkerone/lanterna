@@ -111,6 +111,8 @@ From that moment, signal families accumulate:
 
 With `--deep`, V8 deopt traces are also collected from the child's diagnostic output and parsed later into grouped `deopts[]`. V8 may emit those trace lines on stdout or stderr; Lanterna keeps trace diagnostics out of JSON stdout while preserving normal target stdout/stderr.
 
+In attach and in-process mode — which have no FD 3 control channel to stream signals live — the coordinator additionally drains the event-loop/GC buffers (and, for the async kind, completed-but-unread records) over CDP every ~10s while the capture runs, not just once at stop. This bounds data loss to roughly one drain interval if the target exits or hangs mid-capture, instead of losing everything since the start. Spawn mode already streams live, so this loop never runs there. See [signal-quality.md](./signal-quality.md#periodic-mid-capture-drain-attachin-process).
+
 ### 7. Stop capture
 
 Lanterna stops when the requested duration elapses, the target finishes first, or a signal (`SIGINT`/`SIGTERM`) is received. During shutdown it:
