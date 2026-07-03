@@ -142,6 +142,12 @@ export interface AsyncIntegrityCounters {
   resolveCount: number;
   /** Records still inflight at flush time. */
   orphanCount: number;
+  /** Await call-site stacks evicted (drop-oldest) once `PENDING_AWAIT_CAP` was reached — a non-zero value means some await-stack attribution was lost under very high await-call rates. */
+  pendingAwaitStacksDropped?: number;
+  /** Run windows evicted per-resource once a resource's `maxRunWindows` cap was reached — CPU-attribution windows are truncated for very hot resources. */
+  runWindowsDropped?: number;
+  /** Concurrency samples evicted (drop-oldest) once the in-target buffer cap was reached — only relevant for very long captures. */
+  concurrencySamplesDropped?: number;
 }
 
 export interface AsyncKindData {
@@ -170,6 +176,8 @@ export interface AsyncKindData {
   /** Async stack depth requested. 0 means async stacks were intentionally off. */
   cdpAsyncStackDepthRequested?: number;
   cdpAsyncContexts?: AsyncCdpContext[];
+  /** CDP async stack contexts evicted (drop-newest) once the profiler-side cap was reached. */
+  cdpAsyncContextsDropped?: number;
   transformStats?: {
     transformed: number;
     skipped: number;

@@ -836,6 +836,14 @@ export interface AsyncProfileQuality {
   /** cpuAmbiguousSamples / (attributed + ambiguous) — drives graded CPU-attribution confidence. */
   ambiguousRatio: number;
   clockSyncUncertaintyMs: number;
+  /** Await call-site stacks evicted (drop-oldest) once the in-target pending-await buffer cap was reached. */
+  pendingAwaitStacksDropped?: number;
+  /** Run windows evicted per-resource once a resource's run-window cap was reached — truncates CPU-attribution windows for very hot resources. */
+  runWindowsDropped?: number;
+  /** Concurrency samples evicted (drop-oldest) once the in-target buffer cap was reached — only relevant for very long captures. */
+  concurrencySamplesDropped?: number;
+  /** CDP async-stack contexts evicted (drop-newest) once the profiler-side cap was reached. */
+  cdpAsyncContextsDropped?: number;
   reasons: string[];
   recommendations: string[];
 }
