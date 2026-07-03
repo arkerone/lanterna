@@ -43,7 +43,9 @@ Before prescribing, check the report frontmatter. If it omits a needed CPU detai
 - `meta.captureIntegrity.controlChannelWriteErrors`
 - `meta.captureIntegrity.gcObserverSetupFailed`
 - `meta.captureIntegrity.heartbeatDropped`
+- `meta.captureIntegrity.eventLoopSamplesDropped`, `gcEventsDropped`, `memoryUsageSamplesDropped` (optional; non-zero means an in-target buffer overflowed before it could be read — normally 0)
 - `meta.captureIntegrity.kinds.cpu.samplesTimed`
+- `meta.targetCrash` (optional, spawn only; a fatal in-target crash was observed during the capture)
 
 When the needed signal is degraded, say so explicitly and avoid strong causal language. If the agent frontmatter has `rerun_required: true` with `CPU profile mostly idle (...)`, rerun under representative load before treating CPU hotspots as representative. The agent renderer emits this caveat at CPU idle ratio ≥ 90%.
 
