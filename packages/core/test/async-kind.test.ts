@@ -405,6 +405,33 @@ describe('async kind round-trip', () => {
     );
   });
 
+  it('surfaces truncation reasons for dropped await stacks, run windows, concurrency samples, and CDP contexts', () => {
+    const records = [record(1, 0, 100, 0)];
+    const bundle = makeBundle(records);
+    const data = bundle.kinds.async as AsyncKindData;
+    data.integrity.pendingAwaitStacksDropped = 12;
+    data.integrity.runWindowsDropped = 4;
+    data.integrity.concurrencySamplesDropped = 500;
+    data.cdpAsyncContextsDropped = 7;
+
+    const pipeline = createAnalysisPipeline({ kinds: [createAsyncProfileKind()] });
+    const result = pipeline.run(bundle, { command: ['node', 'app.js'], mode: 'spawn' });
+    const quality = result.profiles.async?.quality;
+
+    expect(quality?.pendingAwaitStacksDropped).toBe(12);
+    expect(quality?.runWindowsDropped).toBe(4);
+    expect(quality?.concurrencySamplesDropped).toBe(500);
+    expect(quality?.cdpAsyncContextsDropped).toBe(7);
+    expect(quality?.reasons).toEqual(
+      expect.arrayContaining([
+        '12 await call-site stacks were evicted before their promise could claim them',
+        '4 run windows were evicted from very hot resources (CPU-attribution windows truncated)',
+        '500 concurrency samples were evicted from the in-target buffer (very long capture)',
+        '7 CDP async-stack contexts were dropped once the profiler-side cap was reached',
+      ]),
+    );
+  });
+
   it('does not recommend process-start capture for spawn captures with partial stacks', () => {
     const records = [
       record(1, 0, 100, 0),
@@ -756,6 +783,81 @@ describe('async installer lifecycle', () => {
     expect(second.records).toHaveLength(0);
     expect(second.concurrency).toHaveLength(0);
     expect(second.integrity.initCount).toBe(0);
+  });
+
+  it('drain() removes only completed records, preserving in-flight ones for later callbacks', () => {
+    let globalValue:
+      | {
+          read: () => {
+            records: Array<{ asyncId: number }>;
+            integrity: { initCount: number; destroyCount: number };
+          };
+          drain: () => {
+            records: Array<{ asyncId: number }>;
+            concurrency: unknown[];
+          };
+        }
+      | undefined;
+    let callbacks: Partial<AsyncHookCallbacks> | undefined;
+    let sampleConcurrency: (() => void) | undefined;
+
+    vi.stubGlobal('setInterval', (fn: () => void) => {
+      sampleConcurrency = fn;
+      return { unref() {} };
+    });
+    vi.stubGlobal('clearInterval', () => {});
+
+    let now = 0;
+    const api = {
+      performance: { now: () => now },
+      registerGlobal: (_name: string, value: unknown) => {
+        globalValue = value as typeof globalValue;
+      },
+      addResetHook: () => {},
+      getBuiltin: (name: string) =>
+        name === 'async_hooks'
+          ? {
+              createHook: (hookCallbacks: Partial<AsyncHookCallbacks>) => {
+                callbacks = hookCallbacks;
+                return { enable() {}, disable() {} };
+              },
+            }
+          : null,
+    };
+
+    const installer = createAsyncOperationsInstaller({ instrumentationMode: 'off' });
+    new Function('__lanterna', installer.source)(api);
+    if (!globalValue || !callbacks?.init || !callbacks.destroy || !sampleConcurrency) {
+      throw new Error('install failed');
+    }
+
+    // Resource 1: completes before the drain.
+    callbacks.init(1, 'PROMISE', 0);
+    callbacks.destroy(1);
+    // Resource 2: still in-flight (init'd, never destroyed) at drain time.
+    callbacks.init(2, 'PROMISE', 0);
+    sampleConcurrency();
+
+    const drained = globalValue.drain();
+    expect(drained.records.map((r) => r.asyncId)).toEqual([1]);
+    expect(drained.concurrency.length).toBeGreaterThan(0);
+
+    // The in-flight resource must still be tracked after the drain: destroy
+    // firing on it now must be observed, not silently dropped.
+    now = 5;
+    callbacks.destroy(2);
+
+    const finalRead = globalValue.read();
+    expect(finalRead.records.map((r) => r.asyncId)).toEqual([2]);
+    // Counters accumulate across the whole capture — drain must not reset
+    // them the way `read()` does.
+    expect(finalRead.integrity.initCount).toBe(2);
+    expect(finalRead.integrity.destroyCount).toBe(2);
+
+    // A second drain right after has nothing new to report.
+    callbacks.init(3, 'PROMISE', 0);
+    const secondDrain = globalValue.drain();
+    expect(secondDrain.records).toHaveLength(0);
   });
 
   it('exposes a no-op disable() when async_hooks is unavailable', () => {
@@ -1463,6 +1565,117 @@ describe('async installer eviction', () => {
       .records.map((r) => r.asyncId)
       .sort((a, b) => a - b);
     expect(ids).toEqual([1, 3, 4]);
+  });
+});
+
+describe('async installer truncation counters', () => {
+  it('counts run windows evicted once a resource hits maxRunWindows', () => {
+    let globalValue: { read: () => AsyncKindData } | undefined;
+    let callbacks: Partial<AsyncHookCallbacks> = {};
+    vi.stubGlobal('setInterval', () => ({ unref() {} }));
+    vi.stubGlobal('clearInterval', () => {});
+    const api = {
+      performance: { now: () => 0 },
+      registerGlobal: (_name: string, value: unknown) => {
+        globalValue = value as typeof globalValue;
+      },
+      addResetHook: () => {},
+      getBuiltin: (name: string) =>
+        name === 'async_hooks'
+          ? {
+              createHook: (cbs: Partial<AsyncHookCallbacks>) => {
+                callbacks = cbs;
+                return { enable() {}, disable() {} };
+              },
+            }
+          : null,
+    };
+
+    const installer = createAsyncOperationsInstaller({
+      maxRunWindows: 1,
+      instrumentationMode: 'off',
+    });
+    new Function('__lanterna', installer.source)(api);
+    if (!globalValue || !callbacks.init || !callbacks.before || !callbacks.after) {
+      throw new Error('install failed');
+    }
+
+    callbacks.init(1, 'PROMISE', 0);
+    // Three run cycles on the same resource; only the first window fits.
+    callbacks.before(1);
+    callbacks.after(1);
+    callbacks.before(1);
+    callbacks.after(1);
+    callbacks.before(1);
+    callbacks.after(1);
+
+    const read = globalValue.read();
+    expect(read.records[0]?.runWindows).toHaveLength(1);
+    expect(read.integrity.runWindowsDropped).toBe(2);
+  });
+
+  it('counts concurrency samples evicted once the in-target buffer cap is reached', () => {
+    let globalValue: { read: () => AsyncKindData } | undefined;
+    let sampleConcurrency: (() => void) | undefined;
+    vi.stubGlobal('setInterval', (fn: () => void) => {
+      sampleConcurrency = fn;
+      return { unref() {} };
+    });
+    vi.stubGlobal('clearInterval', () => {});
+    const api = {
+      performance: { now: () => 0 },
+      registerGlobal: (_name: string, value: unknown) => {
+        globalValue = value as typeof globalValue;
+      },
+      addResetHook: () => {},
+      getBuiltin: (name: string) =>
+        name === 'async_hooks' ? { createHook: () => ({ enable() {}, disable() {} }) } : null,
+    };
+
+    const installer = createAsyncOperationsInstaller({ instrumentationMode: 'off' });
+    new Function('__lanterna', installer.source)(api);
+    if (!globalValue || !sampleConcurrency) throw new Error('install failed');
+
+    // CONCURRENCY_SAMPLE_CAP is 36_000, dropped in 500-sample chunks. The
+    // installer already took one sample at install time.
+    for (let i = 0; i < 36_500; i += 1) sampleConcurrency();
+
+    const read = globalValue.read();
+    expect(read.integrity.concurrencySamplesDropped).toBeGreaterThanOrEqual(500);
+    expect(read.concurrency.length).toBeLessThan(36_501);
+  });
+
+  it('counts pending await stacks evicted once the in-target buffer cap is reached', () => {
+    let globalValue: { read: () => AsyncKindData } | undefined;
+    let wrapAwait: ((value: unknown) => unknown) | undefined;
+    vi.stubGlobal('setInterval', () => ({ unref() {} }));
+    vi.stubGlobal('clearInterval', () => {});
+    const api = {
+      performance: { now: () => 0 },
+      registerGlobal: (name: string, value: unknown) => {
+        if (name === '__LANTERNA_ASYNC__') globalValue = value as typeof globalValue;
+        if (name === '__LANTERNA_ASYNC_AWAIT__') wrapAwait = value as typeof wrapAwait;
+      },
+      addResetHook: () => {},
+      getBuiltin: (name: string) =>
+        name === 'async_hooks' ? { createHook: () => ({ enable() {}, disable() {} }) } : null,
+    };
+
+    const installer = createAsyncOperationsInstaller({ instrumentationMode: 'full' });
+    new Function('__lanterna', installer.source)(api);
+    if (!globalValue || !wrapAwait) throw new Error('install failed');
+
+    try {
+      // PENDING_AWAIT_CAP is 256, drop-oldest one at a time. None of these
+      // ever get claimed by a matching promise init, so they all stay
+      // pending until evicted.
+      for (let i = 0; i < 260; i += 1) wrapAwait(Promise.resolve());
+
+      const read = globalValue.read();
+      expect(read.integrity.pendingAwaitStacksDropped).toBe(4);
+    } finally {
+      (globalValue as unknown as { disable?: () => void }).disable?.();
+    }
   });
 });
 

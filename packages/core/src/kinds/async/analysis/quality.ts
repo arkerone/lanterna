@@ -100,6 +100,29 @@ export function buildQuality(args: BuildQualityArgs): AsyncProfileQuality {
       'Treat await-frame coverage as partial; ESM entrypoints and unparseable files may need a dedicated loader.',
     );
   }
+  if (data.integrity.pendingAwaitStacksDropped) {
+    reasons.push(
+      `${data.integrity.pendingAwaitStacksDropped} await call-site stacks were evicted before their promise could claim them`,
+    );
+    recommendations.add(
+      'Treat await-stack attribution as sampled under very high await-call rates.',
+    );
+  }
+  if (data.integrity.runWindowsDropped) {
+    reasons.push(
+      `${data.integrity.runWindowsDropped} run windows were evicted from very hot resources (CPU-attribution windows truncated)`,
+    );
+  }
+  if (data.integrity.concurrencySamplesDropped) {
+    reasons.push(
+      `${data.integrity.concurrencySamplesDropped} concurrency samples were evicted from the in-target buffer (very long capture)`,
+    );
+  }
+  if (data.cdpAsyncContextsDropped) {
+    reasons.push(
+      `${data.cdpAsyncContextsDropped} CDP async-stack contexts were dropped once the profiler-side cap was reached`,
+    );
+  }
 
   return {
     confidence: scoreAsyncConfidence({
@@ -125,6 +148,18 @@ export function buildQuality(args: BuildQualityArgs): AsyncProfileQuality {
     cpuAmbiguousSamples: cpuAttribution.cpuAmbiguousSamples,
     ambiguousRatio,
     clockSyncUncertaintyMs,
+    ...(data.integrity.pendingAwaitStacksDropped
+      ? { pendingAwaitStacksDropped: data.integrity.pendingAwaitStacksDropped }
+      : {}),
+    ...(data.integrity.runWindowsDropped
+      ? { runWindowsDropped: data.integrity.runWindowsDropped }
+      : {}),
+    ...(data.integrity.concurrencySamplesDropped
+      ? { concurrencySamplesDropped: data.integrity.concurrencySamplesDropped }
+      : {}),
+    ...(data.cdpAsyncContextsDropped
+      ? { cdpAsyncContextsDropped: data.cdpAsyncContextsDropped }
+      : {}),
     reasons,
     recommendations: Array.from(recommendations),
   };

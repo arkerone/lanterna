@@ -274,9 +274,17 @@ function installAsyncOperations(
   // stack (which the previous FIFO-only design allowed).
   const pendingAwaitStacks: Array<{ stack: RawFrame[]; triggerId: number }> = [];
   const PENDING_AWAIT_CAP = 256;
+  let pendingAwaitStacksDropped = 0;
   // How many of the oldest completed records to scan when choosing an eviction
   // victim under buffer pressure (bounded so the hot init path stays cheap).
   const EVICTION_SCAN_LIMIT = 64;
+  let runWindowsDropped = 0;
+  // Concurrency samples fire on a fixed interval independent of maxRecords —
+  // capped separately (drop-oldest) so an abandoned long-running attach
+  // session can't grow this array unboundedly.
+  const CONCURRENCY_SAMPLE_CAP = 36_000;
+  const CONCURRENCY_SAMPLE_DROP_CHUNK = 500;
+  let concurrencySamplesDropped = 0;
   const transformStats = {
     transformed: 0,
     skipped: 0,
@@ -289,6 +297,21 @@ function installAsyncOperations(
   // async_hooks plumbing, not the user's code.
   const NOISE_FRAME_RE =
     /(?:^|\/)node:|^node_modules\/|^internal\/|lanterna-preload-|data:text\/javascript|async_hooks|installAsyncOperations|__lanterna|installLanternaFramework/;
+  // Same file names recur across many stack frames on a hot init path (a
+  // handful of source files account for most async resource creation), so
+  // caching the per-file noise test avoids re-running the regex on every
+  // captured frame. Bounded so a workload touching many distinct files can't
+  // grow this unboundedly.
+  const noiseFileTestCache = new Map<string, boolean>();
+  const NOISE_FILE_CACHE_LIMIT = 4096;
+  const isNoiseFile = (file: string): boolean => {
+    const cached = noiseFileTestCache.get(file);
+    if (cached !== undefined) return cached;
+    if (noiseFileTestCache.size >= NOISE_FILE_CACHE_LIMIT) noiseFileTestCache.clear();
+    const result = NOISE_FRAME_RE.test(file);
+    noiseFileTestCache.set(file, result);
+    return result;
+  };
 
   const captureStack = (): RawFrame[] => {
     if (stackDepth <= 0) return [];
@@ -311,7 +334,7 @@ function installAsyncOperations(
       const fn = callsite.getFunctionName() ?? callsite.getMethodName() ?? '<anonymous>';
       const file = callsite.getFileName() ?? '';
       if (!file) continue;
-      if (NOISE_FRAME_RE.test(file) || NOISE_FRAME_RE.test(fn)) continue;
+      if (isNoiseFile(file) || NOISE_FRAME_RE.test(fn)) continue;
       out.push({
         function: fn,
         file,
@@ -374,7 +397,7 @@ function installAsyncOperations(
         }
       }
       const now = api.performance.now() - captureStartMs;
-      records.set(asyncId, {
+      const rec: RawRecord = {
         asyncId,
         triggerAsyncId,
         kind,
@@ -389,9 +412,9 @@ function installAsyncOperations(
         orphan: false,
         initStack: captureStack(),
         runWindows: [],
-      });
-      const rec = records.get(asyncId);
-      if (kind === 'promise' && rec && pendingAwaitStacks.length > 0) {
+      };
+      records.set(asyncId, rec);
+      if (kind === 'promise' && pendingAwaitStacks.length > 0) {
         const idx = pendingAwaitStacks.findIndex((p) => p.triggerId === triggerAsyncId);
         if (idx >= 0) {
           const [entry] = pendingAwaitStacks.splice(idx, 1);
@@ -420,6 +443,8 @@ function installAsyncOperations(
       // (those typically map to the call site that triggered the work).
       if (rec.runWindows.length < maxRunWindows) {
         rec.runWindows.push({ startMs: start, endMs: now });
+      } else {
+        runWindowsDropped += 1;
       }
       openRuns.delete(asyncId);
       if (activeCount > 0) activeCount -= 1;
@@ -631,7 +656,10 @@ function installAsyncOperations(
         transformStats.awaitCalls += 1;
         const awaitStack = frame ? [frame] : captureStack();
         const triggerId = executionAsyncId?.() ?? 0;
-        if (pendingAwaitStacks.length >= PENDING_AWAIT_CAP) pendingAwaitStacks.shift();
+        if (pendingAwaitStacks.length >= PENDING_AWAIT_CAP) {
+          pendingAwaitStacks.shift();
+          pendingAwaitStacksDropped += 1;
+        }
         pendingAwaitStacks.push({ stack: awaitStack, triggerId });
         return Promise.resolve(value).then(
           (resolved) => {
@@ -809,6 +837,10 @@ function installAsyncOperations(
 
   const sampleConcurrency = () => {
     const atMs = api.performance.now() - captureStartMs;
+    if (concurrency.length >= CONCURRENCY_SAMPLE_CAP) {
+      concurrency.splice(0, CONCURRENCY_SAMPLE_DROP_CHUNK);
+      concurrencySamplesDropped += CONCURRENCY_SAMPLE_DROP_CHUNK;
+    }
     concurrency.push({ atMs, active: activeCount, inflight: inflightCount });
   };
   sampleConcurrency();
@@ -829,6 +861,9 @@ function installAsyncOperations(
     resolveCount = 0;
     activeCount = 0;
     inflightCount = 0;
+    pendingAwaitStacksDropped = 0;
+    runWindowsDropped = 0;
+    concurrencySamplesDropped = 0;
   });
 
   const clearRetainedState = () => {
@@ -844,6 +879,9 @@ function installAsyncOperations(
     resolveCount = 0;
     activeCount = 0;
     inflightCount = 0;
+    pendingAwaitStacksDropped = 0;
+    runWindowsDropped = 0;
+    concurrencySamplesDropped = 0;
   };
 
   const disable = () => {
@@ -887,6 +925,9 @@ function installAsyncOperations(
           destroyCount,
           resolveCount,
           orphanCount,
+          pendingAwaitStacksDropped,
+          runWindowsDropped,
+          concurrencySamplesDropped,
         },
         filteredCounts: { ...filteredCounts },
         instrumentationMode,
@@ -896,6 +937,23 @@ function installAsyncOperations(
       };
       clearRetainedState();
       return snapshot;
+    },
+    // Periodic mid-capture drain (attach/in-process): unlike `read`, only
+    // removes records that have already completed (destroyed or resolved) —
+    // in-flight records stay in `records`/`openRuns` so later before/after/
+    // destroy callbacks keep finding them. Counters are left untouched (they
+    // accumulate across the whole capture and are read once, at stop).
+    drain: () => {
+      const out: RawRecord[] = [];
+      for (const id of completedRecords) {
+        const rec = records.get(id);
+        if (rec) out.push({ ...rec, orphan: false });
+        records.delete(id);
+      }
+      completedRecords.clear();
+      const concurrencySnapshot = concurrency.slice();
+      concurrency.length = 0;
+      return { records: out, concurrency: concurrencySnapshot };
     },
     disable,
   });

@@ -422,6 +422,26 @@
           "type": "number",
           "minimum": 0
         },
+        "pendingAwaitStacksDropped": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "runWindowsDropped": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "concurrencySamplesDropped": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "cdpAsyncContextsDropped": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
         "reasons": {
           "type": "array",
           "items": {

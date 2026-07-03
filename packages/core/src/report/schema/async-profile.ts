@@ -214,6 +214,10 @@ const asyncQualitySchema = z.object({
   cpuAmbiguousSamples: z.number().int().nonnegative(),
   ambiguousRatio: z.number().min(0).max(1),
   clockSyncUncertaintyMs: z.number().nonnegative(),
+  pendingAwaitStacksDropped: z.number().int().nonnegative().optional(),
+  runWindowsDropped: z.number().int().nonnegative().optional(),
+  concurrencySamplesDropped: z.number().int().nonnegative().optional(),
+  cdpAsyncContextsDropped: z.number().int().nonnegative().optional(),
   reasons: z.array(z.string()),
   recommendations: z.array(z.string()),
 });
