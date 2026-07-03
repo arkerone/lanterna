@@ -95,6 +95,7 @@ Common fields:
 | `captureIntegrity` | Global and per-kind capture quality indicators |
 | `targetExitCode` | Exit code of the spawned process (spawn mode only, `null` for signal-terminated) |
 | `targetExitSignal` | OS signal that terminated the spawned process (spawn mode only, `null` when normal exit) |
+| `targetCrash` | Optional, spawn mode only: `{ kind, message }` when the target hit a fatal uncaught exception during the capture — explains *why* it died, not just that it did |
 
 Important global integrity flags:
 
@@ -106,6 +107,7 @@ Important global integrity flags:
 | `gcTimed` | GC events have degraded timestamps |
 | `gcObserverAvailable` | Runtime GC observer was unavailable |
 | `controlChannelWriteErrors`, `gcObserverSetupFailed`, `heartbeatDropped` | Non-zero counters reduce confidence |
+| `eventLoopSamplesDropped`, `gcEventsDropped`, `memoryUsageSamplesDropped` | Optional counters — non-zero means an in-target buffer overflowed (drop-oldest) before Lanterna could read it. Normally 0; spawn streams live, and attach/in-process now drain these buffers periodically (every ~10s) during the capture instead of only once at stop, so this should stay rare even there. |
 | `diagnostics[]` | Non-fatal capture, probe, or analyzer diagnostics |
 | `sourceMaps` | Source-map resolution counters: `{ enabled, applicable?, status?, framesResolved, framesUnresolved, coverage, mapsLoaded, failures: [{url, reason}] }`. Plain JS without `sourceMappingURL` is `applicable: false`, `status: "not-applicable"`, `coverage: 1`; missing or invalid referenced maps are applicable failures. When `enabled`, `applicable !== false`, and `coverage < 0.7`, treat any `source.*` position as a hint, not a fact. Capped at 20 `failures`. |
 

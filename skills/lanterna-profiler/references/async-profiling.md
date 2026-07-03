@@ -61,6 +61,7 @@ Before prescribing, check the report frontmatter and async `Kind Review`. If the
 - `profiles.async.quality.recordsDropped`
 - `profiles.async.quality.cdpAsyncStackCoverageRatio`
 - `profiles.async.quality.instrumentationMode`
+- `profiles.async.quality.pendingAwaitStacksDropped`, `runWindowsDropped`, `concurrencySamplesDropped`, `cdpAsyncContextsDropped`
 - `profiles.async.summary.collectedVia`
 - `profiles.async.summary.recordsDropped`
 
@@ -69,6 +70,7 @@ Interpretation rules:
 - `collectedVia: "async-hooks"` is the strongest async signal.
 - `collectedVia: "cdp-only"` means lifecycle records were unavailable; treat async findings as weak or absent.
 - `recordsDropped > 0` means high-cardinality workloads exceeded retention; rerun with a shorter window or higher `--async-max-events`.
+- The four optional truncation counters (`pendingAwaitStacksDropped`, `runWindowsDropped`, `concurrencySamplesDropped`, `cdpAsyncContextsDropped`) are finer-grained than `recordsDropped` — non-zero means a specific slice (await-stack attribution, per-resource CPU windows, the concurrency timeline, or CDP stack contexts) was truncated under sustained high load, not that operations themselves were dropped. Each has a matching `quality.reasons[]` entry when non-zero.
 - `attachPartialCapture: true` means missing preexisting resources is expected, not a target bug.
 - CPU attribution through run windows is approximate; prefer wording like "overlapped" unless CPU and async evidence both point to the same source.
 - CDP async stacks are supplemental. Low coverage does not invalidate lifecycle records, but it weakens source attribution.
