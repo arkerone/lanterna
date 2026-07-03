@@ -15,6 +15,7 @@ import type {
   ProfileSource,
   RawGcEvent,
   SpawnStartOptions,
+  TargetCrashInfo,
   TargetExitInfo,
 } from '../core/types.js';
 import { waitForInspectorUrl } from './inspector-url.js';
@@ -75,11 +76,22 @@ export class SpawnSource implements ProfileSource<SpawnStartOptions> {
       });
     }
 
+    // Only collected to build a useful error message if the inspector never
+    // comes up (buildInspectorStartupError in inspector-url.ts). Bounded so a
+    // chatty target can't grow this profiler-side buffer unboundedly, and
+    // collection stops once the inspector URL resolves — nothing reads it
+    // after that point.
+    const STDERR_COLLECTION_CAP_BYTES = 512 * 1024;
     const stderrBuffer: string[] = [];
+    let stderrBufferBytes = 0;
+    let collectingStderr = true;
     if (child.stderr) {
       child.stderr.on('data', (chunk: Buffer | string) => {
         const text = chunk.toString();
-        stderrBuffer.push(text);
+        if (collectingStderr && stderrBufferBytes < STDERR_COLLECTION_CAP_BYTES) {
+          stderrBuffer.push(text);
+          stderrBufferBytes += Buffer.byteLength(text, 'utf8');
+        }
         options.onStderrChunk?.(text);
         writeTargetStderr(text);
       });
@@ -94,6 +106,7 @@ export class SpawnSource implements ProfileSource<SpawnStartOptions> {
     let memoryUsageSampleIntervalMs: number | undefined;
     let appCompleted = false;
     let targetExit: TargetExitInfo | undefined;
+    let targetCrash: TargetCrashInfo | undefined;
     let resolveAppCompletion = () => {};
     const appCompletionPromise = new Promise<void>((resolve) => {
       resolveAppCompletion = resolve;
@@ -147,6 +160,10 @@ export class SpawnSource implements ProfileSource<SpawnStartOptions> {
             mergeCaptureIntegrityCounters(captureIntegrity, event.integrity);
             appCompleted = true;
             resolveAppCompletion();
+            return;
+          }
+          if (event.type === 'crash') {
+            targetCrash = { kind: event.kind, message: event.message };
           }
         },
       });
@@ -163,6 +180,8 @@ export class SpawnSource implements ProfileSource<SpawnStartOptions> {
         message: 'Waiting for the child process to expose its inspector endpoint...',
       });
       const webSocketDebuggerUrl = await waitForInspectorUrl(child, stderrBuffer);
+      collectingStderr = false;
+      stderrBuffer.length = 0;
       options.onProgress?.({
         stage: 'connect-cdp',
         message: 'Connecting to the child process over CDP...',
@@ -201,9 +220,13 @@ export class SpawnSource implements ProfileSource<SpawnStartOptions> {
           controlChannelWriteErrors: captureIntegrity.controlChannelWriteErrors,
           gcObserverSetupFailed: captureIntegrity.gcObserverSetupFailed,
           heartbeatDropped: captureIntegrity.heartbeatDropped,
+          eventLoopSamplesDropped: captureIntegrity.eventLoopSamplesDropped,
+          gcEventsDropped: captureIntegrity.gcEventsDropped,
+          memoryUsageSamplesDropped: captureIntegrity.memoryUsageSamplesDropped,
         },
         appCompleted,
         ...(targetExit ? { targetExit } : {}),
+        ...(targetCrash ? { targetCrash } : {}),
       });
 
       const finalize = async (args: { appCompleted: boolean }): Promise<void> => {

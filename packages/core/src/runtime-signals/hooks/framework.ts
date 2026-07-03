@@ -116,6 +116,12 @@ interface FrameworkIntegrityCounters {
   controlChannelWriteErrors: number;
   gcObserverSetupFailed: number;
   heartbeatDropped: number;
+  /** Heartbeat samples evicted from the in-target buffer (drop-oldest) once `HEARTBEAT_SAMPLE_CAP` was reached. */
+  eventLoopSamplesDropped: number;
+  /** GC events evicted from the in-target buffer (drop-oldest); incremented by the runtime-signals installer. */
+  gcEventsDropped: number;
+  /** `process.memoryUsage()` samples evicted from the in-target buffer (drop-oldest); incremented by the memory-usage installer. */
+  memoryUsageSamplesDropped: number;
 }
 
 interface FrameworkApi {
@@ -212,10 +218,13 @@ export function installLanternaFramework(
   const resolutionMs = Number(options.resolutionMs) || 20;
 
   if (!performanceApi) {
-    const counters = {
+    const counters: FrameworkIntegrityCounters = {
       controlChannelWriteErrors: 0,
       gcObserverSetupFailed: 0,
       heartbeatDropped: 0,
+      eventLoopSamplesDropped: 0,
+      gcEventsDropped: 0,
+      memoryUsageSamplesDropped: 0,
     };
     return {
       installed: false,
@@ -230,17 +239,72 @@ export function installLanternaFramework(
     controlChannelWriteErrors: 0,
     gcObserverSetupFailed: 0,
     heartbeatDropped: 0,
+    eventLoopSamplesDropped: 0,
+    gcEventsDropped: 0,
+    memoryUsageSamplesDropped: 0,
+  };
+
+  // Batches control-channel writes: one `fs.writeSync` per flush instead of
+  // one per event. Heartbeats alone fire every `resolutionMs` (20ms default)
+  // — a sync write per event is a real per-tick cost in the target. Framing
+  // is newline-delimited JSON either way, so batching multiple lines into one
+  // write is transparent to `attachControlChannel`'s line parser.
+  const FLUSH_INTERVAL_MS = 50;
+  const FLUSH_BATCH_SIZE = 64;
+  const pendingLines: string[] = [];
+  let pendingHeartbeatCount = 0;
+  let flushTimer: NodeJS.Timeout | null = null;
+
+  const flush = (): void => {
+    if (flushTimer) {
+      clearTimeout(flushTimer);
+      flushTimer = null;
+    }
+    if (pendingLines.length === 0) return;
+    if (!fs || controlFd < 0 || typeof fs.writeSync !== 'function') {
+      pendingLines.length = 0;
+      pendingHeartbeatCount = 0;
+      return;
+    }
+    const batch = pendingLines.join('');
+    const batchHeartbeatCount = pendingHeartbeatCount;
+    pendingLines.length = 0;
+    pendingHeartbeatCount = 0;
+    try {
+      fs.writeSync(controlFd, batch);
+    } catch {
+      integrity.controlChannelWriteErrors += 1;
+      integrity.heartbeatDropped += batchHeartbeatCount;
+    }
+  };
+
+  const scheduleFlush = (): void => {
+    if (flushTimer) return;
+    flushTimer = setTimeout(flush, FLUSH_INTERVAL_MS);
+    if (typeof flushTimer?.unref === 'function') flushTimer.unref();
   };
 
   const emit = (event: object): boolean => {
     if (!fs || controlFd < 0 || typeof fs.writeSync !== 'function') return false;
-    try {
-      fs.writeSync(controlFd, `${JSON.stringify(event)}\n`);
-      return true;
-    } catch {
-      integrity.controlChannelWriteErrors += 1;
-      return false;
+    pendingLines.push(`${JSON.stringify(event)}\n`);
+    if ((event as { type?: unknown }).type === 'heartbeat') pendingHeartbeatCount += 1;
+    if (pendingLines.length >= FLUSH_BATCH_SIZE) {
+      flush();
+    } else {
+      scheduleFlush();
     }
+    return true;
+  };
+
+  // Lifecycle events (hook-ready, capture-start, app-complete, crash) must
+  // reach the profiler even if the process is about to terminate — batching
+  // them would risk losing them to a hard exit before the flush timer fires.
+  // Flushing also drains anything already queued (e.g. pending heartbeats),
+  // so the completion event is never reordered ahead of earlier samples.
+  const emitCritical = (event: object): void => {
+    if (!fs || controlFd < 0 || typeof fs.writeSync !== 'function') return;
+    pendingLines.push(`${JSON.stringify(event)}\n`);
+    flush();
   };
 
   const controlChannel = {
@@ -326,10 +390,11 @@ export function installLanternaFramework(
       const sample = { atMs: now, lagMs };
       if (heartbeatSamples.length >= HEARTBEAT_SAMPLE_CAP) {
         heartbeatSamples.splice(0, HEARTBEAT_SAMPLE_DROP_CHUNK);
+        integrity.eventLoopSamplesDropped += HEARTBEAT_SAMPLE_DROP_CHUNK;
       }
       heartbeatSamples.push(sample);
-      const sent = emit({ type: 'heartbeat', ...sample });
-      if (!sent && fs && controlFd >= 0) integrity.heartbeatDropped += 1;
+      // Write failures are counted at flush time (batched), not here.
+      emit({ type: 'heartbeat', ...sample });
       nextExpectedHeartbeatMs = now + resolutionMs;
       scheduleHeartbeat();
     }, resolutionMs);
@@ -373,7 +438,7 @@ export function installLanternaFramework(
     scheduleHeartbeat();
     keepalive();
     armWatchdog();
-    emit({ type: 'capture-start', atMs: 0, resolutionMs });
+    emitCritical({ type: 'capture-start', atMs: 0, resolutionMs });
   };
 
   const dispose = (): { disposed: true; errors: string[] } => {
@@ -386,6 +451,12 @@ export function installLanternaFramework(
       clearInterval(watchdogTimer);
       watchdogTimer = null;
     }
+    if (flushTimer) {
+      clearTimeout(flushTimer);
+      flushTimer = null;
+    }
+    pendingLines.length = 0;
+    pendingHeartbeatCount = 0;
     heartbeatSamples.length = 0;
     for (const fn of disposeHooks.splice(0)) {
       try {
@@ -423,7 +494,7 @@ export function installLanternaFramework(
     };
   }
 
-  emit({
+  emitCritical({
     type: 'hook-ready',
     eventLoopResolutionMs: resolutionMs,
     capabilities,
@@ -436,7 +507,7 @@ export function installLanternaFramework(
     const sendCompletion = (source: string, code?: number | null) => {
       if (completionSent) return;
       completionSent = true;
-      emit({
+      emitCritical({
         type: 'app-complete',
         atMs: performanceApi.now(),
         source,
@@ -466,7 +537,7 @@ export function installLanternaFramework(
     // disables Node's default crash, silently changing the target's semantics
     // under profiling.
     process.once('uncaughtExceptionMonitor', (err) => {
-      emit({
+      emitCritical({
         type: 'crash',
         atMs: performanceApi.now(),
         kind: 'uncaughtException',

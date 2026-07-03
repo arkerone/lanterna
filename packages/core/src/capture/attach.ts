@@ -21,6 +21,9 @@ export interface InstallAttachRuntimeResult {
     controlChannelWriteErrors: number;
     gcObserverSetupFailed: number;
     heartbeatDropped: number;
+    eventLoopSamplesDropped?: number;
+    gcEventsDropped?: number;
+    memoryUsageSamplesDropped?: number;
   };
 }
 

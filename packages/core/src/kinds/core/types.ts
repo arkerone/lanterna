@@ -73,6 +73,16 @@ export interface CaptureProbe<TData> {
    * workload/readiness wait, so it still observes a clean start-of-capture baseline.
    */
   afterRuntimeReleased?(ctx: ProbeLifecycleContext & { abortSignal?: AbortSignal }): Promise<void>;
+  /**
+   * Optional periodic mid-capture drain (attach/in-process modes only —
+   * spawn already streams data live over the control channel). The
+   * coordinator calls this on a fixed interval while the capture runs and
+   * again right before stop, so a probe that accumulates in-target state can
+   * pull and clear it incrementally instead of losing everything if the
+   * target exits or blocks between the start and the final `stop()` read.
+   * Best-effort: a probe without this hook is simply never drained early.
+   */
+  drain?(ctx: ProbeLifecycleContext): Promise<void>;
   stop(
     ctx: ProbeLifecycleContext & {
       abortSignal?: AbortSignal;

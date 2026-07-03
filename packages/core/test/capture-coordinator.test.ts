@@ -13,9 +13,11 @@ import { defineProfileKind, type ProfileKind } from '../src/kinds/core/types.js'
 
 class FakeCdp implements CdpClient {
   readonly events: string[] = [];
+  readonly evaluatedExpressions: string[] = [];
   closed = false;
   failTargetInfo = false;
   hangClose = false;
+  hangRuntimeReads = false;
 
   async send(method: string): Promise<unknown> {
     this.events.push(`send:${method}`);
@@ -24,13 +26,20 @@ class FakeCdp implements CdpClient {
 
   async evaluate(expression: string): Promise<unknown> {
     this.events.push('evaluate');
+    this.evaluatedExpressions.push(expression);
     if (expression.includes('JSON.stringify')) {
       if (this.failTargetInfo) return undefined;
       return JSON.stringify(makeTarget());
     }
     if (expression === 'performance.now()') return 0;
-    if (expression.includes('__LANTERNA_EVENT_LOOP__')) return null;
-    if (expression.includes('__LANTERNA_GC__')) return [];
+    if (expression.includes('__LANTERNA_EVENT_LOOP__')) {
+      if (this.hangRuntimeReads && expression.includes('.read')) return new Promise(() => {});
+      return null;
+    }
+    if (expression.includes('__LANTERNA_GC__')) {
+      if (this.hangRuntimeReads && expression.includes('.read')) return new Promise(() => {});
+      return [];
+    }
     if (expression.includes('__LANTERNA_ATTACH_RUNTIME__')) return null;
     return undefined;
   }
@@ -453,6 +462,56 @@ describe('runCapture lifecycle', () => {
       'finalize',
     ]);
     expect(source.finalizeCalls).toBe(1);
+    vi.useRealTimers();
+  });
+
+  it('records a runtime-read diagnostic when event-loop/GC reads time out', async () => {
+    vi.useFakeTimers();
+    const cdp = new FakeCdp();
+    cdp.hangRuntimeReads = true;
+    const source = new FakeSource(cdp);
+
+    const capturePromise = runCapture({
+      source,
+      sourceOptions: undefined,
+      kinds: [successfulKind('ok')],
+    });
+    const resultPromise = capturePromise.then(
+      (bundle) => bundle,
+      (error: unknown) => error,
+    );
+
+    // readEventLoopSignals and readGcSignals each race their own 1500ms
+    // timeout sequentially (one awaited after the other), so two windows of
+    // virtual time must elapse before both diagnostics land.
+    await vi.advanceTimersByTimeAsync(1500);
+    await vi.advanceTimersByTimeAsync(1500);
+    const result = await resultPromise;
+
+    expect(result).not.toBeInstanceOf(Error);
+    const stages = diagnosticStages(result as Awaited<ReturnType<typeof runCapture>>);
+    expect(stages.filter((stage) => stage === 'runtime-read').length).toBeGreaterThanOrEqual(2);
+    vi.useRealTimers();
+  }, 20_000);
+
+  it('never starts the periodic mid-capture drain in spawn mode', async () => {
+    vi.useFakeTimers();
+    const cdp = new FakeCdp();
+    const source = new FakeSource(cdp, async () => {}, 'spawn');
+
+    const capturePromise = runCapture({
+      source,
+      sourceOptions: undefined,
+      kinds: [successfulKind('ok')],
+      periodicDrainIntervalMs: 10,
+    });
+    // Spawn already streams live over the control channel; advancing well
+    // past several would-be drain intervals must not produce a single
+    // `.drain()` evaluate call.
+    await vi.advanceTimersByTimeAsync(200);
+    await capturePromise;
+
+    expect(cdp.evaluatedExpressions.some((expr) => expr.includes('.drain'))).toBe(false);
     vi.useRealTimers();
   });
 

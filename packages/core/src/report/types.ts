@@ -88,6 +88,8 @@ export interface ReportMeta {
   targetExitCode?: number | null;
   /** Signal that terminated the spawned target, when it exited during the capture. */
   targetExitSignal?: string | null;
+  /** A fatal in-target crash observed during the capture (spawn mode only). */
+  targetCrash?: { kind: string; message: string };
   /** Ordered list of profile kind ids that contributed to this report. */
   profileKinds: string[];
   /** Per-kind meta contributions. Each kind writes under `kinds[kind.id]`. */
@@ -101,6 +103,9 @@ export interface ReportMeta {
     controlChannelWriteErrors: number;
     gcObserverSetupFailed: number;
     heartbeatDropped: number;
+    eventLoopSamplesDropped?: number;
+    gcEventsDropped?: number;
+    memoryUsageSamplesDropped?: number;
     diagnostics?: CaptureDiagnostic[];
     /** Per-kind integrity contributions. */
     kinds: Record<string, unknown>;

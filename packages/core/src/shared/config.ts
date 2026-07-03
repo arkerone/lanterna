@@ -20,6 +20,15 @@ export const INSPECTOR_STARTUP_TIMEOUT_MS = 5_000;
  * (see the liveness watchdog in `hooks/framework.ts`, stale after 150s).
  */
 export const RUNTIME_HOOK_KEEPALIVE_INTERVAL_MS = 30_000;
+/**
+ * Cadence of the coordinator's periodic mid-capture drain (attach / in-process
+ * modes only — spawn already streams every signal live over the control
+ * channel). Draining the in-target buffers on this interval instead of only
+ * once at stop means a target that exits or blocks mid-capture still yields
+ * everything observed up to the last drain, and the in-target caps become
+ * effectively unreachable.
+ */
+export const PERIODIC_DRAIN_INTERVAL_MS = 10_000;
 export const TERMINATE_GRACE_MS = 500;
 export const TERMINATE_SIGTERM_WAIT_MS = 2_000;
 export const TERMINATE_SIGKILL_FALLBACK_MS = 1_000;

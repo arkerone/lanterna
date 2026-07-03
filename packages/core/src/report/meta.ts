@@ -54,6 +54,7 @@ export function buildReportMeta(
           targetExitSignal: bundle.targetExit.signal,
         }
       : {}),
+    ...(bundle.targetCrash ? { targetCrash: bundle.targetCrash } : {}),
     profileKinds: capturedKinds,
     kinds: kindsMeta,
     captureIntegrity: {

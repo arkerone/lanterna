@@ -89,6 +89,7 @@ export interface RawDeopt {
 export type CaptureDiagnosticStage =
   | 'probe-install'
   | 'probe-start'
+  | 'probe-drain'
   | 'probe-stop'
   | 'probe-dispose'
   | 'runtime-read'
@@ -121,6 +122,12 @@ export interface CaptureIntegrity {
   controlChannelWriteErrors: number;
   gcObserverSetupFailed: number;
   heartbeatDropped: number;
+  /** Event-loop heartbeat samples evicted from the in-target buffer once `HEARTBEAT_SAMPLE_CAP` was reached (drop-oldest). Non-zero means very-long-capture history was trimmed. */
+  eventLoopSamplesDropped?: number;
+  /** GC events evicted from the in-target buffer once `GC_EVENT_CAP` was reached (drop-oldest). */
+  gcEventsDropped?: number;
+  /** `process.memoryUsage()` samples evicted from the in-target buffer once its cap was reached (drop-oldest). */
+  memoryUsageSamplesDropped?: number;
   diagnostics?: CaptureDiagnostic[];
   /** Per-kind integrity bucket. Populated by each kind's `contributeIntegrity`. */
   kinds: Record<string, unknown>;
@@ -144,6 +151,12 @@ export interface TargetExitInfo {
   signal: string | null;
 }
 
+/** A fatal crash observed in-target (e.g. an uncaught exception) during the capture (spawn mode only). */
+export interface TargetCrashInfo {
+  kind: string;
+  message: string;
+}
+
 /**
  * Raw capture output produced by {@link runCapture}. Replaces the legacy
  * CPU-hardcoded `RawCapture`. Kind-specific payloads live under `kinds`.
@@ -159,6 +172,8 @@ export interface CaptureBundle {
   cdpClockJitterMs?: number;
   /** Exit status of the spawned target, when it exited before collection (spawn mode only). */
   targetExit?: TargetExitInfo;
+  /** A fatal crash observed in-target during the capture (spawn mode only). */
+  targetCrash?: TargetCrashInfo;
 }
 
 /**
@@ -176,10 +191,15 @@ export interface LiveSourceSignals {
     controlChannelWriteErrors: number;
     gcObserverSetupFailed: number;
     heartbeatDropped: number;
+    eventLoopSamplesDropped?: number;
+    gcEventsDropped?: number;
+    memoryUsageSamplesDropped?: number;
   };
   appCompleted?: boolean;
   /** Set once the spawned child has exited (spawn mode only). */
   targetExit?: TargetExitInfo;
+  /** Set once a fatal in-target crash was observed (spawn mode only). */
+  targetCrash?: TargetCrashInfo;
 }
 
 /**
