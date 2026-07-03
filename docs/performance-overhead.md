@@ -78,6 +78,12 @@ Reading it (on this contended laptop):
 - **Tail latency rises modestly** — p99 from 15.7 ms to 16–17.4 ms.
 - These are request-path throughput numbers, not the wall time of a batch job — use the micro table for that, and remember overhead shrinks with spare headroom.
 
+## FD 3 batching (control-channel writes)
+
+Heartbeat, GC, and memory-usage events are now batched into one `fs.writeSync` per ~50ms window (or every 64 events, whichever comes first) inside the target, instead of one synchronous write per event — heartbeats alone fire every 20ms by default, so this removes a per-tick sync write from the hot path. Lifecycle events (`hook-ready`, `capture-start`, `app-complete`, `crash`) still flush immediately, so exit-time delivery is unaffected.
+
+This is expected to help most on GC/heartbeat-heavy modes (`memory`, `cpu,memory`, `async`) where per-event write overhead was largest. Refresh the committed snapshot with `npm run bench:baseline` to capture updated numbers.
+
 ## Overhead drivers
 
 - **`--sample-interval` (default 1000 µs).** Lower values (e.g. 250 µs) capture rarer hot paths but quadruple the sampler's wake-ups. Increase to 2000 µs or 4000 µs for very hot CPU loops where you want minimal perturbation.

@@ -21,6 +21,19 @@ A fully degraded capture (`controlChannel: false` in spawn mode, `gcTimed: false
 
 For very short processes (< 200 ms), `eventLoopTimed: false` and `gcTimed: false` are normal: the timed observers did not have time to land any samples.
 
+### `meta.captureIntegrity` drop counters
+
+The always-on in-target buffers (event-loop heartbeats, GC events, `process.memoryUsage()` samples) are capped so an abandoned or very long capture can't grow the target's heap unboundedly. Hitting a cap evicts the oldest entries — these counters record when that happened:
+
+| Counter | `heartbeatDropped` vs. `eventLoopSamplesDropped` |
+| --- | --- |
+| `heartbeatDropped` | Heartbeat events lost to a **failed control-channel write** (e.g. a broken pipe), spawn mode only. Not a buffer-cap eviction. |
+| `eventLoopSamplesDropped` | Heartbeat samples evicted from the in-target buffer once its cap was reached (drop-oldest). Relevant mainly for very long attach/in-process captures. |
+| `gcEventsDropped` | GC events evicted from the in-target buffer once its cap was reached (drop-oldest). |
+| `memoryUsageSamplesDropped` | `process.memoryUsage()` samples evicted from the in-target buffer once its cap was reached (drop-oldest). |
+
+All four default to `0` and stay there in normal use. In **spawn mode** every event also streams live over the control channel as it happens, so these caps are essentially unreachable. In **attach/in-process mode**, the coordinator's periodic mid-capture drain (see "Periodic mid-capture drain" below) reads and empties these buffers every few seconds during the capture, which is what keeps the caps unreachable there too — a non-zero value means the drain itself couldn't keep up (see `captureIntegrity.diagnostics` for a `runtime-read` entry explaining why) or draining wasn't running (very old Lanterna version, or the drain hadn't started yet during a very short capture).
+
 ## `profiles.cpu.quality`
 
 Folds the low-level integrity flags and statistical checks into a single user-facing confidence:
@@ -112,6 +125,9 @@ When an agent or automation sees one of these flags, this is the one-line "so wh
 | `profiles.async.quality.recordsDropped > 0` | Report is sampled, not exhaustive. | Raise `--async-max-events` next run if completeness matters. |
 | `profiles.async.quality.cdpAsyncStackCoverageRatio < 0.2` | Async stacks largely unavailable (older Node). | Weaken chain findings; `--kind cpu,async` improves attribution. |
 | `meta.kinds.async.transformStats.failed > 0` | Some `full` rewrites failed (non-fatal). | Read `quality.reasons[]`; prefer `safe` if failures are high. |
+| `captureIntegrity.eventLoopSamplesDropped > 0` / `gcEventsDropped > 0` / `memoryUsageSamplesDropped > 0` | An in-target buffer overflowed before it could be read (rare — spawn streams live, and attach/in-process drain periodically). | Check `captureIntegrity.diagnostics` for a `runtime-read` entry; if the target was unusually busy, expect some early history to be trimmed. |
+| `meta.targetCrash` present | The target hit a fatal uncaught exception during the capture (spawn only). | Read `targetCrash.message`; the capture up to that point is still valid, but nothing after the crash was observed. |
+| `profiles.async.quality.pendingAwaitStacksDropped > 0` / `runWindowsDropped > 0` / `concurrencySamplesDropped > 0` | Finer-grained async truncation under sustained high load. | Treat the affected attribution/timeline slices as sampled, not exhaustive; see `quality.reasons[]`. |
 | `findings[]` empty | Heuristics found nothing — **not** proof of health. | Still inspect top 5 hotspots/allocators manually. |
 
 ## Failure and degradation modes
@@ -144,6 +160,14 @@ Without `--deep`, deopt tracing is intentionally absent. `profiles.cpu.deopts` i
 <summary><strong>Async kind in attach mode</strong></summary>
 
 `--kind async` works in attach mode but capture is partial: resources and code loaded before hook installation are not fully observable. `quality.attachPartialCapture` records this so consumers can downgrade async-kind claims accordingly.
+</details>
+
+<details>
+<summary><strong>Periodic mid-capture drain (attach/in-process)</strong></summary>
+
+Spawn mode streams every event-loop heartbeat, GC event, and async-hooks record live over the FD 3 control channel as it happens. Attach and in-process mode have no such channel — historically the in-target buffers were read exactly once, at stop, so a target that exited or hung mid-capture lost everything since the start.
+
+The coordinator now drains those buffers periodically (every ~10s) while an attach/in-process capture runs, in addition to the final read at stop. Each drain pulls and empties the event-loop and GC buffers, and — for the async kind — the async_hooks records that have already *completed* (in-flight resources are left alone so later lifecycle callbacks keep finding them). This bounds the worst-case loss to roughly one drain interval instead of the whole capture, and keeps the in-target buffer caps (see `captureIntegrity.eventLoopSamplesDropped`/`gcEventsDropped`) practically unreachable even on long captures. It has no effect in spawn mode, and no user-visible configuration — if a drain read times out, it shows up as a `runtime-read` entry in `captureIntegrity.diagnostics`, recorded once (not once per tick) so a persistently busy target doesn't spam the diagnostics list.
 </details>
 
 ## See also

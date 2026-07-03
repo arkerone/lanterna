@@ -50,7 +50,7 @@ Async-specific options:
 - **`concurrencyTimeline`** — timeline of inflight and active async work at the configured cadence.
 - **`filteredCounts`** — counts of async resources filtered from the public rankings.
 - **`cdpAsyncContexts`** — supplemental CDP async stacks, when CDP provided them.
-- **`quality`** — `attachPartialCapture`, `sampledStackRatio`, **`attributedStackRatio`** (fraction of operations with a user-editable frame, from their own stack or inherited via the trigger ancestry), `cdpAsyncStackCoverageRatio`, `recordsDropped`, CPU attribution coverage, **`ambiguousRatio`** (CPU samples that fell in overlapping *unrelated* run windows), a real measured `clockSyncUncertaintyMs`, `reasons[]`, and `recommendations[]`. Full-instrumentation rewrite counters live under `meta.kinds.async.transformStats`. See [signal-quality.md](../signal-quality.md#profilesasync-quality).
+- **`quality`** — `attachPartialCapture`, `sampledStackRatio`, **`attributedStackRatio`** (fraction of operations with a user-editable frame, from their own stack or inherited via the trigger ancestry), `cdpAsyncStackCoverageRatio`, `recordsDropped`, CPU attribution coverage, **`ambiguousRatio`** (CPU samples that fell in overlapping *unrelated* run windows), a real measured `clockSyncUncertaintyMs`, `reasons[]`, and `recommendations[]`. Full-instrumentation rewrite counters live under `meta.kinds.async.transformStats`. Four additional optional truncation counters — `pendingAwaitStacksDropped`, `runWindowsDropped`, `concurrencySamplesDropped`, `cdpAsyncContextsDropped` — surface finer-grained data loss than `recordsDropped` alone and only appear non-zero under sustained high load. See [signal-quality.md](../signal-quality.md#profilesasync-quality).
 
 ## Findings
 
@@ -74,7 +74,7 @@ Async-specific options:
 
 ## Caveats
 
-- **Attach mode is partial.** Resources created **before** Lanterna installs hooks are not observable, and `--async-instrumentation full` cannot rewrite already-loaded code. `quality.attachPartialCapture` records this and the async findings should be downgraded accordingly.
+- **Attach mode is partial.** Resources created **before** Lanterna installs hooks are not observable, and `--async-instrumentation full` cannot rewrite already-loaded code. `quality.attachPartialCapture` records this and the async findings should be downgraded accordingly. Separately, a periodic mid-capture drain pulls completed async records (and event-loop/GC samples) every few seconds during attach/in-process captures, so a target that exits or hangs mid-capture still yields everything observed up to the last drain instead of nothing — this reduces *mid-capture* loss but does not change the startup-observability gap `attachPartialCapture` describes.
 - **`--async-instrumentation full` is experimental.** It rewrites `await` sites in modules loaded **after** registration. Code loaded earlier is not covered. It can interact poorly with bundlers, source maps, or other instrumentation hooks. Stick to `safe` unless `safe` cannot identify the await sites you need.
 - **Microtasks default to off.** Enabling `--async-include-microtasks` produces very noisy reports. Use it only for the `microtask-flood` finding.
 - **Dropped records are sampled, not lost forever.** `quality.recordsDropped > 0` means raise `--async-max-events` for the next run if completeness matters.
