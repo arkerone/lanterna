@@ -29,10 +29,10 @@
   "dependencies": {
     "@jridgewell/trace-mapping": "^0.3.25",
     "chrome-remote-interface": "^0.34.0",
-    "magic-string": "^0.30.21",
-    "oxc-parser": "^0.138.0",
+    "magic-string": "^1.2.3",
+    "oxc-parser": "^0.147.0",
     "pino": "^10.3.1",
-    "zod": "^4.4.3"
+    "zod": "^4.5.4"
   },
   "engines": {
     "node": ">=22.0.0"
